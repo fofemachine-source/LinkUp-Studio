@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar } from "@/components/ui/sidebar";
 import { LayoutDashboard, Calendar, ShoppingCart, Users, Crown, Wallet, Package, Award, BarChart3, Settings, CreditCard, Scissors } from "lucide-react";
-import { useCurrentTenant } from "@/hooks/use-tenant";
+import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 
 const items = [
   { title: "Painel Geral", url: "/app", icon: LayoutDashboard },
@@ -20,8 +20,17 @@ const items = [
 export function AppSidebar() {
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const { data: tenant } = useCurrentTenant();
+  const { data: role } = useUserRole(tenant?.id);
   const { setOpenMobile } = useSidebar();
   const isActive = (path: string) => path === "/app" ? currentPath === "/app" : currentPath.startsWith(path);
+
+  const isBarber = role === "barber";
+  const visibleItems = items.filter((item) => {
+    if (isBarber) {
+      return ["Agenda", "Comissões", "Estoque"].includes(item.title);
+    }
+    return true;
+  });
 
   return (
     <Sidebar collapsible="icon" className="dark bg-[#0a0a0a] text-white border-r border-white/5">
@@ -43,7 +52,7 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {items.map((item) => (
+              {visibleItems.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)} className="text-white/70 hover:text-white hover:bg-white/5 data-[active=true]:bg-transparent data-[active=true]:border data-[active=true]:border-amber-500/50 data-[active=true]:text-amber-500 data-[active=true]:font-medium transition-colors">
                     <Link to={item.url} onClick={() => setOpenMobile(false)}><item.icon className="h-4 w-4" /><span>{item.title}</span></Link>

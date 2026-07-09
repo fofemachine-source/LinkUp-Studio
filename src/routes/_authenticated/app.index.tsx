@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useCurrentTenant } from "@/hooks/use-tenant";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,6 +19,11 @@ export const Route = createFileRoute("/_authenticated/app/")({
 function PainelGeral() {
   const { data: tenant } = useCurrentTenant();
   const tenantId = tenant?.id;
+  const { data: role, isLoading: roleLoading } = useUserRole(tenantId);
+
+  if (!roleLoading && role === "barber") {
+    return <Navigate to="/app/agenda" replace />;
+  }
 
   const bookingSlug = tenant?.slug || "ernesth";
   const bookingLink = typeof window !== "undefined"

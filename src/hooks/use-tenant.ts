@@ -38,3 +38,17 @@ export function useIsSuperAdmin() {
     },
   });
 }
+
+export function useUserRole(tenantId?: string) {
+  return useQuery({
+    queryKey: ["user-role", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data: userRes } = await supabase.auth.getUser();
+      const uid = userRes.user?.id;
+      if (!uid || !tenantId) return null;
+      const { data } = await supabase.from("user_roles").select("role").eq("user_id", uid).eq("tenant_id", tenantId).maybeSingle();
+      return data?.role ?? null;
+    },
+  });
+}
