@@ -20,9 +20,10 @@ function PainelGeral() {
   const { data: tenant } = useCurrentTenant();
   const tenantId = tenant?.id;
 
-  const bookingLink = typeof window !== "undefined" && tenant
-    ? `${window.location.origin}/booking/${tenant.slug}`
-    : "";
+  const bookingSlug = tenant?.slug || "ernesth";
+  const bookingLink = typeof window !== "undefined"
+    ? `${window.location.origin}/booking/${bookingSlug}`
+    : `https://barber-pro-plus.lovable.app/booking/${bookingSlug}`;
 
   const { data: stats } = useQuery({
     queryKey: ["dashboard-stats", tenantId],
@@ -99,7 +100,7 @@ function PainelGeral() {
           <p className="text-xs text-muted-foreground mt-1">O sistema aplica automaticamente as regras VIP e limites da sua agenda.</p>
           <div className="mt-4 flex flex-col md:flex-row gap-2">
             <Input readOnly value={bookingLink} className="font-mono text-xs" />
-            <Button onClick={() => { navigator.clipboard.writeText(bookingLink); toast.success("Link copiado!"); }}>
+            <Button onClick={() => { navigator.clipboard.writeText(bookingLink); toast.success("Link copiado!"); }} disabled={!bookingLink}>
               <Copy className="h-4 w-4 mr-2" /> COPIAR
             </Button>
           </div>
