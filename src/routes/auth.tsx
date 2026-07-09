@@ -59,20 +59,8 @@ function AuthPage() {
             </div>
             <CardTitle>Bem-vindo de volta</CardTitle>
           </CardHeader>
-          <CardContent>
-            <Tabs value={tab} onValueChange={(v) => setTab(v as "login" | "signup")}>
-              <TabsList className="grid grid-cols-2 w-full">
-                <TabsTrigger value="login">Entrar</TabsTrigger>
-                <TabsTrigger value="signup">Criar conta</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="login" className="mt-6">
-                <LoginForm onDone={() => navigate({ to: redirect })} bootstrap={bootstrap} />
-              </TabsContent>
-              <TabsContent value="signup" className="mt-6">
-                <SignupForm onDone={() => navigate({ to: redirect })} provisionOwner={provisionOwner} />
-              </TabsContent>
-            </Tabs>
+          <CardContent className="space-y-4">
+            <LoginForm onDone={() => navigate({ to: redirect })} bootstrap={bootstrap} />
           </CardContent>
         </Card>
       </div>
