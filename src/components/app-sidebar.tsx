@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar } from "@/components/ui/sidebar";
-import { LayoutDashboard, Calendar, ShoppingCart, Users, Crown, Wallet, Package, Award, BarChart3, Settings, CreditCard, Scissors, ShieldCheck } from "lucide-react";
-import { useCurrentTenant, useUserRole, useIsSuperAdmin } from "@/hooks/use-tenant";
+import { LayoutDashboard, Calendar, ShoppingCart, Users, Crown, Wallet, Package, Award, BarChart3, Settings, CreditCard, Scissors } from "lucide-react";
+import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 
 const items = [
   { title: "Painel Geral", url: "/app", icon: LayoutDashboard },
@@ -21,7 +21,6 @@ export function AppSidebar() {
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const { data: tenant } = useCurrentTenant();
   const { data: role } = useUserRole(tenant?.id);
-  const { data: isSuper } = useIsSuperAdmin();
   const { setOpenMobile } = useSidebar();
   const isActive = (path: string) => path === "/app" ? currentPath === "/app" : currentPath.startsWith(path);
 
@@ -60,16 +59,6 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
-              {isSuper && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={currentPath.startsWith("/saas")} className="text-indigo-400 hover:text-indigo-300 hover:bg-white/5 data-[active=true]:bg-indigo-600/10 data-[active=true]:border data-[active=true]:border-indigo-500/50 data-[active=true]:text-indigo-400 transition-colors mt-2">
-                    <Link to="/saas" onClick={() => setOpenMobile(false)}>
-                      <ShieldCheck className="h-4 w-4 text-indigo-400" />
-                      <span>Painel SaaS Admin</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
