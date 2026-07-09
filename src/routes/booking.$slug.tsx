@@ -114,7 +114,7 @@ function BookingPage() {
         </div>
 
         {step === "vip" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl page-transition">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl">
             <CardContent className="p-6 md:p-8 space-y-6">
               <div className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10">
                 <Crown className="h-6 w-6 text-primary" />
@@ -170,7 +170,7 @@ function BookingPage() {
         )}
 
         {step === "service" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl page-transition"><CardContent className="p-6 space-y-6">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
             <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {services.filter((s: any) => !s.vip_only || isVip).map((s: any) => (
@@ -185,7 +185,7 @@ function BookingPage() {
         )}
 
         {step === "pro" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl page-transition"><CardContent className="p-6 space-y-6">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
             <StepHeader title="Escolha o profissional" onBack={() => setStep("service")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {availableProsForService.map((p: any) => (
@@ -199,7 +199,7 @@ function BookingPage() {
         )}
 
         {step === "date" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl page-transition">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl">
             <CardContent className="p-0">
               <div className="p-6 pb-2">
                 <div className="flex items-center gap-3 mb-1">
@@ -276,7 +276,7 @@ function BookingPage() {
         )}
 
         {step === "form" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl page-transition"><CardContent className="p-6 space-y-6">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
             <StepHeader title="Seus dados" onBack={() => setStep("date")} />
             <div className="space-y-4">
               <div className="space-y-2"><Label className="text-white/70">Nome</Label><Input className="bg-neutral-900/50 border-white/10 text-white focus-visible:ring-amber-500" value={name} onChange={(e) => setName(e.target.value)} /></div>
@@ -295,7 +295,7 @@ function BookingPage() {
         )}
 
         {step === "done" && (
-          <Card className="bg-white border-none text-black shadow-2xl overflow-hidden rounded-3xl mx-auto w-full max-w-lg page-transition">
+          <Card className="bg-white border-none text-black shadow-2xl overflow-hidden rounded-3xl mx-auto w-full max-w-lg">
             <div className="bg-white p-6 md:p-8">
               <div className="text-center mb-6 mt-4">
                 <div className="h-16 w-16 rounded-full border-2 border-amber-500 mx-auto flex items-center justify-center mb-4">
