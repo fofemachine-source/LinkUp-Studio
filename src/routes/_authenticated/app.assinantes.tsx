@@ -18,6 +18,17 @@ import { QrCode } from "@/lib/qr";
 
 export const Route = createFileRoute("/_authenticated/app/assinantes")({ component: SubscribersPage });
 
+import React, { Component } from "react";
+
+class ErrorBoundary extends Component<{children: React.ReactNode}, {hasError: boolean, err: any}> {
+  constructor(props: any) { super(props); this.state = { hasError: false, err: null }; }
+  static getDerivedStateFromError(err: any) { return { hasError: true, err }; }
+  render() {
+    if (this.state.hasError) return <DialogContent><div className="p-4 bg-red-100 text-red-600 rounded">Erro interno: {String(this.state.err?.message || this.state.err)}</div></DialogContent>;
+    return this.props.children;
+  }
+}
+
 function SubscribersPage() {
   const { data: tenant } = useCurrentTenant(); const tenantId = tenant?.id;
   const qc = useQueryClient(); const [open, setOpen] = useState(false); const [pixOpen, setPixOpen] = useState<any>(null);
@@ -67,7 +78,9 @@ function SubscribersPage() {
       </CardContent></Card>
 
       <Dialog open={!!pixOpen} onOpenChange={(v)=>{if(!v)setPixOpen(null);}}>
-        {pixOpen && <PixDialog sub={pixOpen} tenant={tenant} />}
+        <ErrorBoundary>
+          {pixOpen && <PixDialog sub={pixOpen} tenant={tenant} />}
+        </ErrorBoundary>
       </Dialog>
     </div>
   );
