@@ -245,17 +245,7 @@ function BookingPage() {
         {step === "done" && (
           <Card className="bg-white border-none text-black shadow-2xl overflow-hidden rounded-3xl mx-auto w-full max-w-lg">
             <div className="bg-white p-6 md:p-8">
-              <div className="text-center space-y-2 mb-8 mt-2">
-                <div className="h-16 w-16 mx-auto bg-black text-amber-500 rounded-full flex items-center justify-center shadow-lg border-2 border-amber-500/20 mb-4 overflow-hidden">
-                  {tenant.logo_url ? <img src={tenant.logo_url} className="h-full w-full object-cover" alt="" /> : <span className="font-bold text-2xl">{(tenant.name as string)[0]}</span>}
-                </div>
-                <h2 className="text-xl font-bold">{tenant.name}</h2>
-                <p className="text-xs text-amber-600 font-semibold uppercase tracking-widest">{tenant.subtitle ?? "Soluções Premium"}</p>
-                <div className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">AGENDAMENTO ONLINE DE CLIENTES</div>
-                <div className="text-xs text-gray-400">Rápido, sem senhas e integrado à agenda em tempo real.</div>
-              </div>
-
-              <div className="text-center mb-6">
+              <div className="text-center mb-6 mt-4">
                 <div className="h-16 w-16 rounded-full border-2 border-amber-500 mx-auto flex items-center justify-center mb-4">
                   <Check className="h-8 w-8 text-amber-500" />
                 </div>
@@ -313,13 +303,13 @@ function BookingPage() {
                 </div>
               </div>
 
-              <div className="border border-amber-500/20 rounded-2xl p-5 mt-4 bg-[#faf8f5]">
+              <div className="border border-amber-500/20 rounded-2xl p-5 mt-4 bg-[#faf8f5] cursor-pointer hover:bg-amber-50 transition-colors" onClick={() => window.open(`https://maps.google.com/?q=${tenant.name}`, "_blank")}>
                  <div className="flex items-start gap-3">
                     <div className="h-8 w-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 shrink-0"><MapPin className="h-4 w-4" /></div>
                     <div>
                       <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">LOCALIZAÇÃO DO ESTABELECIMENTO</div>
                       <div className="text-sm font-bold text-black mb-1">{tenant.name}</div>
-                      <div className="text-xs text-gray-500">Endereço principal da barbearia</div>
+                      <div className="text-xs text-gray-500">Toque para abrir no mapa</div>
                     </div>
                  </div>
               </div>

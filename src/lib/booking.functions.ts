@@ -81,12 +81,27 @@ export const createBooking = createServerFn({ method: "POST" })
     const { data: conflicts } = await supabase.from("appointments").select("id,start_at,end_at").eq("professional_id", data.professionalId).lt("start_at", end.toISOString()).gt("end_at", start.toISOString()).neq("status", "cancelled");
     if (conflicts && conflicts.length > 0) throw new Error("Este horário já está ocupado. Escolha outro.");
 
+    // Upsert client
+    const cleanWhatsapp = data.clientWhatsapp.replace(/\D/g, "");
+    let { data: existingClient } = await supabase.from("clients").select("id").eq("tenant_id", data.tenantId).eq("whatsapp", cleanWhatsapp).maybeSingle();
+    let clientId = existingClient?.id;
+    if (!clientId) {
+      const { data: newClient, error: errClient } = await supabase.from("clients").insert({
+        tenant_id: data.tenantId,
+        full_name: data.clientName,
+        whatsapp: cleanWhatsapp,
+        is_vip: data.isVip
+      }).select("id").single();
+      if (!errClient && newClient) clientId = newClient.id;
+    }
+
     const { data: appt, error } = await supabase.from("appointments").insert({
       tenant_id: data.tenantId,
       professional_id: data.professionalId,
       service_id: data.serviceId,
       client_name: data.clientName,
-      client_whatsapp: data.clientWhatsapp.replace(/\D/g, ""),
+      client_whatsapp: cleanWhatsapp,
+      client_id: clientId || null,
       start_at: start.toISOString(),
       end_at: end.toISOString(),
       status: "confirmed",

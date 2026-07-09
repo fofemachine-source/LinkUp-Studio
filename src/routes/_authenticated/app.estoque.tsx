@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components/ui/card";
-import { Package, Plus } from "lucide-react";
+import { Package, Plus, Pencil } from "lucide-react";
 import { useCurrentTenant } from "@/hooks/use-tenant";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,6 +20,8 @@ function EstoquePage() {
   const tenantId = tenant?.id;
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const { data, isLoading } = useQuery({ 
     queryKey: ["products-all", tenantId], 
     enabled: !!tenantId, 
@@ -68,6 +70,7 @@ function EstoquePage() {
                 <TableHead>Preço (R$)</TableHead>
                 <TableHead>Em Estoque</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="w-[80px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -87,12 +90,41 @@ function EstoquePage() {
                      p.stock > 0 ? <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-medium">Estoque Baixo</span> : 
                      <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full font-medium">Sem Estoque</span>}
                   </TableCell>
+                  <TableCell>
+                    <Button variant="ghost" size="icon" onClick={() => { setF({ name: p.name, price: p.price, stock: p.stock }); setEditingId(p.id); setEditOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Editar Produto</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><Label>Nome</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Preço de Venda</Label><Input type="number" step="0.01" value={f.price} onChange={e=>setF({...f,price:Number(e.target.value)})}/></div>
+              <div><Label>Qtd. Estoque</Label><Input type="number" value={f.stock} onChange={e=>setF({...f,stock:Number(e.target.value)})}/></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={async()=>{
+              const{error}=await supabase.from("products").update({name:f.name, price:f.price, stock:f.stock}).eq("id", editingId!);
+              if(error) toast.error(error.message);
+              else {
+                toast.success("Produto atualizado!");
+                setEditOpen(false);
+                setF({name:"",price:0,stock:0});
+                setEditingId(null);
+                qc.invalidateQueries({queryKey:["products-all"]});
+              }
+            }}>Salvar Alterações</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -92,7 +92,12 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
   const [addition, setAddition] = useState<number>(0);
   const [payment, setPayment] = useState<string>("pix");
 
-  const subtotal = items.reduce((a,b)=>a+Number(b.unit_price)*b.quantity,0);
+  const selectedSubtotal = (tab === "service" ? services : products)
+    ?.filter((i: any) => selectedIds.includes(i.id))
+    ?.reduce((a: number, b: any) => a + b.price, 0) * qty || 0;
+
+  const baseSubtotal = items.reduce((a, b) => a + (b.unit_price * b.quantity), 0);
+  const subtotal = baseSubtotal + selectedSubtotal;
   const liquidTotal = subtotal - discount + addition;
 
   async function confirmAddition() {
