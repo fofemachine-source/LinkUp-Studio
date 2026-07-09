@@ -78,13 +78,13 @@ function BookingPage() {
         className="fixed inset-0 pointer-events-none"
         style={{
           backgroundImage: `url(${bookingHero.url})`,
-          backgroundSize: "contain",
-          backgroundPosition: "center right",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
           backgroundColor: "#000",
         }}
       />
-      <div className="fixed inset-0 bg-gradient-to-r from-black via-black/70 to-transparent pointer-events-none" />
+      <div className="fixed inset-0 bg-black/50 pointer-events-none" />
       <div className="relative z-10 max-w-xl mx-auto p-4 md:p-8 min-h-screen flex flex-col justify-center">
         <div className="flex items-center gap-4 mb-6">
           <div className="h-14 w-14 rounded-2xl bg-primary text-primary-foreground grid place-items-center shadow-md shrink-0">
@@ -97,7 +97,7 @@ function BookingPage() {
         </div>
 
         {step === "vip" && (
-          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white">
+          <Card className="bg-neutral-950 border-white/10 text-white">
             <CardContent className="p-6 md:p-8 space-y-6">
               <div className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10">
                 <Crown className="h-6 w-6 text-primary" />
@@ -122,7 +122,7 @@ function BookingPage() {
         )}
 
         {step === "service" && (
-          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-6 space-y-3">
+          <Card className="bg-neutral-950 border-white/10 text-white"><CardContent className="p-6 space-y-3">
             <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {services.filter((s: any) => !s.vip_only || isVip).map((s: any) => (
@@ -137,7 +137,7 @@ function BookingPage() {
         )}
 
         {step === "pro" && (
-          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-6 space-y-4">
+          <Card className="bg-neutral-950 border-white/10 text-white"><CardContent className="p-6 space-y-4">
             <StepHeader title="Escolha o profissional" onBack={() => setStep("service")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {availableProsForService.map((p: any) => (
@@ -151,7 +151,7 @@ function BookingPage() {
         )}
 
         {step === "date" && (
-          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-6 space-y-4">
+          <Card className="bg-neutral-950 border-white/10 text-white"><CardContent className="p-6 space-y-4">
             <StepHeader title="Escolha a data e o horário" onBack={() => setStep("pro")} />
             <div className="grid md:grid-cols-2 gap-6">
               <div className="border rounded-xl p-3 flex justify-center">
@@ -173,7 +173,7 @@ function BookingPage() {
         )}
 
         {step === "form" && (
-          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-6 space-y-4">
+          <Card className="bg-neutral-950 border-white/10 text-white"><CardContent className="p-6 space-y-4">
             <StepHeader title="Seus dados" onBack={() => setStep("date")} />
             <div className="space-y-3">
               <div><Label>Nome</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
@@ -191,7 +191,7 @@ function BookingPage() {
         )}
 
         {step === "done" && (
-          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-8 text-center space-y-4">
+          <Card className="bg-neutral-950 border-white/10 text-white"><CardContent className="p-8 text-center space-y-4">
             <div className="h-16 w-16 rounded-full bg-success/10 text-success mx-auto grid place-items-center"><Check className="h-8 w-8" /></div>
             <h2 className="text-2xl font-semibold">Agendamento confirmado!</h2>
             <p className="text-muted-foreground">Você receberá a confirmação no WhatsApp.</p>
