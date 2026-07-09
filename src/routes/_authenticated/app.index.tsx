@@ -78,10 +78,7 @@ function PainelGeral() {
           <h1 className="text-3xl font-semibold tracking-tight">Painel Geral</h1>
           <p className="text-muted-foreground mt-1">Bem-vindo de volta! Aqui está o resumo da sua barbearia hoje.</p>
         </div>
-        <div className="flex gap-2">
-          <Button size="lg"><Plus className="h-4 w-4 mr-2" /> NOVO AGENDAMENTO</Button>
-          <Button size="lg" variant="outline"><UserPlus className="h-4 w-4 mr-2" /> NOVO CLIENTE</Button>
-        </div>
+
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

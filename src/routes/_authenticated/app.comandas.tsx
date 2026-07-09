@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCurrentTenant } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -54,9 +56,9 @@ function ComandasPage() {
         </div>
       </div>
 
-      <Dialog open={!!selected} onOpenChange={(v)=>{if(!v)setSelected(null);}}>
+      <Sheet open={!!selected} onOpenChange={(v)=>{if(!v)setSelected(null);}}>
         {selected && <CmdDetail cmd={selected} tenantId={tenantId} onDone={()=>{setSelected(null);qc.invalidateQueries();}}/>}
-      </Dialog>
+      </Sheet>
     </div>
   );
 }
@@ -80,59 +82,170 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
   const { data: services } = useQuery({ queryKey: ["svc-m", tenantId], queryFn: async () => (await supabase.from("services").select("*").eq("tenant_id", tenantId).eq("active", true)).data ?? [] });
   const { data: products } = useQuery({ queryKey: ["prd-m", tenantId], queryFn: async () => (await supabase.from("products").select("*").eq("tenant_id", tenantId).eq("active", true)).data ?? [] });
   const { data: pros } = useQuery({ queryKey: ["prs-m", tenantId], queryFn: async () => (await supabase.from("professionals").select("*").eq("tenant_id", tenantId).eq("active", true)).data ?? [] });
-  const [proId, setProId] = useState<string>("");
-  const [payment, setPayment] = useState<string>("pix");
-  const total = items.reduce((a,b)=>a+Number(b.unit_price)*b.quantity,0);
 
-  async function addItem(kind: "service"|"product", ref: any) {
+  const [tab, setTab] = useState<"service"|"product">("service");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [proId, setProId] = useState<string>("");
+  const [qty, setQty] = useState<number>(1);
+
+  const [discount, setDiscount] = useState<number>(0);
+  const [addition, setAddition] = useState<number>(0);
+  const [payment, setPayment] = useState<string>("pix");
+
+  const subtotal = items.reduce((a,b)=>a+Number(b.unit_price)*b.quantity,0);
+  const liquidTotal = subtotal - discount + addition;
+
+  async function confirmAddition() {
+    if (selectedIds.length === 0) return toast.error("Selecione pelo menos um item.");
     const pro = pros?.find((p:any)=>p.id===proId);
-    const commission_pct = kind === "service" ? (pro?.commission_pct ?? 0) : 0;
-    const commission_value = (Number(ref.price) * commission_pct) / 100;
-    const { data, error } = await supabase.from("commanda_items").insert({
-      commanda_id: cmd.id, tenant_id: tenantId, kind, ref_id: ref.id, name: ref.name, quantity: 1,
-      unit_price: ref.price, professional_id: kind === "service" ? proId || null : null,
-      commission_pct, commission_value,
-    }).select("*").single();
-    if (error) return toast.error(error.message);
-    setItems([...items, data]);
+    const newItems = [];
+    for (const id of selectedIds) {
+      let ref = tab === "service" ? services?.find((s:any)=>s.id===id) : products?.find((p:any)=>p.id===id);
+      if (!ref) continue;
+      const commission_pct = tab === "service" ? (pro?.commission_pct ?? 0) : 0;
+      const commission_value = ((Number(ref.price) * qty) * commission_pct) / 100;
+      const { data, error } = await supabase.from("commanda_items").insert({
+        commanda_id: cmd.id, tenant_id: tenantId, kind: tab, ref_id: ref.id, name: ref.name, quantity: qty,
+        unit_price: ref.price, professional_id: tab === "service" ? (proId || null) : null,
+        commission_pct, commission_value,
+      }).select("*").single();
+      if (error) { toast.error(error.message); continue; }
+      newItems.push(data);
+    }
+    setItems([...items, ...newItems]);
+    setSelectedIds([]);
+    setQty(1);
+    toast.success("Itens adicionados!");
   }
+
   async function removeItem(id: string) {
     await supabase.from("commanda_items").delete().eq("id", id);
     setItems(items.filter(i=>i.id!==id));
   }
+
   async function close() {
-    const newTotal = items.reduce((a,b)=>a+Number(b.unit_price)*b.quantity,0);
-    const { error } = await supabase.from("commandas").update({ status: "closed", closed_at: new Date().toISOString(), total: newTotal, subtotal: newTotal, payment_method: payment }).eq("id", cmd.id);
+    const { error } = await supabase.from("commandas").update({ 
+      status: "closed", closed_at: new Date().toISOString(), total: liquidTotal, subtotal: subtotal, payment_method: payment 
+    }).eq("id", cmd.id);
     if (error) return toast.error(error.message);
-    await supabase.from("cash_movements").insert({ tenant_id: tenantId, kind: "in", amount: newTotal, description: `Comanda #${cmd.number}` });
+    await supabase.from("cash_movements").insert({ tenant_id: tenantId, kind: "in", amount: liquidTotal, description: `Comanda #${cmd.number}` });
     toast.success("Comanda fechada"); onDone();
   }
-  return (<DialogContent className="max-w-3xl">
-    <DialogHeader><DialogTitle>Comanda #{cmd.number} — {cmd.client_name}</DialogTitle></DialogHeader>
-    <div className="grid md:grid-cols-2 gap-4">
-      <div className="space-y-3">
-        <div><Label>Profissional</Label><Select value={proId} onValueChange={setProId}><SelectTrigger><SelectValue placeholder="Escolha"/></SelectTrigger><SelectContent>{pros?.map((p:any)=><SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>)}</SelectContent></Select></div>
-        <div><Label>Serviços</Label>
-          <div className="flex flex-wrap gap-2 mt-1">{services?.map((s:any)=>(<button key={s.id} type="button" onClick={()=>addItem("service",s)} className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs hover:bg-primary hover:text-primary-foreground">{s.name} • {brl(s.price)}</button>))}</div>
+
+  return (
+    <SheetContent className="sm:max-w-[500px] w-[95vw] overflow-y-auto flex flex-col p-0">
+      <div className="p-6 border-b">
+        <SheetHeader>
+          <SheetTitle className="text-xl flex justify-between items-start">
+            <div>
+              Detalhes da Comanda #{cmd.number}
+              <div className="text-sm text-muted-foreground font-normal mt-1">Cliente: {cmd.client_name}</div>
+            </div>
+          </SheetTitle>
+        </SheetHeader>
+      </div>
+
+      <div className="flex-1 p-6 space-y-6">
+        <div>
+          {items.length === 0 ? (
+            <div className="text-sm text-muted-foreground text-center italic py-4">Comanda vazia! Adicione itens abaixo.</div>
+          ) : (
+            <div className="space-y-2 mb-4 border rounded-xl p-3">
+              {items.map(i => (
+                <div key={i.id} className="flex justify-between items-center text-sm p-2 bg-muted/30 rounded-lg">
+                  <div>
+                    <div className="font-medium">{i.name} {i.quantity > 1 && `(x${i.quantity})`}</div>
+                    <div className="text-xs text-muted-foreground">{brl(i.unit_price)} unid</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="font-semibold text-primary">{brl(i.unit_price * i.quantity)}</div>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={()=>removeItem(i.id)}><Trash2 className="h-4 w-4"/></Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <div><Label>Produtos</Label>
-          <div className="flex flex-wrap gap-2 mt-1">{products?.map((p:any)=>(<button key={p.id} type="button" onClick={()=>addItem("product",p)} className="px-3 py-1 rounded-full bg-muted text-xs hover:bg-muted/70">{p.name} • {brl(p.price)}</button>))}</div>
+
+        <div className="border rounded-xl p-4 bg-primary/5 border-primary/20 space-y-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-primary">INJETAR NOVO ITEM</div>
+          <Tabs value={tab} onValueChange={(v:any)=>{setTab(v);setSelectedIds([]);}}>
+            <TabsList className="grid grid-cols-2 w-full bg-primary/10 text-primary">
+              <TabsTrigger value="service" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">SERVIÇO</TabsTrigger>
+              <TabsTrigger value="product" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">PRODUTO</TabsTrigger>
+            </TabsList>
+            
+            <div className="mt-4 space-y-4">
+              <div className="text-xs text-muted-foreground uppercase font-semibold">Selecione o(s) item(s)</div>
+              <div className="max-h-[200px] overflow-y-auto space-y-1 border rounded-lg p-1 bg-background">
+                {(tab === "service" ? services : products)?.map((item:any) => {
+                   const sel = selectedIds.includes(item.id);
+                   return (
+                     <div key={item.id} className={`flex items-center justify-between p-2 rounded-md cursor-pointer text-sm transition-colors ${sel ? 'bg-primary/10 border border-primary/30' : 'hover:bg-muted'}`} onClick={()=>{
+                       if(sel) setSelectedIds(selectedIds.filter(id=>id!==item.id));
+                       else setSelectedIds([...selectedIds, item.id]);
+                     }}>
+                       <div className="flex items-center gap-3">
+                         <div className={`h-4 w-4 rounded-sm border flex items-center justify-center transition-colors ${sel?'bg-primary border-primary text-primary-foreground':'border-input'}`}>{sel && "✓"}</div>
+                         <span className={sel ? "font-medium text-primary" : ""}>{item.name}</span>
+                       </div>
+                       <span className={sel ? "font-medium text-primary" : "text-muted-foreground"}>{brl(item.price)}</span>
+                     </div>
+                   );
+                })}
+                {(tab === "service" ? services : products)?.length === 0 && <div className="text-xs text-center py-4 text-muted-foreground">Nenhum cadastrado</div>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {tab === "service" && (
+                  <div>
+                    <Label className="text-xs text-muted-foreground uppercase">Profissional</Label>
+                    <Select value={proId} onValueChange={setProId}><SelectTrigger className="h-9"><SelectValue placeholder="Escolha"/></SelectTrigger><SelectContent>{pros?.map((p:any)=><SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>)}</SelectContent></Select>
+                  </div>
+                )}
+                <div>
+                  <Label className="text-xs text-muted-foreground uppercase">Quantidade</Label>
+                  <Input type="number" min={1} value={qty} onChange={e=>setQty(Number(e.target.value))} className="h-9"/>
+                </div>
+              </div>
+              
+              <Button className="w-full bg-primary/10 text-primary hover:bg-primary/20" variant="ghost" onClick={confirmAddition}>CONFIRMAR ADIÇÃO ➕</Button>
+            </div>
+          </Tabs>
+        </div>
+
+        <div className="space-y-4 pt-4 border-t">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs text-muted-foreground uppercase">Aplicar Desconto (R$)</Label>
+              <Input type="number" step="0.01" value={discount} onChange={e=>setDiscount(Number(e.target.value))} className="h-9"/>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground uppercase">Acréscimo (R$)</Label>
+              <Input type="number" step="0.01" value={addition} onChange={e=>setAddition(Number(e.target.value))} className="h-9"/>
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground uppercase">Forma de Pagamento</Label>
+            <Select value={payment} onValueChange={setPayment}><SelectTrigger className="h-9"><SelectValue/></SelectTrigger><SelectContent>
+              <SelectItem value="pix">PIX Chave QR</SelectItem><SelectItem value="cash">Dinheiro</SelectItem><SelectItem value="credit">Cartão de Crédito</SelectItem><SelectItem value="debit">Cartão de Débito</SelectItem>
+            </SelectContent></Select>
+          </div>
+          
+          <div className="p-4 bg-muted/30 rounded-xl space-y-2">
+            <div className="flex justify-between text-sm text-muted-foreground"><span>Subtotal</span><span>{brl(subtotal)}</span></div>
+            {discount > 0 && <div className="flex justify-between text-sm text-destructive"><span>Desconto</span><span>- {brl(discount)}</span></div>}
+            {addition > 0 && <div className="flex justify-between text-sm text-muted-foreground"><span>Acréscimo</span><span>+ {brl(addition)}</span></div>}
+            <div className="flex justify-between text-lg font-bold text-primary pt-2 border-t border-border/50">
+              <span>LÍQUIDO TOTAL</span><span>{brl(liquidTotal)}</span>
+            </div>
+          </div>
+          
+          <Button onClick={close} disabled={items.length===0} className="w-full h-12 text-md font-semibold bg-[#4f81fb] hover:bg-[#3d6adb] text-white">
+            FINALIZAR VENDA 💰
+          </Button>
         </div>
       </div>
-      <div className="space-y-3">
-        <div className="border rounded-xl p-3 min-h-[200px] max-h-[300px] overflow-y-auto space-y-2">
-          {items.length === 0 ? <div className="text-sm text-muted-foreground text-center py-8">Sem itens</div> :
-            items.map((i)=>(<div key={i.id} className="flex items-center justify-between text-sm p-2 bg-muted/40 rounded-lg">
-              <div><div className="font-medium">{i.name}</div><div className="text-xs text-muted-foreground">{brl(i.unit_price)}</div></div>
-              <Button size="icon" variant="ghost" onClick={()=>removeItem(i.id)}><Trash2 className="h-3 w-3"/></Button>
-            </div>))}
-        </div>
-        <div className="p-4 bg-primary/5 rounded-xl"><div className="text-xs text-muted-foreground">TOTAL</div><div className="text-3xl font-semibold text-primary">{brl(total)}</div></div>
-        <div><Label>Pagamento</Label><Select value={payment} onValueChange={setPayment}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent>
-          <SelectItem value="pix">PIX</SelectItem><SelectItem value="cash">Dinheiro</SelectItem><SelectItem value="credit">Crédito</SelectItem><SelectItem value="debit">Débito</SelectItem>
-        </SelectContent></Select></div>
-      </div>
-    </div>
-    <DialogFooter><Button variant="outline" onClick={onDone}>Fechar</Button><Button onClick={close} disabled={items.length===0}><DollarSign className="h-4 w-4 mr-2"/>FECHAR VENDA</Button></DialogFooter>
-  </DialogContent>);
+    </SheetContent>
+  );
 }
