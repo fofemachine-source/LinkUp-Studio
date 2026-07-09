@@ -30,6 +30,15 @@ export function normalizePixKey(raw: string) {
   if (digits.length === 10) return "+55" + digits;
   return digits || s;
 }
+export function sanitizeEMVString(str: string): string {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9 ]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
 export function buildPixPayload(opts: {
   key: string;
   merchant: string;
@@ -38,8 +47,8 @@ export function buildPixPayload(opts: {
   txid?: string;
   description?: string;
 }) {
-  const merchant = opts.merchant.substring(0, 25).toUpperCase();
-  const city = (opts.city ?? "SAO PAULO").substring(0, 15).toUpperCase();
+  const merchant = sanitizeEMVString(opts.merchant).substring(0, 25);
+  const city = sanitizeEMVString(opts.city ?? "SAO PAULO").substring(0, 15);
   const gui = tlv("00", "br.gov.bcb.pix");
   const normalizedKey = normalizePixKey(opts.key);
   const keyTlv = tlv("01", normalizedKey);
