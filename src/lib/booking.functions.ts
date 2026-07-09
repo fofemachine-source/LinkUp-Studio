@@ -59,13 +59,21 @@ export const createBooking = createServerFn({ method: "POST" })
 
     const [{ data: t }, { data: settings }, { data: svc }] = await Promise.all([
       supabase.from("tenants").select("id,name,whatsapp,slot_minutes").eq("id", data.tenantId).maybeSingle(),
-      supabase.from("tenant_settings").select("vip_days,work_days,open_hour,close_hour,lunch_start,lunch_end").eq("tenant_id", data.tenantId).maybeSingle(),
+      supabase.from("tenant_settings").select("vip_days,work_days,open_hour,close_hour,lunch_start,lunch_end,vip_mode").eq("tenant_id", data.tenantId).maybeSingle(),
       supabase.from("services").select("id,name,duration_min,price,vip_only").eq("id", data.serviceId).maybeSingle(),
     ]);
     if (!t || !svc) throw new Error("Barbearia ou serviço inválido");
 
     const start = new Date(data.startAt);
     const end = new Date(start.getTime() + (svc.duration_min ?? t.slot_minutes ?? 30) * 60000);
+
+    const dow = ((start.getUTCDay() + 6) % 7) + 1; // 1=Mon..7=Sun
+    const vipDays: number[] = (settings?.vip_days as number[] | null) ?? [1,2,3,4];
+    const vipMode = (settings as any)?.vip_mode ?? "strict";
+    if (vipMode === "strict" && vipDays.includes(dow) && !data.isVip) {
+      throw new Error("Este dia é reservado para assinantes VIP. Escolha outro dia ou torne-se assinante.");
+    }
+
 
     // VIP: only VIP subscribers can book on VIP-restricted days (per spec: Mon-Thu = VIP only)
     const dow = ((start.getUTCDay() + 6) % 7) + 1; // 1=Mon..7=Sun (approx)
