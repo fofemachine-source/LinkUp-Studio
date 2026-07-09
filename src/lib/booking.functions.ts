@@ -10,7 +10,7 @@ async function pub() {
 export const getPublicTenant = createServerFn({ method: "GET" })
   .inputValidator((d: { slug: string }) => z.object({ slug: z.string() }).parse(d))
   .handler(async ({ data }) => {
-    const supabase = pub();
+    const supabase = await pub();
     const { data: t } = await supabase.from("tenants").select("id,name,subtitle,logo_url,banner_url,slug,primary_color,slot_minutes,whatsapp,pix_key,pix_holder,city").eq("slug", data.slug).eq("status", "active").maybeSingle();
     if (!t) return null;
     const [{ data: pros }, { data: svcs }, { data: settings }] = await Promise.all([
@@ -25,7 +25,7 @@ export const getPublicTenant = createServerFn({ method: "GET" })
 export const validateVip = createServerFn({ method: "POST" })
   .inputValidator((d: { tenantId: string; cpf: string }) => z.object({ tenantId: z.string().uuid(), cpf: z.string() }).parse(d))
   .handler(async ({ data }) => {
-    const supabase = pub();
+    const supabase = await pub();
     const cpf = data.cpf.replace(/\D/g, "");
     const { data: sub } = await supabase.from("subscribers").select("id,full_name,plan,status").eq("tenant_id", data.tenantId).eq("cpf", cpf).eq("status", "active").maybeSingle();
     return sub ?? null;
@@ -35,7 +35,7 @@ export const validateVip = createServerFn({ method: "POST" })
 export const getBookedSlots = createServerFn({ method: "POST" })
   .inputValidator((d: { professionalId: string; date: string }) => z.object({ professionalId: z.string().uuid(), date: z.string() }).parse(d))
   .handler(async ({ data }) => {
-    const supabase = pub();
+    const supabase = await pub();
     const start = new Date(data.date + "T00:00:00").toISOString();
     const end = new Date(data.date + "T23:59:59").toISOString();
     const { data: appts } = await supabase.from("appointments").select("start_at,end_at").eq("professional_id", data.professionalId).gte("start_at", start).lte("start_at", end).neq("status", "cancelled");
@@ -55,7 +55,7 @@ export const createBooking = createServerFn({ method: "POST" })
     vipCpf: z.string().optional(),
   }).parse(d))
   .handler(async ({ data }) => {
-    const supabase = pub();
+    const supabase = await pub();
 
     const [{ data: t }, { data: settings }, { data: svc }] = await Promise.all([
       supabase.from("tenants").select("id,name,whatsapp,slot_minutes").eq("id", data.tenantId).maybeSingle(),
