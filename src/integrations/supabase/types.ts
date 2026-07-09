@@ -349,10 +349,14 @@ export type Database = {
           active: boolean | null
           commission_pct: number | null
           created_at: string
+          email: string | null
           full_name: string
           id: string
+          lunch_end: string | null
+          lunch_start: string | null
           photo_url: string | null
           role_label: string | null
+          specialty: string | null
           tenant_id: string
           whatsapp: string | null
         }
@@ -360,10 +364,14 @@ export type Database = {
           active?: boolean | null
           commission_pct?: number | null
           created_at?: string
+          email?: string | null
           full_name: string
           id?: string
+          lunch_end?: string | null
+          lunch_start?: string | null
           photo_url?: string | null
           role_label?: string | null
+          specialty?: string | null
           tenant_id: string
           whatsapp?: string | null
         }
@@ -371,10 +379,14 @@ export type Database = {
           active?: boolean | null
           commission_pct?: number | null
           created_at?: string
+          email?: string | null
           full_name?: string
           id?: string
+          lunch_end?: string | null
+          lunch_start?: string | null
           photo_url?: string | null
           role_label?: string | null
+          specialty?: string | null
           tenant_id?: string
           whatsapp?: string | null
         }
