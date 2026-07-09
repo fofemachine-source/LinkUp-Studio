@@ -127,12 +127,3 @@ svg.lucide {
   stroke-width: 1.65px !important;
   transition: transform 0.2s ease, stroke-width 0.2s ease;
 }
-
-/* Premium buttons and interactive elements smoothness */
-button, a, input, select, textarea, .card {
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.card:hover {
-  border-color: var(--color-border-hover, oklch(1 0 0 / 15%));
-}
