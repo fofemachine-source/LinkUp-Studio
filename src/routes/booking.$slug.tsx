@@ -174,7 +174,14 @@ function BookingPage() {
                       mode="single" 
                       selected={date} 
                       onSelect={setDate} 
-                      disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))} 
+                      disabled={(d) => {
+                        if (d < new Date(new Date().setHours(0,0,0,0))) return true;
+                        if (isVip) {
+                          const day = d.getDay();
+                          if (day === 0 || day === 5 || day === 6) return true;
+                        }
+                        return false;
+                      }}
                       locale={ptBR}
                       className="[&_.rdp-day_button[data-selected=true]]:border-amber-500 [&_.rdp-day_button[data-selected=true]]:border [&_.rdp-day_button[data-selected=true]]:text-amber-500 [&_.rdp-day_button[data-selected=true]]:bg-transparent [&_.rdp-button_previous]:text-amber-500 [&_.rdp-button_next]:text-amber-500 [&_.rdp-caption_label]:text-lg [&_.rdp-caption_label]:font-medium [&_.rdp-head_cell]:text-white/50 [&_.rdp-head_cell]:font-normal"
                     />

@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useCurrentTenant } from "@/hooks/use-tenant";
@@ -21,6 +22,14 @@ function SubscribersPage() {
   const { data: tenant } = useCurrentTenant(); const tenantId = tenant?.id;
   const qc = useQueryClient(); const [open, setOpen] = useState(false); const [pixOpen, setPixOpen] = useState<any>(null);
   const { data } = useQuery({ queryKey: ["subs", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("subscribers").select("*").eq("tenant_id", tenantId!).order("created_at", { ascending: false })).data ?? [] });
+
+  async function toggleStatus(id: string, currentStatus: string) {
+    const newStatus = currentStatus === "active" ? "inactive" : "active";
+    const { error } = await supabase.from("subscribers").update({ status: newStatus }).eq("id", id);
+    if (error) return toast.error(error.message);
+    toast.success("Status atualizado!");
+    qc.invalidateQueries({ queryKey: ["subs"] });
+  }
 
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto">
@@ -46,7 +55,12 @@ function SubscribersPage() {
               <TableCell>{s.whatsapp}</TableCell>
               <TableCell>{s.plan}</TableCell>
               <TableCell>{brl(s.price)}</TableCell>
-              <TableCell><span className={`text-xs px-2 py-0.5 rounded-full ${s.status==="active"?"bg-success/10 text-success":"bg-muted"}`}>{s.status}</span></TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <Switch checked={s.status === "active"} onCheckedChange={() => toggleStatus(s.id, s.status)} />
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${s.status==="active"?"bg-success/10 text-success":"bg-muted text-muted-foreground"}`}>{s.status === "active" ? "Ativo" : "Inativo"}</span>
+                </div>
+              </TableCell>
               <TableCell><Button size="sm" variant="outline" onClick={()=>setPixOpen(s)}>Gerar PIX</Button></TableCell>
             </TableRow>
           ))}</TableBody></Table>
