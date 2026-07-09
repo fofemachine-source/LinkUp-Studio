@@ -108,7 +108,7 @@ function SubDialog({ tenantId, onDone }: any) {
 }
 
 function PixDialog({ sub, tenant }: { sub: any; tenant: any }) {
-  const key = String(tenant?.pix_key || "05117727266").replace(/\D/g, "");
+  const key = String(tenant?.pix_key || "05117727266").trim();
   const holder = String(tenant?.pix_holder || "ERNESTH F P COUTO SILVA").substring(0, 25);
   const cityStr = String(tenant?.city || "SAO PAULO").substring(0, 15);
   const txidStr = String(sub?.id || "TXID123").replace(/[^a-zA-Z0-9]/g, "").substring(0, 25);
@@ -135,7 +135,7 @@ function PixDialog({ sub, tenant }: { sub: any; tenant: any }) {
         {payload ? <QrCode value={payload} size={240} /> : <div className="p-8 text-xs text-red-500 border rounded-lg">Erro ao gerar QRCode. Verifique as configurações do PIX.</div>}
       </div>
       <div className="p-3 bg-muted/50 rounded-lg text-left space-y-1 text-xs">
-        <div><span className="text-muted-foreground">Chave:</span> <span className="font-mono">{cpfMask(key)}</span></div>
+        <div><span className="text-muted-foreground">Chave:</span> <span className="font-mono">{key}</span></div>
         <div><span className="text-muted-foreground">Favorecido:</span> {holder}</div>
       </div>
       <Button disabled={!payload} className="w-full" onClick={()=>{navigator.clipboard.writeText(payload);toast.success("Código PIX copiado!");}}><Copy className="h-4 w-4 mr-2"/>COPIAR CÓDIGO PIX</Button>
