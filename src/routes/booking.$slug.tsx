@@ -119,7 +119,7 @@ function BookingPage() {
         )}
 
         {step === "service" && (
-          <Card><CardContent className="p-6 space-y-3">
+          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-6 space-y-3">
             <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {services.filter((s: any) => !s.vip_only || isVip).map((s: any) => (
@@ -134,7 +134,7 @@ function BookingPage() {
         )}
 
         {step === "pro" && (
-          <Card><CardContent className="p-6 space-y-4">
+          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-6 space-y-4">
             <StepHeader title="Escolha o profissional" onBack={() => setStep("service")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {availableProsForService.map((p: any) => (
@@ -148,7 +148,7 @@ function BookingPage() {
         )}
 
         {step === "date" && (
-          <Card><CardContent className="p-6 space-y-4">
+          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-6 space-y-4">
             <StepHeader title="Escolha a data e o horário" onBack={() => setStep("pro")} />
             <div className="grid md:grid-cols-2 gap-6">
               <div className="border rounded-xl p-3 flex justify-center">
@@ -170,7 +170,7 @@ function BookingPage() {
         )}
 
         {step === "form" && (
-          <Card><CardContent className="p-6 space-y-4">
+          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-6 space-y-4">
             <StepHeader title="Seus dados" onBack={() => setStep("date")} />
             <div className="space-y-3">
               <div><Label>Nome</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
@@ -188,7 +188,7 @@ function BookingPage() {
         )}
 
         {step === "done" && (
-          <Card><CardContent className="p-8 text-center space-y-4">
+          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-8 text-center space-y-4">
             <div className="h-16 w-16 rounded-full bg-success/10 text-success mx-auto grid place-items-center"><Check className="h-8 w-8" /></div>
             <h2 className="text-2xl font-semibold">Agendamento confirmado!</h2>
             <p className="text-muted-foreground">Você receberá a confirmação no WhatsApp.</p>
