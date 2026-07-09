@@ -93,7 +93,7 @@ function ProsTab() {
     <Card><CardContent className="p-6 space-y-4">
       <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} profissionais</h3>
         <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />Novo</Button></DialogTrigger>
-          <ProDialog pro={edit} tenantId={tenantId} onDone={()=>{setOpen(false);setEdit(null);qc.invalidateQueries({queryKey:["pros-all"]});qc.invalidateQueries({queryKey:["pros"]});}}/></Dialog></div>
+          <ProDialog key={edit?.id ?? "new"} pro={edit} tenantId={tenantId} onDone={()=>{setOpen(false);setEdit(null);qc.invalidateQueries({queryKey:["pros-all"]});qc.invalidateQueries({queryKey:["pros"]});}}/></Dialog></div>
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         {(data ?? []).map((p:any) => (
           <div key={p.id} className="p-4 rounded-xl border flex items-center gap-3">
