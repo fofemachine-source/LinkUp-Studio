@@ -15,6 +15,7 @@ import { Check, Scissors, Crown, ArrowLeft, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import bookingHero from "@/assets/booking-hero.png.asset.json";
 
 export const Route = createFileRoute("/booking/$slug")({
   head: ({ params }) => ({ meta: [{ title: `Agende seu horário — ${params.slug}` }, { name: "description", content: "Agendamento online rápido e prático." }] }),
@@ -72,24 +73,32 @@ function BookingPage() {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background">
-      <div className="max-w-3xl mx-auto p-4 md:p-8">
+    <div
+      className="min-h-screen bg-black text-foreground relative"
+      style={{
+        backgroundImage: `linear-gradient(to right, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.75) 45%, rgba(0,0,0,0.25) 100%), url(${bookingHero.url})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center right",
+        backgroundRepeat: "no-repeat",
+      }}
+    >
+      <div className="max-w-xl mx-auto p-4 md:p-8 min-h-screen flex flex-col justify-center">
         <div className="flex items-center gap-4 mb-6">
           <div className="h-14 w-14 rounded-2xl bg-primary text-primary-foreground grid place-items-center shadow-md shrink-0">
             {tenant.logo_url ? <img src={tenant.logo_url} className="h-full w-full object-cover rounded-2xl" alt="" /> : <Scissors className="h-6 w-6" />}
           </div>
           <div>
-            <h1 className="text-2xl md:text-3xl font-semibold">{tenant.name}</h1>
-            <p className="text-sm text-muted-foreground">{tenant.subtitle}</p>
+            <h1 className="text-2xl md:text-3xl font-semibold text-white">{tenant.name}</h1>
+            <p className="text-sm text-white/60">{tenant.subtitle}</p>
           </div>
         </div>
 
         {step === "vip" && (
-          <Card>
+          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white">
             <CardContent className="p-6 md:p-8 space-y-6">
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-accent">
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10">
                 <Crown className="h-6 w-6 text-primary" />
-                <div className="flex-1"><div className="font-semibold">Sou assinante VIP</div><div className="text-xs text-muted-foreground">Assinantes têm acesso exclusivo de segunda a quinta.</div></div>
+                <div className="flex-1"><div className="font-semibold">Sou assinante VIP</div><div className="text-xs text-white/60">Assinantes têm acesso exclusivo de segunda a quinta.</div></div>
                 <Switch checked={isVip} onCheckedChange={(v) => { setIsVip(v); setVipInfo(null); }} />
               </div>
               {isVip && (
@@ -110,7 +119,7 @@ function BookingPage() {
         )}
 
         {step === "service" && (
-          <Card><CardContent className="p-6 space-y-3">
+          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-6 space-y-3">
             <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {services.filter((s: any) => !s.vip_only || isVip).map((s: any) => (
@@ -125,7 +134,7 @@ function BookingPage() {
         )}
 
         {step === "pro" && (
-          <Card><CardContent className="p-6 space-y-4">
+          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-6 space-y-4">
             <StepHeader title="Escolha o profissional" onBack={() => setStep("service")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {availableProsForService.map((p: any) => (
@@ -139,7 +148,7 @@ function BookingPage() {
         )}
 
         {step === "date" && (
-          <Card><CardContent className="p-6 space-y-4">
+          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-6 space-y-4">
             <StepHeader title="Escolha a data e o horário" onBack={() => setStep("pro")} />
             <div className="grid md:grid-cols-2 gap-6">
               <div className="border rounded-xl p-3 flex justify-center">
@@ -161,7 +170,7 @@ function BookingPage() {
         )}
 
         {step === "form" && (
-          <Card><CardContent className="p-6 space-y-4">
+          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-6 space-y-4">
             <StepHeader title="Seus dados" onBack={() => setStep("date")} />
             <div className="space-y-3">
               <div><Label>Nome</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
@@ -179,7 +188,7 @@ function BookingPage() {
         )}
 
         {step === "done" && (
-          <Card><CardContent className="p-8 text-center space-y-4">
+          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white"><CardContent className="p-8 text-center space-y-4">
             <div className="h-16 w-16 rounded-full bg-success/10 text-success mx-auto grid place-items-center"><Check className="h-8 w-8" /></div>
             <h2 className="text-2xl font-semibold">Agendamento confirmado!</h2>
             <p className="text-muted-foreground">Você receberá a confirmação no WhatsApp.</p>
