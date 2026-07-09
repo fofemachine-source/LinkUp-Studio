@@ -41,6 +41,10 @@ function AgendaPage() {
     return arr;
   }, [slotMin]);
 
+  const bookingLink = typeof window !== "undefined" && tenant?.slug
+    ? `${window.location.origin}/booking/${tenant.slug}`
+    : "";
+
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -53,6 +57,19 @@ function AgendaPage() {
           <NewAppointmentDialog tenantId={tenantId} pros={pros ?? []} onDone={() => { setOpenNew(false); qc.invalidateQueries({ queryKey: ["appts"] }); }} defaultDate={date} />
         </Dialog>
       </div>
+
+      <Card className="border-primary/20 bg-primary/5">
+        <CardContent className="p-4 flex flex-wrap items-center gap-3">
+          <div className="flex-1 min-w-[240px]">
+            <div className="text-xs font-semibold text-primary uppercase tracking-wide">Link de agendamento online</div>
+            <div className="text-xs text-muted-foreground">Envie para os clientes agendarem sozinhos.</div>
+          </div>
+          <Input readOnly value={bookingLink} className="max-w-lg font-mono text-xs bg-background" />
+          <Button variant="outline" onClick={() => { navigator.clipboard.writeText(bookingLink); toast.success("Link copiado"); }} disabled={!bookingLink}>Copiar</Button>
+          <Button asChild disabled={!bookingLink}><a href={bookingLink} target="_blank" rel="noreferrer">Abrir</a></Button>
+        </CardContent>
+      </Card>
+
 
       <Card><CardContent className="p-4 flex items-center justify-between">
         <Button variant="ghost" size="icon" onClick={() => setDate(addDays(date, -1))}><ChevronLeft className="h-4 w-4" /></Button>
