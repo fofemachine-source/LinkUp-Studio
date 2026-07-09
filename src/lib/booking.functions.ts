@@ -75,15 +75,7 @@ export const createBooking = createServerFn({ method: "POST" })
     }
 
 
-    // VIP: only VIP subscribers can book on VIP-restricted days (per spec: Mon-Thu = VIP only)
-    const dow = ((start.getUTCDay() + 6) % 7) + 1; // 1=Mon..7=Sun (approx)
-    const vipDays: number[] = (settings?.vip_days as number[] | null) ?? [1,2,3,4];
-    if (vipDays.includes(dow) && !data.isVip) {
-      // VIP-only day for non-VIP — reject.
-      // The spec says: VIPs can book Mon-Thu; non-VIPs the rest. So we allow anyone the other days.
-      // Interpret as: VIPs get priority Mon-Thu; non-VIPs blocked on those days.
-      throw new Error("Este dia é reservado para assinantes VIP. Escolha outro dia ou torne-se assinante.");
-    }
+
 
     // Conflict check
     const { data: conflicts } = await supabase.from("appointments").select("id,start_at,end_at").eq("professional_id", data.professionalId).lt("start_at", end.toISOString()).gt("end_at", start.toISOString()).neq("status", "cancelled");
