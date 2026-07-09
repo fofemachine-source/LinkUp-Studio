@@ -20,7 +20,6 @@ const items = [
 export function AppSidebar() {
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const { data: tenant } = useCurrentTenant();
-  const { data: isSuper } = useIsSuperAdmin();
   const isActive = (path: string) => path === "/app" ? currentPath === "/app" : currentPath.startsWith(path);
 
   return (
