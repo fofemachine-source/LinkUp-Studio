@@ -114,7 +114,7 @@ function BookingPage() {
         </div>
 
         {step === "vip" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl page-transition">
             <CardContent className="p-6 md:p-8 space-y-6">
               <div className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10">
                 <Crown className="h-6 w-6 text-primary" />
@@ -161,7 +161,7 @@ function BookingPage() {
                   )}
                 </div>
               )}
-              <Button className="w-full py-6 rounded-xl bg-gradient-to-r from-blue-950 to-blue-800 hover:from-blue-900 hover:to-blue-700 text-white font-medium border border-blue-500/30 shadow-[0_0_15px_rgba(37,99,235,0.15)] flex justify-between px-6" size="lg" disabled={isVip && (!vipInfo || vipInfo.status !== "active")} onClick={() => setStep("service")}>
+              <Button className="w-full py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" size="lg" disabled={isVip && (!vipInfo || (vipInfo as any).status !== "active")} onClick={() => setStep("service")}>
                 <span>CONTINUAR</span>
                 <ArrowRight className="h-5 w-5" />
               </Button>
@@ -170,7 +170,7 @@ function BookingPage() {
         )}
 
         {step === "service" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl page-transition"><CardContent className="p-6 space-y-6">
             <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {services.filter((s: any) => !s.vip_only || isVip).map((s: any) => (
@@ -185,7 +185,7 @@ function BookingPage() {
         )}
 
         {step === "pro" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl page-transition"><CardContent className="p-6 space-y-6">
             <StepHeader title="Escolha o profissional" onBack={() => setStep("service")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {availableProsForService.map((p: any) => (
@@ -199,7 +199,7 @@ function BookingPage() {
         )}
 
         {step === "date" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl page-transition">
             <CardContent className="p-0">
               <div className="p-6 pb-2">
                 <div className="flex items-center gap-3 mb-1">
@@ -265,7 +265,7 @@ function BookingPage() {
                     )}
                   </div>
 
-                  <Button className="w-full mt-auto py-6 rounded-xl bg-gradient-to-r from-blue-950 to-blue-800 hover:from-blue-900 hover:to-blue-700 text-white font-medium border border-blue-500/30 shadow-[0_0_15px_rgba(37,99,235,0.15)] flex justify-between px-6" size="lg" disabled={!time} onClick={() => setStep("form")}>
+                  <Button className="w-full mt-auto py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" size="lg" disabled={!time} onClick={() => setStep("form")}>
                     <span>CONTINUAR</span>
                     <ArrowRight className="h-5 w-5" />
                   </Button>
@@ -276,7 +276,7 @@ function BookingPage() {
         )}
 
         {step === "form" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl page-transition"><CardContent className="p-6 space-y-6">
             <StepHeader title="Seus dados" onBack={() => setStep("date")} />
             <div className="space-y-4">
               <div className="space-y-2"><Label className="text-white/70">Nome</Label><Input className="bg-neutral-900/50 border-white/10 text-white focus-visible:ring-amber-500" value={name} onChange={(e) => setName(e.target.value)} /></div>
@@ -287,15 +287,15 @@ function BookingPage() {
               <div className="flex items-center text-white/70"><span className="w-24">Profissional:</span> <span className="text-white">{professionals.find((p:any)=>p.id===proId)?.full_name}</span></div>
               <div className="flex items-center text-white/70"><span className="w-24">Data:</span> <span className="text-white">{date && format(date, "dd/MM/yyyy")} às {time}</span></div>
             </div>
-            <Button size="lg" className="w-full mt-auto py-6 rounded-xl bg-gradient-to-r from-blue-950 to-blue-800 hover:from-blue-900 hover:to-blue-700 text-white font-medium border border-blue-500/30 shadow-[0_0_15px_rgba(37,99,235,0.15)] flex justify-between px-6" disabled={!name || phone.replace(/\D/g,"").length < 10 || bookMut.isPending} onClick={() => bookMut.mutate()}>
+            <Button size="lg" className="w-full mt-auto py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" disabled={!name || phone.replace(/\D/g,"").length < 10 || bookMut.isPending} onClick={() => bookMut.mutate()}>
               <span className="flex items-center">{bookMut.isPending ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null} CONFIRMAR AGENDAMENTO</span>
-              {!bookMut.isPending && <Check className="h-5 w-5 text-blue-300" />}
+              {!bookMut.isPending && <Check className="h-5 w-5 text-black" />}
             </Button>
           </CardContent></Card>
         )}
 
         {step === "done" && (
-          <Card className="bg-white border-none text-black shadow-2xl overflow-hidden rounded-3xl mx-auto w-full max-w-lg">
+          <Card className="bg-white border-none text-black shadow-2xl overflow-hidden rounded-3xl mx-auto w-full max-w-lg page-transition">
             <div className="bg-white p-6 md:p-8">
               <div className="text-center mb-6 mt-4">
                 <div className="h-16 w-16 rounded-full border-2 border-amber-500 mx-auto flex items-center justify-center mb-4">
