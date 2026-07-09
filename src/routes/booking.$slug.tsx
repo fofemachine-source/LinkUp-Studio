@@ -42,6 +42,23 @@ function BookingPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
 
+  const slotsQuery = useQuery({
+    queryKey: ["booked", proId, date ? format(date, "yyyy-MM-dd") : ""],
+    enabled: !!proId && !!date,
+    queryFn: () => getSlots({ data: { professionalId: proId, date: format(date!, "yyyy-MM-dd") } }),
+  });
+
+  const bookMut = useMutation({
+    mutationFn: async () => {
+      const [h, m] = time.split(":").map(Number);
+      const start = new Date(date!); start.setHours(h, m, 0, 0);
+      const tenantId = (data as any)?.tenant?.id;
+      return create({ data: { tenantId, professionalId: proId, serviceId, clientName: name, clientWhatsapp: phone, startAt: start.toISOString(), isVip, vipCpf: cpf || undefined } });
+    },
+    onSuccess: () => { toast.success("Agendamento confirmado!"); setStep("done"); },
+    onError: (e: any) => toast.error(e.message ?? "Erro"),
+  });
+
   if (isLoading) return <div className="min-h-screen grid place-items-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   if (!data) return <div className="min-h-screen grid place-items-center p-6 text-center"><div><h1 className="text-2xl font-semibold">Barbearia não encontrada</h1><p className="text-muted-foreground mt-2">Verifique o link de agendamento.</p></div></div>;
 
@@ -51,23 +68,8 @@ function BookingPage() {
   const chosenService = services.find((s: any) => s.id === serviceId);
   const availableProsForService = chosenService?.vip_only && !isVip ? [] : professionals;
 
-  const slotsQuery = useQuery({
-    queryKey: ["booked", proId, date ? format(date, "yyyy-MM-dd") : ""],
-    enabled: !!proId && !!date,
-    queryFn: () => getSlots({ data: { professionalId: proId, date: format(date!, "yyyy-MM-dd") } }),
-  });
-
   const timeSlots = date && slotsQuery.data ? buildSlots(date, settings, slotMin, chosenService?.duration_min ?? slotMin, slotsQuery.data) : [];
 
-  const bookMut = useMutation({
-    mutationFn: async () => {
-      const [h, m] = time.split(":").map(Number);
-      const start = new Date(date!); start.setHours(h, m, 0, 0);
-      return create({ data: { tenantId: tenant.id, professionalId: proId, serviceId, clientName: name, clientWhatsapp: phone, startAt: start.toISOString(), isVip, vipCpf: cpf || undefined } });
-    },
-    onSuccess: () => { toast.success("Agendamento confirmado!"); setStep("done"); },
-    onError: (e: any) => toast.error(e.message ?? "Erro"),
-  });
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background">
