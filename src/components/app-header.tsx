@@ -7,10 +7,13 @@ import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { useQueryClient } from "@tanstack/react-query";
+import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 
 export function AppHeader() {
   const nav = useNavigate();
   const qc = useQueryClient();
+  const { data: tenant } = useCurrentTenant();
+  const { data: role } = useUserRole(tenant?.id);
   const [email, setEmail] = useState<string | null>(null);
   const [fullName, setFullName] = useState<string | null>(null);
   useEffect(() => { supabase.auth.getUser().then(({ data }) => {
@@ -18,6 +21,16 @@ export function AppHeader() {
     setFullName((data.user?.user_metadata as any)?.full_name ?? null);
   }); }, []);
   const initials = (fullName ?? email ?? "U").split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
+
+  const roleLabel = role === "super_admin" 
+    ? "SaaS Admin" 
+    : role === "owner" 
+      ? "Proprietário" 
+      : role === "barber" 
+        ? "Colaborador" 
+        : role === "staff" 
+          ? "Staff" 
+          : "Usuário";
 
   async function signOut() {
     await qc.cancelQueries();
@@ -42,7 +55,7 @@ export function AppHeader() {
           <button className="flex items-center gap-2 rounded-lg hover:bg-muted px-2 py-1.5">
             <div className="text-right hidden sm:block">
               <div className="text-sm font-medium leading-tight">{fullName ?? "Usuário"}</div>
-              <div className="text-xs text-muted-foreground leading-tight">Administrador</div>
+              <div className="text-xs text-muted-foreground leading-tight">{roleLabel}</div>
             </div>
             <Avatar className="h-8 w-8"><AvatarFallback className="bg-primary text-primary-foreground text-xs">{initials}</AvatarFallback></Avatar>
           </button>

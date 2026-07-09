@@ -19,13 +19,18 @@ const items = [
 
 export function AppSidebar() {
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
-  const { data: tenant } = useCurrentTenant();
-  const { data: role } = useUserRole(tenant?.id);
+  const { data: tenant, isLoading: tenantLoading } = useCurrentTenant();
+  const { data: role, isLoading: roleLoading } = useUserRole(tenant?.id);
   const { setOpenMobile } = useSidebar();
   const isActive = (path: string) => path === "/app" ? currentPath === "/app" : currentPath.startsWith(path);
 
   const isBarber = role === "barber";
+  const isLoading = tenantLoading || (tenant?.id ? roleLoading : true);
+
   const visibleItems = items.filter((item) => {
+    if (isLoading) {
+      return false; // Evita piscar abas administrativas antes do papel carregar
+    }
     if (isBarber) {
       return ["Agenda", "Comissões", "Estoque"].includes(item.title);
     }
