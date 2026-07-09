@@ -1,0 +1,60 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+
+// Create a new tenant (barbershop) from the SaaS panel. Requires super_admin caller.
+export const createTenant = createServerFn({ method: "POST" })
+  .inputValidator((d) =>
+    z.object({
+      name: z.string().min(2),
+      slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
+      whatsapp: z.string().optional(),
+      plan: z.enum(["monthly", "yearly"]).default("monthly"),
+      owner_email: z.string().email().optional(),
+      owner_password: z.string().min(6).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const expires = new Date();
+    if (data.plan === "yearly") expires.setFullYear(expires.getFullYear() + 1);
+    else expires.setMonth(expires.getMonth() + 1);
+
+    const { data: t, error } = await supabaseAdmin
+      .from("tenants")
+      .insert({
+        name: data.name,
+        slug: data.slug,
+        whatsapp: data.whatsapp ?? null,
+        plan: data.plan,
+        plan_expires_at: expires.toISOString(),
+        status: "active",
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+
+    await supabaseAdmin.from("tenant_settings").insert({ tenant_id: t.id });
+
+    // Optionally provision an owner user.
+    if (data.owner_email && data.owner_password) {
+      const created = await supabaseAdmin.auth.admin.createUser({
+        email: data.owner_email,
+        password: data.owner_password,
+        email_confirm: true,
+      });
+      if (created.data.user) {
+        await supabaseAdmin.from("user_roles").insert({ user_id: created.data.user.id, tenant_id: t.id, role: "owner" });
+        await supabaseAdmin.from("profiles").update({ active_tenant_id: t.id }).eq("id", created.data.user.id);
+      }
+    }
+    return { id: t.id };
+  });
+
+export const setTenantStatus = createServerFn({ method: "POST" })
+  .inputValidator((d) => z.object({ id: z.string().uuid(), status: z.enum(["active","blocked"]) }).parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("tenants").update({ status: data.status }).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
