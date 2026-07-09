@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SaasLoginRouteImport } from './routes/saas-login'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
@@ -27,6 +28,11 @@ import { Route as AuthenticatedAppAssinaturaRouteImport } from './routes/_authen
 import { Route as AuthenticatedAppAssinantesRouteImport } from './routes/_authenticated/app.assinantes'
 import { Route as AuthenticatedAppAgendaRouteImport } from './routes/_authenticated/app.agenda'
 
+const SaasLoginRoute = SaasLoginRouteImport.update({
+  id: '/saas-login',
+  path: '/saas-login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -122,6 +128,7 @@ const AuthenticatedAppAgendaRoute = AuthenticatedAppAgendaRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/saas-login': typeof SaasLoginRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/saas': typeof AuthenticatedSaasRoute
   '/booking/$slug': typeof BookingSlugRoute
@@ -140,6 +147,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/saas-login': typeof SaasLoginRoute
   '/saas': typeof AuthenticatedSaasRoute
   '/booking/$slug': typeof BookingSlugRoute
   '/app/agenda': typeof AuthenticatedAppAgendaRoute
@@ -159,6 +167,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/saas-login': typeof SaasLoginRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/_authenticated/saas': typeof AuthenticatedSaasRoute
   '/booking/$slug': typeof BookingSlugRoute
@@ -179,6 +188,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/saas-login'
     | '/app'
     | '/saas'
     | '/booking/$slug'
@@ -197,6 +207,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/saas-login'
     | '/saas'
     | '/booking/$slug'
     | '/app/agenda'
@@ -215,6 +226,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/saas-login'
     | '/_authenticated/app'
     | '/_authenticated/saas'
     | '/booking/$slug'
@@ -235,11 +247,19 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  SaasLoginRoute: typeof SaasLoginRoute
   BookingSlugRoute: typeof BookingSlugRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/saas-login': {
+      id: '/saas-login'
+      path: '/saas-login'
+      fullPath: '/saas-login'
+      preLoaderRoute: typeof SaasLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
@@ -410,8 +430,19 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  SaasLoginRoute: SaasLoginRoute,
   BookingSlugRoute: BookingSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

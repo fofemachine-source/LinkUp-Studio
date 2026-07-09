@@ -262,9 +262,6 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
       </DialogFooter>
     </DialogContent>
   );
-}div>
-    </div>
-  );
 }
 
 function NewTenantDialog({ create, onDone }: any) {
