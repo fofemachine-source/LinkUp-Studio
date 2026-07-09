@@ -347,6 +347,7 @@ export type Database = {
       professionals: {
         Row: {
           active: boolean | null
+          auth_user_id: string | null
           commission_pct: number | null
           created_at: string
           email: string | null
@@ -362,6 +363,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean | null
+          auth_user_id?: string | null
           commission_pct?: number | null
           created_at?: string
           email?: string | null
@@ -377,6 +379,7 @@ export type Database = {
         }
         Update: {
           active?: boolean | null
+          auth_user_id?: string | null
           commission_pct?: number | null
           created_at?: string
           email?: string | null
