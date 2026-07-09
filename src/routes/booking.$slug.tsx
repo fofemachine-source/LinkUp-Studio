@@ -111,12 +111,25 @@ function BookingPage() {
                   <Button className="w-full" disabled={!cpf || cpf.replace(/\D/g,"").length !== 11} onClick={async () => {
                     const v = await validate({ data: { tenantId: tenant.id, cpf } });
                     if (!v) { toast.error("CPF não encontrado. Verifique ou desmarque VIP."); return; }
-                    setVipInfo(v); setName((v as any).full_name); toast.success(`Bem-vindo, ${(v as any).full_name}!`);
+                    setVipInfo(v); 
+                    if ((v as any).status === "active") {
+                      setName((v as any).full_name); 
+                      toast.success(`Bem-vindo, ${(v as any).full_name}!`);
+                    }
                   }}>VALIDAR CPF</Button>
-                  {vipInfo && <div className="p-3 rounded-lg bg-success/10 text-sm flex items-center gap-2"><Check className="h-4 w-4 text-success" /> Assinatura ativa — {vipInfo.plan}</div>}
+                  {vipInfo && vipInfo.status === "active" && <div className="p-3 rounded-lg bg-success/10 text-sm flex items-center gap-2"><Check className="h-4 w-4 text-success" /> Assinatura ativa — {vipInfo.plan}</div>}
+                  {vipInfo && vipInfo.status !== "active" && (
+                    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm flex flex-col gap-2">
+                      <div className="flex items-center gap-2 text-red-500 font-medium">Assinatura inativa ou pendente</div>
+                      <div className="text-white/70">Sua assinatura VIP está desativada. Para voltar a agendar como assinante, regularize seu plano.</div>
+                      <a href={`https://wa.me/55${tenant.whatsapp?.replace(/\D/g, '')}?text=${encodeURIComponent('Olá, gostaria de regularizar minha assinatura VIP e fazer o pagamento via PIX.')}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 mt-2 bg-[#25D366] hover:bg-[#128C7E] text-white py-2 px-4 rounded-lg font-medium transition">
+                        <MessageCircle className="h-4 w-4" /> Regularizar via WhatsApp
+                      </a>
+                    </div>
+                  )}
                 </div>
               )}
-              <Button className="w-full py-6 rounded-xl bg-gradient-to-r from-blue-950 to-blue-800 hover:from-blue-900 hover:to-blue-700 text-white font-medium border border-blue-500/30 shadow-[0_0_15px_rgba(37,99,235,0.15)] flex justify-between px-6" size="lg" disabled={isVip && !vipInfo} onClick={() => setStep("service")}>
+              <Button className="w-full py-6 rounded-xl bg-gradient-to-r from-blue-950 to-blue-800 hover:from-blue-900 hover:to-blue-700 text-white font-medium border border-blue-500/30 shadow-[0_0_15px_rgba(37,99,235,0.15)] flex justify-between px-6" size="lg" disabled={isVip && (!vipInfo || vipInfo.status !== "active")} onClick={() => setStep("service")}>
                 <span>CONTINUAR</span>
                 <ArrowRight className="h-5 w-5" />
               </Button>
