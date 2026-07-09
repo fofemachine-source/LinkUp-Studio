@@ -1,4 +1,4 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute, Navigate, redirect } from "@tanstack/react-router";
 import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
@@ -13,6 +13,21 @@ import { format, subDays, startOfDay, endOfDay, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export const Route = createFileRoute("/_authenticated/app/")({
+  beforeLoad: async () => {
+    const { data: userRes } = await supabase.auth.getUser();
+    const uid = userRes.user?.id;
+    if (!uid) throw redirect({ to: "/auth" });
+
+    const { data: profile } = await supabase.from("profiles").select("active_tenant_id").eq("id", uid).maybeSingle();
+    const { data: roles } = await supabase.from("user_roles").select("tenant_id, role").eq("user_id", uid);
+    const tenantId = profile?.active_tenant_id ?? roles?.find((r) => r.tenant_id)?.tenant_id;
+    if (!tenantId) return;
+
+    const { data: userRole } = await supabase.from("user_roles").select("role").eq("user_id", uid).eq("tenant_id", tenantId).maybeSingle();
+    if (userRole?.role === "barber") {
+      throw redirect({ to: "/app/agenda" });
+    }
+  },
   component: PainelGeral,
 });
 
