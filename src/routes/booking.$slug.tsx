@@ -85,7 +85,7 @@ function BookingPage() {
         }}
       />
       <div className="fixed inset-0 bg-gradient-to-r from-black via-black/70 to-transparent pointer-events-none" />
-      <div className="max-w-xl mx-auto p-4 md:p-8 min-h-screen flex flex-col justify-center">
+      <div className="relative z-10 max-w-xl mx-auto p-4 md:p-8 min-h-screen flex flex-col justify-center">
         <div className="flex items-center gap-4 mb-6">
           <div className="h-14 w-14 rounded-2xl bg-primary text-primary-foreground grid place-items-center shadow-md shrink-0">
             {tenant.logo_url ? <img src={tenant.logo_url} className="h-full w-full object-cover rounded-2xl" alt="" /> : <Scissors className="h-6 w-6" />}
