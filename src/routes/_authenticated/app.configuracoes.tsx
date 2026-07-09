@@ -61,10 +61,18 @@ function IdentityTab() {
       <div><Label>Chave PIX</Label><Input value={f.pix_key} onChange={e=>setF({...f,pix_key:e.target.value})}/></div>
       <div><Label>Favorecido PIX</Label><Input value={f.pix_holder} onChange={e=>setF({...f,pix_holder:e.target.value})}/></div>
     </div>
-    <div><Label>Logo</Label><Input type="file" accept="image/*" onChange={(e)=>setLogo(e.target.files?.[0]??null)}/></div>
+    <div>
+      <Label>Logo</Label>
+      <div className="flex items-center gap-4 mt-1">
+        {t?.logo_url && <img src={t.logo_url} className="h-16 w-16 rounded-lg object-cover border" alt="Logo atual"/>}
+        <Input type="file" accept="image/*" onChange={(e)=>setLogo(e.target.files?.[0]??null)}/>
+      </div>
+      {logo && <p className="text-xs text-muted-foreground mt-1">Novo arquivo selecionado: {logo.name}. Clique em Salvar para aplicar.</p>}
+    </div>
     <Button onClick={save}>Salvar identidade</Button>
   </CardContent></Card>);
 }
+
 
 function LocationTab() {
   const { data: t } = useCurrentTenant(); const qc = useQueryClient();
