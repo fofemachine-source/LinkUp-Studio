@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from "@/components/ui/sidebar";
-import { LayoutDashboard, Calendar, ShoppingCart, Users, Crown, Wallet, Package, Award, BarChart3, Settings, CreditCard, Scissors, Server } from "lucide-react";
-import { useCurrentTenant, useIsSuperAdmin } from "@/hooks/use-tenant";
+import { LayoutDashboard, Calendar, ShoppingCart, Users, Crown, Wallet, Package, Award, BarChart3, Settings, CreditCard, Scissors } from "lucide-react";
+import { useCurrentTenant } from "@/hooks/use-tenant";
 
 const items = [
   { title: "Painel Geral", url: "/app", icon: LayoutDashboard },
@@ -20,7 +20,6 @@ const items = [
 export function AppSidebar() {
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const { data: tenant } = useCurrentTenant();
-  const { data: isSuper } = useIsSuperAdmin();
   const isActive = (path: string) => path === "/app" ? currentPath === "/app" : currentPath.startsWith(path);
 
   return (
@@ -50,13 +49,6 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
-              {isSuper && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={currentPath.startsWith("/saas")} className="mt-4 border-t pt-3">
-                    <Link to="/saas"><Server className="h-4 w-4" /><span>Painel SaaS</span></Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
