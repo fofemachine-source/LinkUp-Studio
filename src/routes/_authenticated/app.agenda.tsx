@@ -14,6 +14,7 @@ import { addDays, format, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { brl } from "@/lib/format";
 
 export const Route = createFileRoute("/_authenticated/app/agenda")({ component: AgendaPage });
 
@@ -263,9 +264,9 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate }: { tenantI
           </div>
         </div>
 
-        <div className="bg-[#eff6ff] border border-[#bfdbfe] rounded-xl p-4 flex justify-between items-center text-[#1d4ed8]">
+        <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 flex justify-between items-center text-primary">
           <div className="flex items-center gap-3">
-            <div className="bg-[#dbeafe] p-2 rounded-lg text-lg">✂️</div>
+            <div className="bg-primary/20 p-2 rounded-lg text-lg">✂️</div>
             <div>
               <div className="font-semibold text-sm">Resumo Estimado</div>
               <div className="text-xs opacity-80">Tempo de Cadeira: {totalTime} min</div>
@@ -293,7 +294,7 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate }: { tenantI
       
       <div className="p-6 pt-0 flex justify-end gap-3">
         <Button variant="outline" onClick={onDone} className="rounded-full">Fechar</Button>
-        <Button onClick={save} disabled={busy || !clientId || !proId || selectedSvcs.length===0} className="rounded-full bg-[#1d4ed8] hover:bg-[#1e40af] text-white">CONFIRMAR RESERVA</Button>
+        <Button onClick={save} disabled={busy || !clientId || !proId || selectedSvcs.length===0} className="rounded-full">CONFIRMAR RESERVA</Button>
       </div>
     </DialogContent>
   );

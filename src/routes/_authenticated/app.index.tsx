@@ -42,14 +42,19 @@ function PainelGeral() {
       ]);
 
       // last 7 days revenue
-      const days: { d: string; v: number }[] = [];
+      const daysPromises = [];
       for (let i = 6; i >= 0; i--) {
         const d = subDays(today, i);
         const s = startOfDay(d).toISOString();
         const e = endOfDay(d).toISOString();
-        const { data } = await supabase.from("commandas").select("total").eq("tenant_id", tenantId!).eq("status", "closed").gte("closed_at", s).lte("closed_at", e);
-        days.push({ d: format(d, "dd/MM"), v: (data ?? []).reduce((a, b: any) => a + Number(b.total || 0), 0) });
+        daysPromises.push(
+          supabase.from("commandas").select("total").eq("tenant_id", tenantId!).eq("status", "closed").gte("closed_at", s).lte("closed_at", e).then(({ data }) => {
+            return { d: format(d, "dd/MM"), v: (data ?? []).reduce((a, b: any) => a + Number(b.total || 0), 0), order: -i };
+          })
+        );
       }
+      const daysResults = await Promise.all(daysPromises);
+      const days = daysResults.sort((a, b) => a.order - b.order).map(x => ({ d: x.d, v: x.v }));
       return {
         today: (dayCmds ?? []).reduce((a, b: any) => a + Number(b.total || 0), 0),
         month: (monthCmds ?? []).reduce((a, b: any) => a + Number(b.total || 0), 0),

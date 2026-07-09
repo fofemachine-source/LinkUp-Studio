@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { brl, cpfMask, phoneMask } from "@/lib/format";
 import { Calendar as CalendarUI } from "@/components/ui/calendar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, Scissors, Crown, ArrowLeft, ArrowRight, Calendar as CalendarIcon, Loader2 } from "lucide-react";
+import { Check, Scissors, Crown, ArrowLeft, ArrowRight, Calendar as CalendarIcon, Loader2, MapPin, MessageCircle, Share2, Download, Plus } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -243,12 +243,100 @@ function BookingPage() {
         )}
 
         {step === "done" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-10 text-center space-y-6">
-            <div className="h-20 w-20 rounded-full bg-success/10 border border-success/20 text-success mx-auto flex items-center justify-center"><Check className="h-10 w-10" /></div>
-            <h2 className="text-2xl font-semibold">Agendamento confirmado!</h2>
-            <p className="text-white/50 pb-4">Você receberá a confirmação no WhatsApp.</p>
-            <Button className="w-full py-6 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white font-medium border border-white/10 transition-colors" onClick={() => window.location.reload()}>NOVO AGENDAMENTO</Button>
-          </CardContent></Card>
+          <Card className="bg-white border-none text-black shadow-2xl overflow-hidden rounded-3xl mx-auto w-full max-w-lg">
+            <div className="bg-white p-6 md:p-8">
+              <div className="text-center space-y-2 mb-8 mt-2">
+                <div className="h-16 w-16 mx-auto bg-black text-amber-500 rounded-full flex items-center justify-center shadow-lg border-2 border-amber-500/20 mb-4 overflow-hidden">
+                  {tenant.logo_url ? <img src={tenant.logo_url} className="h-full w-full object-cover" alt="" /> : <span className="font-bold text-2xl">{(tenant.name as string)[0]}</span>}
+                </div>
+                <h2 className="text-xl font-bold">{tenant.name}</h2>
+                <p className="text-xs text-amber-600 font-semibold uppercase tracking-widest">{tenant.subtitle ?? "Soluções Premium"}</p>
+                <div className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">AGENDAMENTO ONLINE DE CLIENTES</div>
+                <div className="text-xs text-gray-400">Rápido, sem senhas e integrado à agenda em tempo real.</div>
+              </div>
+
+              <div className="text-center mb-6">
+                <div className="h-16 w-16 rounded-full border-2 border-amber-500 mx-auto flex items-center justify-center mb-4">
+                  <Check className="h-8 w-8 text-amber-500" />
+                </div>
+                <h3 className="text-2xl font-bold uppercase tracking-wide text-black">RESERVA CONFIRMADA</h3>
+                <p className="text-sm text-amber-600 font-semibold uppercase tracking-wider mt-1">O SEU HORÁRIO FOI GARANTIDO!</p>
+              </div>
+
+              <div className="border border-amber-500/20 rounded-2xl p-5 bg-[#faf8f5] space-y-5">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">CÓDIGO DA RESERVA</div>
+                    <div className="text-sm font-bold text-black">{bookMut.data?.id?.split("-")[0].toUpperCase() || "NSFRAYOLVI"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">DATA E HORA</div>
+                    <div className="text-sm font-bold text-black">{date && format(date, "dd/MM/yyyy")} às {time}</div>
+                  </div>
+                </div>
+
+                <div className="border-t border-amber-500/10 pt-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 shrink-0"><Scissors className="h-4 w-4" /></div>
+                    <div>
+                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">BARBEARIA / ESTABELECIMENTO</div>
+                      <div className="text-sm font-bold text-black">{tenant.name}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-y-4 gap-x-4 border-t border-amber-500/10 pt-4">
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">CLIENTE</div>
+                    <div className="text-sm font-bold text-black">{name}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">TELEFONE</div>
+                    <div className="text-sm font-bold text-black">{phoneMask(phone)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">BARBEIRO</div>
+                    <div className="text-sm font-bold text-black">{professionals.find((p:any)=>p.id===proId)?.full_name}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">SERVIÇO</div>
+                    <div className="text-sm font-bold text-black">{chosenService?.name}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">VALOR</div>
+                    <div className="text-sm font-bold text-amber-600">{brl(chosenService?.price)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">FORMA DE PAGAMENTO</div>
+                    <div className="text-xs font-bold leading-tight text-black">No Local (Pix, Cartão ou Dinheiro)</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-amber-500/20 rounded-2xl p-5 mt-4 bg-[#faf8f5]">
+                 <div className="flex items-start gap-3">
+                    <div className="h-8 w-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 shrink-0"><MapPin className="h-4 w-4" /></div>
+                    <div>
+                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">LOCALIZAÇÃO DO ESTABELECIMENTO</div>
+                      <div className="text-sm font-bold text-black mb-1">{tenant.name}</div>
+                      <div className="text-xs text-gray-500">Endereço principal da barbearia</div>
+                    </div>
+                 </div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <Button variant="outline" className="border-amber-500/20 hover:bg-amber-50 text-xs font-bold" onClick={() => window.open(`https://maps.google.com/?q=${tenant.name}`, "_blank")}><MapPin className="h-4 w-4 mr-2" /> GOOGLE MAPS</Button>
+                <Button variant="outline" className="bg-black hover:bg-neutral-800 text-amber-500 border-none text-xs font-bold" onClick={() => window.open(`https://wa.me/?text=Olá! Fiz um agendamento na ${tenant.name} para o dia ${format(date!, "dd/MM/yyyy")} às ${time}.`, "_blank")}><MessageCircle className="h-4 w-4 mr-2" /> WHATSAPP</Button>
+                <Button variant="outline" className="border-amber-500/20 hover:bg-amber-50 text-xs font-bold" onClick={() => { navigator.clipboard.writeText(`Reserva: ${tenant.name} - ${format(date!, "dd/MM/yyyy")} às ${time}`); toast.success("Reserva copiada!"); }}><Share2 className="h-4 w-4 mr-2" /> COMPARTILHAR RESERVA</Button>
+                <Button variant="outline" className="border-amber-500/20 hover:bg-amber-50 text-xs font-bold" onClick={() => window.print()}><Download className="h-4 w-4 mr-2" /> BAIXAR PDF</Button>
+              </div>
+
+              <div className="mt-4">
+                <Button className="w-full bg-black hover:bg-neutral-900 text-amber-500 text-xs font-bold py-6 rounded-xl shadow-xl" onClick={() => window.location.reload()}><Plus className="h-4 w-4 mr-2 text-amber-500" /> NOVA RESERVA</Button>
+              </div>
+
+            </div>
+          </Card>
         )}
       </div>
     </div>

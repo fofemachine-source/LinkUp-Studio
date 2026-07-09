@@ -241,7 +241,7 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
             </div>
           </div>
           
-          <Button onClick={close} disabled={items.length===0} className="w-full h-12 text-md font-semibold bg-[#4f81fb] hover:bg-[#3d6adb] text-white">
+          <Button onClick={close} disabled={items.length===0} className="w-full h-12 text-md font-semibold w-full h-12 text-md font-semibold">
             FINALIZAR VENDA 💰
           </Button>
         </div>
