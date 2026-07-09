@@ -49,13 +49,6 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
-              {isSuper && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={currentPath.startsWith("/saas")} className="mt-4 border-t pt-3">
-                    <Link to="/saas"><Server className="h-4 w-4" /><span>Painel SaaS</span></Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
