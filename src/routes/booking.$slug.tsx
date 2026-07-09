@@ -15,7 +15,7 @@ import { Check, Scissors, Crown, ArrowLeft, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
-import bookingHero from "@/assets/booking-hero.png.asset.json";
+import bookingHero from "@/assets/barber-hero.png.asset.json";
 
 export const Route = createFileRoute("/booking/$slug")({
   head: ({ params }) => ({ meta: [{ title: `Agende seu horário — ${params.slug}` }, { name: "description", content: "Agendamento online rápido e prático." }] }),
