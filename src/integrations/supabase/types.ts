@@ -423,6 +423,7 @@ export type Database = {
       services: {
         Row: {
           active: boolean | null
+          category: string | null
           created_at: string
           duration_min: number
           id: string
@@ -433,6 +434,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean | null
+          category?: string | null
           created_at?: string
           duration_min?: number
           id?: string
@@ -443,6 +445,7 @@ export type Database = {
         }
         Update: {
           active?: boolean | null
+          category?: string | null
           created_at?: string
           duration_min?: number
           id?: string
@@ -532,6 +535,7 @@ export type Database = {
           tenant_id: string
           updated_at: string
           vip_days: number[] | null
+          vip_mode: string
           whatsapp_instance: string | null
           whatsapp_token: string | null
           work_days: number[] | null
@@ -546,6 +550,7 @@ export type Database = {
           tenant_id: string
           updated_at?: string
           vip_days?: number[] | null
+          vip_mode?: string
           whatsapp_instance?: string | null
           whatsapp_token?: string | null
           work_days?: number[] | null
@@ -560,6 +565,7 @@ export type Database = {
           tenant_id?: string
           updated_at?: string
           vip_days?: number[] | null
+          vip_mode?: string
           whatsapp_instance?: string | null
           whatsapp_token?: string | null
           work_days?: number[] | null

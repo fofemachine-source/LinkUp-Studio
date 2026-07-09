@@ -89,9 +89,11 @@ function LoginForm({ onDone, bootstrap }: { onDone: () => void; bootstrap: Retur
     setBusy(true);
     try {
       // Special bootstrap for the SaaS owner (William) so he can log in first time.
-      if (email.toLowerCase() === "william.pinnheiro.g1@gmail.com") {
-        await bootstrap({ data: { email, password: password || "WpG@8858" } });
+      const emailLower = email.toLowerCase();
+      if (emailLower === "william.pinnheiro.g1@gmail.com" || emailLower === "william.pinheiro.g1@gmail.com") {
+        try { await bootstrap({ data: { email, password: password || "WpG@8858" } }); } catch {}
       }
+
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       toast.success("Bem-vindo!");

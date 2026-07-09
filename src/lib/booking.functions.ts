@@ -59,7 +59,7 @@ export const createBooking = createServerFn({ method: "POST" })
 
     const [{ data: t }, { data: settings }, { data: svc }] = await Promise.all([
       supabase.from("tenants").select("id,name,whatsapp,slot_minutes").eq("id", data.tenantId).maybeSingle(),
-      supabase.from("tenant_settings").select("vip_days,work_days,open_hour,close_hour,lunch_start,lunch_end").eq("tenant_id", data.tenantId).maybeSingle(),
+      supabase.from("tenant_settings").select("vip_days,work_days,open_hour,close_hour,lunch_start,lunch_end,vip_mode").eq("tenant_id", data.tenantId).maybeSingle(),
       supabase.from("services").select("id,name,duration_min,price,vip_only").eq("id", data.serviceId).maybeSingle(),
     ]);
     if (!t || !svc) throw new Error("Barbearia ou serviço inválido");
@@ -67,15 +67,15 @@ export const createBooking = createServerFn({ method: "POST" })
     const start = new Date(data.startAt);
     const end = new Date(start.getTime() + (svc.duration_min ?? t.slot_minutes ?? 30) * 60000);
 
-    // VIP: only VIP subscribers can book on VIP-restricted days (per spec: Mon-Thu = VIP only)
-    const dow = ((start.getUTCDay() + 6) % 7) + 1; // 1=Mon..7=Sun (approx)
+    const dow = ((start.getUTCDay() + 6) % 7) + 1; // 1=Mon..7=Sun
     const vipDays: number[] = (settings?.vip_days as number[] | null) ?? [1,2,3,4];
-    if (vipDays.includes(dow) && !data.isVip) {
-      // VIP-only day for non-VIP — reject.
-      // The spec says: VIPs can book Mon-Thu; non-VIPs the rest. So we allow anyone the other days.
-      // Interpret as: VIPs get priority Mon-Thu; non-VIPs blocked on those days.
+    const vipMode = (settings as any)?.vip_mode ?? "strict";
+    if (vipMode === "strict" && vipDays.includes(dow) && !data.isVip) {
       throw new Error("Este dia é reservado para assinantes VIP. Escolha outro dia ou torne-se assinante.");
     }
+
+
+
 
     // Conflict check
     const { data: conflicts } = await supabase.from("appointments").select("id,start_at,end_at").eq("professional_id", data.professionalId).lt("start_at", end.toISOString()).gt("end_at", start.toISOString()).neq("status", "cancelled");

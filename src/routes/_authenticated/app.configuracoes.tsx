@@ -61,10 +61,18 @@ function IdentityTab() {
       <div><Label>Chave PIX</Label><Input value={f.pix_key} onChange={e=>setF({...f,pix_key:e.target.value})}/></div>
       <div><Label>Favorecido PIX</Label><Input value={f.pix_holder} onChange={e=>setF({...f,pix_holder:e.target.value})}/></div>
     </div>
-    <div><Label>Logo</Label><Input type="file" accept="image/*" onChange={(e)=>setLogo(e.target.files?.[0]??null)}/></div>
+    <div>
+      <Label>Logo</Label>
+      <div className="flex items-center gap-4 mt-1">
+        {t?.logo_url && <img src={t.logo_url} className="h-16 w-16 rounded-lg object-cover border" alt="Logo atual"/>}
+        <Input type="file" accept="image/*" onChange={(e)=>setLogo(e.target.files?.[0]??null)}/>
+      </div>
+      {logo && <p className="text-xs text-muted-foreground mt-1">Novo arquivo selecionado: {logo.name}. Clique em Salvar para aplicar.</p>}
+    </div>
     <Button onClick={save}>Salvar identidade</Button>
   </CardContent></Card>);
 }
+
 
 function LocationTab() {
   const { data: t } = useCurrentTenant(); const qc = useQueryClient();
@@ -81,8 +89,8 @@ function LocationTab() {
 function HoursTab() {
   const { data: t } = useCurrentTenant(); const tenantId = t?.id;
   const { data: s } = useQuery({ queryKey: ["settings", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("tenant_settings").select("*").eq("tenant_id", tenantId!).maybeSingle()).data });
-  const [f, setF] = useState({ open_hour: 8, close_hour: 20, lunch_start: 12, lunch_end: 13, vip_days: [1,2,3,4], work_days: [1,2,3,4,5,6] });
-  useEffect(()=>{if(s)setF({open_hour:s.open_hour??8,close_hour:s.close_hour??20,lunch_start:s.lunch_start??12,lunch_end:s.lunch_end??13,vip_days:s.vip_days??[1,2,3,4],work_days:s.work_days??[1,2,3,4,5,6]});},[s]);
+  const [f, setF] = useState<any>({ open_hour: 8, close_hour: 20, lunch_start: 12, lunch_end: 13, vip_days: [1,2,3,4], work_days: [1,2,3,4,5,6], vip_mode: "strict" });
+  useEffect(()=>{if(s)setF({open_hour:s.open_hour??8,close_hour:s.close_hour??20,lunch_start:s.lunch_start??12,lunch_end:s.lunch_end??13,vip_days:s.vip_days??[1,2,3,4],work_days:s.work_days??[1,2,3,4,5,6],vip_mode:(s as any).vip_mode ?? "strict"});},[s]);
   const dayNames = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
   return (<Card><CardContent className="p-6 space-y-4">
     <div className="grid grid-cols-4 gap-4">
@@ -91,15 +99,36 @@ function HoursTab() {
       <div><Label>Almoço início</Label><Input type="number" value={f.lunch_start} onChange={e=>setF({...f,lunch_start:Number(e.target.value)})}/></div>
       <div><Label>Almoço fim</Label><Input type="number" value={f.lunch_end} onChange={e=>setF({...f,lunch_end:Number(e.target.value)})}/></div>
     </div>
-    <div><Label>Dias VIP (apenas assinantes agendam)</Label>
+    <div>
+      <Label>Dias de funcionamento (todos os clientes)</Label>
       <div className="flex gap-2 mt-2">{[1,2,3,4,5,6,7].map(d=>(
-        <button key={d} type="button" onClick={()=>setF({...f,vip_days:f.vip_days.includes(d)?f.vip_days.filter(x=>x!==d):[...f.vip_days,d]})}
+        <button key={d} type="button" onClick={()=>setF({...f,work_days:f.work_days.includes(d)?f.work_days.filter((x:number)=>x!==d):[...f.work_days,d]})}
+          className={`h-10 px-4 rounded-lg border ${f.work_days.includes(d)?"bg-primary text-primary-foreground border-primary":"border-border"}`}>{dayNames[d%7]}</button>
+      ))}</div>
+    </div>
+    <div><Label>Dias VIP</Label>
+      <div className="flex gap-2 mt-2">{[1,2,3,4,5,6,7].map(d=>(
+        <button key={d} type="button" onClick={()=>setF({...f,vip_days:f.vip_days.includes(d)?f.vip_days.filter((x:number)=>x!==d):[...f.vip_days,d]})}
           className={`h-10 px-4 rounded-lg border ${f.vip_days.includes(d)?"bg-primary text-primary-foreground border-primary":"border-border"}`}>{dayNames[d%7]}</button>
       ))}</div>
+    </div>
+    <div>
+      <Label>Modo dos dias VIP</Label>
+      <div className="grid md:grid-cols-2 gap-3 mt-2">
+        <button type="button" onClick={()=>setF({...f,vip_mode:"strict"})} className={`text-left p-4 rounded-xl border ${f.vip_mode==="strict"?"border-primary bg-primary/5":"border-border"}`}>
+          <div className="font-semibold text-sm">Exclusivo para assinantes</div>
+          <div className="text-xs text-muted-foreground mt-1">Nos dias VIP, apenas assinantes conseguem agendar online.</div>
+        </button>
+        <button type="button" onClick={()=>setF({...f,vip_mode:"open"})} className={`text-left p-4 rounded-xl border ${f.vip_mode==="open"?"border-primary bg-primary/5":"border-border"}`}>
+          <div className="font-semibold text-sm">Aberto para todos</div>
+          <div className="text-xs text-muted-foreground mt-1">Todos podem agendar em qualquer dia — a marcação VIP fica apenas como destaque.</div>
+        </button>
+      </div>
     </div>
     <Button onClick={async()=>{const{error}=await supabase.from("tenant_settings").upsert({...f,tenant_id:tenantId!});if(error)toast.error(error.message);else toast.success("Salvo");}}>Salvar</Button>
   </CardContent></Card>);
 }
+
 
 function WaTab() {
   const { data: t } = useCurrentTenant(); const tenantId = t?.id;
