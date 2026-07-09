@@ -15,7 +15,7 @@ import { Check, Scissors, Crown, ArrowLeft, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
-import bookingHero from "@/assets/booking-hero.png.asset.json";
+import bookingHero from "@/assets/barber-hero.png.asset.json";
 
 export const Route = createFileRoute("/booking/$slug")({
   head: ({ params }) => ({ meta: [{ title: `Agende seu horário — ${params.slug}` }, { name: "description", content: "Agendamento online rápido e prático." }] }),
@@ -73,16 +73,19 @@ function BookingPage() {
 
 
   return (
-    <div
-      className="min-h-screen bg-black text-foreground relative"
-      style={{
-        backgroundImage: `linear-gradient(to right, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.75) 45%, rgba(0,0,0,0.25) 100%), url(${bookingHero.url})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center right",
-        backgroundRepeat: "no-repeat",
-      }}
-    >
-      <div className="max-w-xl mx-auto p-4 md:p-8 min-h-screen flex flex-col justify-center">
+    <div className="min-h-screen bg-black text-foreground relative">
+      <div
+        className="fixed inset-0 pointer-events-none"
+        style={{
+          backgroundImage: `url(${bookingHero.url})`,
+          backgroundSize: "contain",
+          backgroundPosition: "center right",
+          backgroundRepeat: "no-repeat",
+          backgroundColor: "#000",
+        }}
+      />
+      <div className="fixed inset-0 bg-gradient-to-r from-black via-black/70 to-transparent pointer-events-none" />
+      <div className="relative z-10 max-w-xl mx-auto p-4 md:p-8 min-h-screen flex flex-col justify-center">
         <div className="flex items-center gap-4 mb-6">
           <div className="h-14 w-14 rounded-2xl bg-primary text-primary-foreground grid place-items-center shadow-md shrink-0">
             {tenant.logo_url ? <img src={tenant.logo_url} className="h-full w-full object-cover rounded-2xl" alt="" /> : <Scissors className="h-6 w-6" />}
