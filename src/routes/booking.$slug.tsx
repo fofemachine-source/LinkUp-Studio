@@ -97,7 +97,7 @@ function BookingPage() {
         </div>
 
         {step === "vip" && (
-          <Card className="bg-neutral-950 border-white/10 text-white">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl">
             <CardContent className="p-6 md:p-8 space-y-6">
               <div className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10">
                 <Crown className="h-6 w-6 text-primary" />
@@ -116,13 +116,16 @@ function BookingPage() {
                   {vipInfo && <div className="p-3 rounded-lg bg-success/10 text-sm flex items-center gap-2"><Check className="h-4 w-4 text-success" /> Assinatura ativa — {vipInfo.plan}</div>}
                 </div>
               )}
-              <Button className="w-full" size="lg" disabled={isVip && !vipInfo} onClick={() => setStep("service")}>CONTINUAR</Button>
+              <Button className="w-full py-6 rounded-xl bg-gradient-to-r from-blue-950 to-blue-800 hover:from-blue-900 hover:to-blue-700 text-white font-medium border border-blue-500/30 shadow-[0_0_15px_rgba(37,99,235,0.15)] flex justify-between px-6" size="lg" disabled={isVip && !vipInfo} onClick={() => setStep("service")}>
+                <span>CONTINUAR</span>
+                <ArrowRight className="h-5 w-5" />
+              </Button>
             </CardContent>
           </Card>
         )}
 
         {step === "service" && (
-          <Card className="bg-neutral-950 border-white/10 text-white"><CardContent className="p-6 space-y-3">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
             <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {services.filter((s: any) => !s.vip_only || isVip).map((s: any) => (
@@ -137,7 +140,7 @@ function BookingPage() {
         )}
 
         {step === "pro" && (
-          <Card className="bg-neutral-950 border-white/10 text-white"><CardContent className="p-6 space-y-4">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
             <StepHeader title="Escolha o profissional" onBack={() => setStep("service")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {availableProsForService.map((p: any) => (
@@ -221,29 +224,30 @@ function BookingPage() {
         )}
 
         {step === "form" && (
-          <Card className="bg-neutral-950 border-white/10 text-white"><CardContent className="p-6 space-y-4">
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
             <StepHeader title="Seus dados" onBack={() => setStep("date")} />
-            <div className="space-y-3">
-              <div><Label>Nome</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-              <div><Label>WhatsApp</Label><Input value={phoneMask(phone)} onChange={(e) => setPhone(e.target.value)} placeholder="(11) 99999-9999" /></div>
+            <div className="space-y-4">
+              <div className="space-y-2"><Label className="text-white/70">Nome</Label><Input className="bg-neutral-900/50 border-white/10 text-white focus-visible:ring-amber-500" value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div className="space-y-2"><Label className="text-white/70">WhatsApp</Label><Input className="bg-neutral-900/50 border-white/10 text-white focus-visible:ring-amber-500" value={phoneMask(phone)} onChange={(e) => setPhone(e.target.value)} placeholder="(11) 99999-9999" /></div>
             </div>
-            <div className="p-4 rounded-xl bg-muted/50 text-sm space-y-1">
-              <div><span className="text-muted-foreground">Serviço:</span> <strong>{chosenService?.name}</strong> — {brl(chosenService?.price)}</div>
-              <div><span className="text-muted-foreground">Profissional:</span> {professionals.find((p:any)=>p.id===proId)?.full_name}</div>
-              <div><span className="text-muted-foreground">Data:</span> {date && format(date, "dd/MM/yyyy")} às {time}</div>
+            <div className="p-5 rounded-xl bg-neutral-900/80 border border-white/5 text-sm space-y-3">
+              <div className="flex items-center text-white/70"><span className="w-24">Serviço:</span> <strong className="text-white font-medium">{chosenService?.name}</strong> <span className="ml-2 text-amber-500 font-medium">— {brl(chosenService?.price)}</span></div>
+              <div className="flex items-center text-white/70"><span className="w-24">Profissional:</span> <span className="text-white">{professionals.find((p:any)=>p.id===proId)?.full_name}</span></div>
+              <div className="flex items-center text-white/70"><span className="w-24">Data:</span> <span className="text-white">{date && format(date, "dd/MM/yyyy")} às {time}</span></div>
             </div>
-            <Button size="lg" className="w-full" disabled={!name || phone.replace(/\D/g,"").length < 10 || bookMut.isPending} onClick={() => bookMut.mutate()}>
-              {bookMut.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null} CONFIRMAR AGENDAMENTO
+            <Button size="lg" className="w-full mt-auto py-6 rounded-xl bg-gradient-to-r from-blue-950 to-blue-800 hover:from-blue-900 hover:to-blue-700 text-white font-medium border border-blue-500/30 shadow-[0_0_15px_rgba(37,99,235,0.15)] flex justify-between px-6" disabled={!name || phone.replace(/\D/g,"").length < 10 || bookMut.isPending} onClick={() => bookMut.mutate()}>
+              <span className="flex items-center">{bookMut.isPending ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null} CONFIRMAR AGENDAMENTO</span>
+              {!bookMut.isPending && <Check className="h-5 w-5 text-blue-300" />}
             </Button>
           </CardContent></Card>
         )}
 
         {step === "done" && (
-          <Card className="bg-neutral-950 border-white/10 text-white"><CardContent className="p-8 text-center space-y-4">
-            <div className="h-16 w-16 rounded-full bg-success/10 text-success mx-auto grid place-items-center"><Check className="h-8 w-8" /></div>
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-10 text-center space-y-6">
+            <div className="h-20 w-20 rounded-full bg-success/10 border border-success/20 text-success mx-auto flex items-center justify-center"><Check className="h-10 w-10" /></div>
             <h2 className="text-2xl font-semibold">Agendamento confirmado!</h2>
-            <p className="text-muted-foreground">Você receberá a confirmação no WhatsApp.</p>
-            <Button variant="outline" onClick={() => window.location.reload()}>NOVO AGENDAMENTO</Button>
+            <p className="text-white/50 pb-4">Você receberá a confirmação no WhatsApp.</p>
+            <Button className="w-full py-6 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white font-medium border border-white/10 transition-colors" onClick={() => window.location.reload()}>NOVO AGENDAMENTO</Button>
           </CardContent></Card>
         )}
       </div>
@@ -253,9 +257,11 @@ function BookingPage() {
 
 function StepHeader({ title, onBack }: { title: string; onBack: () => void }) {
   return (
-    <div className="flex items-center gap-2 mb-2">
-      <button onClick={onBack} className="h-9 w-9 rounded-lg hover:bg-muted grid place-items-center"><ArrowLeft className="h-4 w-4" /></button>
-      <h2 className="font-semibold text-lg">{title}</h2>
+    <div className="flex items-center gap-3 mb-4">
+      <button onClick={onBack} className="text-amber-500 hover:text-amber-400 transition">
+        <ArrowLeft className="h-5 w-5" />
+      </button>
+      <h2 className="font-semibold text-xl">{title}</h2>
     </div>
   );
 }
