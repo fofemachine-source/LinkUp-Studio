@@ -98,7 +98,7 @@ function AgendaPage() {
               {(pros ?? []).map((p: any) => {
                 const [h, m] = t.split(":").map(Number);
                 const slotTs = new Date(date); slotTs.setHours(h, m, 0, 0);
-                const a = (appts ?? []).find((x: any) => x.professional_id === p.id && new Date(x.start_at).getTime() === slotTs.getTime());
+                const a = (appts ?? []).find((x: any) => x.professional_id === p.id && new Date(x.start_at).getTime() === slotTs.getTime() && x.status !== "no_show" && x.status !== "cancelled");
                 return (
                   <div key={`${p.id}-${t}`} className="border-b border-l p-1 min-h-[54px]">
                     {a ? (
