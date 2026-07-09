@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { createTenant, setTenantStatus } from "@/lib/tenants.functions";
+import { createTenant, setTenantStatus, getTenantOwner, updateTenant } from "@/lib/tenants.functions";
 import { ShieldCheck, Plus, Search, TrendingUp, Building2, DollarSign, Database, Terminal, Settings2, Pencil, Trash2, ExternalLink, Server } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
@@ -108,6 +108,7 @@ function EmpresasTab() {
   const qc = useQueryClient();
   const create = useServerFn(createTenant); const setStatus = useServerFn(setTenantStatus);
   const [open, setOpen] = useState(false);
+  const [editingTenant, setEditingTenant] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const { data: tenants } = useQuery({ queryKey: ["all-tenants"], queryFn: async () => (await supabase.from("tenants").select("*").order("created_at", { ascending: false })).data ?? [] });
@@ -134,6 +135,9 @@ function EmpresasTab() {
           <DialogTrigger asChild><Button className="bg-indigo-600 hover:bg-indigo-700"><Plus className="h-4 w-4 mr-2"/>Cadastrar Empresa</Button></DialogTrigger>
           <NewTenantDialog create={create} onDone={()=>{setOpen(false);qc.invalidateQueries({queryKey:["all-tenants"]});}}/>
         </Dialog>
+        <Dialog open={!!editingTenant} onOpenChange={(v)=>{if(!v)setEditingTenant(null);}}>
+          {editingTenant && <EditTenantDialog tenant={editingTenant} onDone={()=>{setEditingTenant(null);qc.invalidateQueries({queryKey:["all-tenants"]});}}/>}
+        </Dialog>
       </div>
 
       <div className="space-y-3">
@@ -152,8 +156,8 @@ function EmpresasTab() {
                 <a href={`/booking/${t.slug}`} target="_blank" className="text-xs px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 flex items-center gap-1">Link reservas <ExternalLink className="h-3 w-3"/></a>
                 <button onClick={async()=>{await setStatus({data:{id:t.id,status:t.status==="active"?"blocked":"active"}});qc.invalidateQueries({queryKey:["all-tenants"]});}} className="text-xs px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white font-semibold">{t.status==="active"?"Bloquear":"Liberar Acesso"}</button>
                 <button className="text-xs px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 flex items-center gap-1"><Database className="h-3 w-3"/> Backup</button>
-                <button className="h-8 w-8 rounded-md bg-white/10 hover:bg-white/20 flex items-center justify-center"><Pencil className="h-3.5 w-3.5"/></button>
-                <button className="h-8 w-8 rounded-md bg-rose-500/80 hover:bg-rose-500 flex items-center justify-center"><Trash2 className="h-3.5 w-3.5"/></button>
+                <button onClick={()=>setEditingTenant(t)} className="h-8 w-8 rounded-md bg-white/10 hover:bg-white/20 flex items-center justify-center"><Pencil className="h-3.5 w-3.5"/></button>
+                <button className="h-8 w-8 rounded-md bg-rose-500/80 hover:bg-rose-50 flex items-center justify-center"><Trash2 className="h-3.5 w-3.5"/></button>
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5 pt-4 border-t border-white/10">
@@ -165,6 +169,100 @@ function EmpresasTab() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+import { useEffect } from "react";
+
+function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void }) {
+  const getOwner = useServerFn(getTenantOwner);
+  const update = useServerFn(updateTenant);
+  const [f, setF] = useState({
+    name: tenant.name,
+    slug: tenant.slug,
+    whatsapp: tenant.whatsapp ?? "",
+    plan: tenant.plan ?? "monthly",
+    owner_email: "",
+    owner_password: ""
+  });
+  const [loadingOwner, setLoadingOwner] = useState(true);
+
+  useEffect(() => {
+    getOwner({ data: { tenantId: tenant.id } })
+      .then((res) => {
+        if (res) {
+          setF(prev => ({ ...prev, owner_email: res.email }));
+        }
+      })
+      .finally(() => setLoadingOwner(false));
+  }, [tenant.id]);
+
+  async function save() {
+    try {
+      await update({
+        data: {
+          id: tenant.id,
+          name: f.name,
+          slug: f.slug,
+          whatsapp: f.whatsapp || undefined,
+          plan: f.plan as "monthly" | "yearly",
+          owner_email: f.owner_email || undefined,
+          owner_password: f.owner_password || undefined,
+        }
+      });
+      toast.success("Empresa atualizada com sucesso!");
+      onDone();
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao salvar alterações");
+    }
+  }
+
+  return (
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>Editar Barbearia: {tenant.name}</DialogTitle>
+      </DialogHeader>
+      <div className="space-y-3 py-2">
+        <div>
+          <Label>Nome da barbearia</Label>
+          <Input value={f.name} onChange={e=>setF({...f,name:e.target.value,slug:e.target.value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"")})}/>
+        </div>
+        <div>
+          <Label>Slug (URL do agendamento)</Label>
+          <Input value={f.slug} onChange={e=>setF({...f,slug:e.target.value})}/>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>WhatsApp</Label>
+            <Input value={f.whatsapp} onChange={e=>setF({...f,whatsapp:e.target.value})}/>
+          </div>
+          <div>
+            <Label>Plano</Label>
+            <Select value={f.plan} onValueChange={v=>setF({...f,plan:v})}>
+              <SelectTrigger><SelectValue/></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="monthly">Mensal</SelectItem>
+                <SelectItem value="yearly">Anual</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Email do dono</Label>
+            <Input type="email" disabled={loadingOwner} placeholder={loadingOwner ? "Carregando..." : "Email de acesso"} value={f.owner_email} onChange={e=>setF({...f,owner_email:e.target.value})}/>
+          </div>
+          <div>
+            <Label>Nova senha (deixe vazio se não mudar)</Label>
+            <Input type="text" placeholder="Senha de acesso" value={f.owner_password} onChange={e=>setF({...f,owner_password:e.target.value})}/>
+          </div>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={save}>Salvar Alterações</Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}div>
     </div>
   );
 }
