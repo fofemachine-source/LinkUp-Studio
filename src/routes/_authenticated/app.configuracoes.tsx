@@ -40,15 +40,18 @@ function IdentityTab() {
   const [logo, setLogo] = useState<File | null>(null);
   useEffect(() => { if (t) setF({ name: t.name, subtitle: t.subtitle ?? "", primary_color: t.primary_color ?? "#2563eb", slot_minutes: t.slot_minutes ?? 30, pix_key: t.pix_key ?? "", pix_holder: t.pix_holder ?? "" }); }, [t]);
   async function save() {
+    if (!t?.id) return toast.error("Empresa não carregada. Recarregue a página e tente novamente.");
     let logo_url = t?.logo_url;
     if (logo) {
-      const path = `${t!.id}/logo-${Date.now()}-${logo.name}`;
-      const { error } = await supabase.storage.from("assets").upload(path, logo, { upsert: true });
+      const safeName = logo.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${t.id}/logos/${Date.now()}-${safeName}`;
+      const { error } = await supabase.storage.from("assets").upload(path, logo, { upsert: true, contentType: logo.type || "image/jpeg" });
       if (error) return toast.error(error.message);
-      const { data: signed } = await supabase.storage.from("assets").createSignedUrl(path, 60 * 60 * 24 * 365);
-      logo_url = signed?.signedUrl ?? undefined;
+      const { data: signed, error: signedError } = await supabase.storage.from("assets").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
+      if (signedError || !signed?.signedUrl) return toast.error("Logo enviada, mas não foi possível gerar o link de exibição.");
+      logo_url = signed.signedUrl;
     }
-    const { error } = await supabase.from("tenants").update({ ...f, logo_url }).eq("id", t!.id);
+    const { error } = await supabase.from("tenants").update({ ...f, logo_url }).eq("id", t.id);
     if (error) return toast.error(error.message);
     toast.success("Salvo"); qc.invalidateQueries({ queryKey: ["current-tenant"] });
   }

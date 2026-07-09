@@ -15,6 +15,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { brl } from "@/lib/format";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { createProfessionalAccess } from "@/lib/professionals.functions";
+import { useServerFn } from "@tanstack/react-start";
 
 export const Route = createFileRoute("/_authenticated/app/cadastros")({ component: CadastrosPage });
 
@@ -106,6 +108,7 @@ function ProsTab() {
 }
 
 function ProDialog({ pro, tenantId, onDone }: any) {
+  const createAccess = useServerFn(createProfessionalAccess);
   const [f, setF] = useState({
     full_name: pro?.full_name ?? "",
     role_label: pro?.role_label ?? "Barbeiro",
@@ -119,22 +122,45 @@ function ProDialog({ pro, tenantId, onDone }: any) {
     active: pro?.active ?? true,
   });
   const [file, setFile] = useState<File | null>(null);
+  const [allowAccess, setAllowAccess] = useState(Boolean(pro?.auth_user_id));
+  const [accessPassword, setAccessPassword] = useState("");
+  const previewUrl = file ? URL.createObjectURL(file) : f.photo_url;
   async function save() {
+    if (!tenantId) return toast.error("Empresa não carregada. Recarregue a página e tente novamente.");
     if (!f.full_name.trim()) return toast.error("Informe o nome do colaborador");
+    if (allowAccess && !f.email.trim()) return toast.error("Informe o e-mail para liberar acesso ao sistema");
+    if (allowAccess && !pro?.auth_user_id && accessPassword.length < 6) return toast.error("A senha de acesso precisa ter no mínimo 6 caracteres");
     let photo_url = f.photo_url;
     if (file) {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `${tenantId}/pros/${Date.now()}-${safeName}`;
-      const { error } = await supabase.storage.from("assets").upload(path, file, { upsert: true, contentType: file.type });
+      const { error } = await supabase.storage.from("assets").upload(path, file, { upsert: true, contentType: file.type || "image/jpeg" });
       if (error) return toast.error("Erro no upload: " + error.message);
-      const { data: signed } = await supabase.storage.from("assets").createSignedUrl(path, 60 * 60 * 24 * 365);
-      photo_url = signed?.signedUrl ?? "";
+      const { data: signed, error: signedError } = await supabase.storage.from("assets").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
+      if (signedError || !signed?.signedUrl) return toast.error("Foto enviada, mas não foi possível gerar o link de exibição.");
+      photo_url = signed.signedUrl;
     }
     const payload: any = { ...f, photo_url, tenant_id: tenantId };
-    const { error } = pro
-      ? await supabase.from("professionals").update({ ...f, photo_url }).eq("id", pro.id)
-      : await supabase.from("professionals").insert(payload);
+    const saved = pro
+      ? await supabase.from("professionals").update({ ...f, photo_url }).eq("id", pro.id).select("id").single()
+      : await supabase.from("professionals").insert(payload).select("id").single();
+    const { data: savedPro, error } = saved;
     if (error) return toast.error(error.message);
+    if (allowAccess) {
+      try {
+        await createAccess({
+          data: {
+            tenantId,
+            professionalId: savedPro.id,
+            fullName: f.full_name,
+            email: f.email,
+            password: accessPassword || "123456",
+          },
+        });
+      } catch (err: any) {
+        return toast.error(err.message ?? "Profissional salvo, mas o acesso não foi criado.");
+      }
+    }
     toast.success("Salvo"); onDone();
   }
   return (<DialogContent className="max-w-2xl"><DialogHeader><DialogTitle className="flex items-center gap-2 text-primary uppercase text-sm tracking-wide">✓ {pro?"Editar":"Novo"} Registro</DialogTitle></DialogHeader>
@@ -160,10 +186,10 @@ function ProDialog({ pro, tenantId, onDone }: any) {
       <div>
         <Label className="text-xs uppercase tracking-wide text-muted-foreground">Foto do Barbeiro</Label>
         <div className="flex items-center gap-3 p-3 rounded-md border">
-          {f.photo_url ? (
+          {previewUrl ? (
             <div className="relative">
-              <img src={f.photo_url} className="h-16 w-16 rounded-md object-cover"/>
-              <button type="button" onClick={()=>setF({...f,photo_url:""})} className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-white text-xs flex items-center justify-center">×</button>
+              <img src={previewUrl} className="h-16 w-16 rounded-md object-cover"/>
+              <button type="button" onClick={()=>{setF({...f,photo_url:""});setFile(null);}} className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center">×</button>
             </div>
           ) : (
             <div className="h-16 w-16 rounded-md bg-muted flex items-center justify-center text-muted-foreground text-xs">Sem foto</div>
@@ -174,6 +200,15 @@ function ProDialog({ pro, tenantId, onDone }: any) {
             {file && <p className="text-[11px] text-primary mt-1">✓ {file.name} pronto para upload</p>}
           </div>
         </div>
+      </div>
+      <div className="rounded-md border p-3 space-y-3">
+        <div className="flex items-center gap-2"><Switch checked={allowAccess} onCheckedChange={setAllowAccess}/><Label>Acessa o sistema também</Label></div>
+        {allowAccess && (
+          <div className="grid grid-cols-2 gap-3">
+            <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Login / E-mail</Label><Input type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})} placeholder="email@exemplo.com"/></div>
+            <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Senha de acesso</Label><Input type="text" value={accessPassword} onChange={e=>setAccessPassword(e.target.value)} placeholder={pro?.auth_user_id ? "Nova senha opcional" : "Mínimo 6 caracteres"}/></div>
+          </div>
+        )}
       </div>
     </div>
     <DialogFooter className="gap-2"><Button variant="outline" onClick={onDone}>Fechar</Button><Button onClick={save}>SALVAR MUDANÇAS</Button></DialogFooter></DialogContent>);
