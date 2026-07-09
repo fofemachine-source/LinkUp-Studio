@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { brl, cpfMask, phoneMask } from "@/lib/format";
 import { Calendar as CalendarUI } from "@/components/ui/calendar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, Scissors, Crown, ArrowLeft, Loader2 } from "lucide-react";
+import { Check, Scissors, Crown, ArrowLeft, ArrowRight, Calendar as CalendarIcon, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -151,25 +151,73 @@ function BookingPage() {
         )}
 
         {step === "date" && (
-          <Card className="bg-neutral-950 border-white/10 text-white"><CardContent className="p-6 space-y-4">
-            <StepHeader title="Escolha a data e o horário" onBack={() => setStep("pro")} />
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="border rounded-xl p-3 flex justify-center">
-                <CalendarUI mode="single" selected={date} onSelect={setDate} disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))} locale={ptBR} />
-              </div>
-              <div>
-                <div className="text-sm font-medium mb-3">{date ? format(date, "EEEE, dd 'de' MMMM", { locale: ptBR }) : "Selecione uma data"}</div>
-                {slotsQuery.isFetching && <Loader2 className="h-5 w-5 animate-spin" />}
-                <div className="grid grid-cols-3 gap-2">
-                  {timeSlots.map((t) => (
-                    <button key={t.time} disabled={!t.free} onClick={() => setTime(t.time)} className={`py-2 rounded-lg text-sm border ${time === t.time ? "bg-primary text-primary-foreground border-primary" : t.free ? "border-border hover:border-primary" : "bg-muted text-muted-foreground opacity-40 cursor-not-allowed"}`}>{t.time}</button>
-                  ))}
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl">
+            <CardContent className="p-0">
+              <div className="p-6 pb-2">
+                <div className="flex items-center gap-3 mb-1">
+                  <button onClick={() => setStep("pro")} className="text-amber-500 hover:text-amber-400">
+                    <ArrowLeft className="h-5 w-5" />
+                  </button>
+                  <h2 className="font-semibold text-xl">Escolha a data e o horário</h2>
                 </div>
-                {date && timeSlots.length === 0 && <div className="text-sm text-muted-foreground">Sem horários disponíveis neste dia.</div>}
-                <Button className="w-full mt-6" size="lg" disabled={!time} onClick={() => setStep("form")}>CONTINUAR</Button>
+                <p className="text-sm text-white/50 ml-8 mb-6">Selecione quando deseja agendar o atendimento.</p>
               </div>
-            </div>
-          </CardContent></Card>
+
+              <div className="grid md:grid-cols-[1fr_1.2fr] gap-8 px-6 pb-8">
+                {/* Lado do Calendário */}
+                <div className="dark bg-neutral-900 rounded-2xl border border-white/5 p-4 flex flex-col">
+                  <div className="flex-1 w-full flex justify-center">
+                    <CalendarUI 
+                      mode="single" 
+                      selected={date} 
+                      onSelect={setDate} 
+                      disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))} 
+                      locale={ptBR}
+                      className="[&_.rdp-day_button[data-selected=true]]:border-amber-500 [&_.rdp-day_button[data-selected=true]]:border [&_.rdp-day_button[data-selected=true]]:text-amber-500 [&_.rdp-day_button[data-selected=true]]:bg-transparent [&_.rdp-button_previous]:text-amber-500 [&_.rdp-button_next]:text-amber-500 [&_.rdp-caption_label]:text-lg [&_.rdp-caption_label]:font-medium [&_.rdp-head_cell]:text-white/50 [&_.rdp-head_cell]:font-normal"
+                    />
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-white/5 flex items-center gap-3 text-sm text-white/50">
+                     <CalendarIcon className="h-5 w-5 text-amber-500" />
+                     <span>Hoje, {format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: ptBR })}</span>
+                  </div>
+                </div>
+
+                {/* Lado dos Horários */}
+                <div className="flex flex-col space-y-6">
+                  <div className="flex items-start gap-4">
+                     <div className="h-12 w-12 rounded-full border border-amber-500/30 flex items-center justify-center shrink-0">
+                       <CalendarIcon className="h-5 w-5 text-amber-500" />
+                     </div>
+                     <div>
+                       <h3 className="font-medium text-lg">Selecione uma data</h3>
+                       <p className="text-sm text-white/50">Escolha o melhor dia para seu atendimento.</p>
+                     </div>
+                  </div>
+                  
+                  <div className="flex-1">
+                    {slotsQuery.isFetching && <Loader2 className="h-5 w-5 animate-spin" />}
+                    {date ? (
+                      <>
+                        <div className="grid grid-cols-4 gap-2">
+                          {timeSlots.map((t) => (
+                            <button key={t.time} disabled={!t.free} onClick={() => setTime(t.time)} className={`py-2 rounded-lg text-sm border transition-colors ${time === t.time ? "bg-amber-500 text-black font-semibold border-amber-500" : t.free ? "border-white/10 hover:border-amber-500/50" : "bg-neutral-900 text-white/30 opacity-40 cursor-not-allowed"}`}>{t.time}</button>
+                          ))}
+                        </div>
+                        {timeSlots.length === 0 && <div className="text-sm text-white/50">Sem horários disponíveis neste dia.</div>}
+                      </>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-white/30 text-sm">Nenhuma data selecionada.</div>
+                    )}
+                  </div>
+
+                  <Button className="w-full mt-auto py-6 rounded-xl bg-gradient-to-r from-blue-950 to-blue-800 hover:from-blue-900 hover:to-blue-700 text-white font-medium border border-blue-500/30 shadow-[0_0_15px_rgba(37,99,235,0.15)] flex justify-between px-6" size="lg" disabled={!time} onClick={() => setStep("form")}>
+                    <span>CONTINUAR</span>
+                    <ArrowRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {step === "form" && (
