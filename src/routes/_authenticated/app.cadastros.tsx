@@ -55,7 +55,7 @@ function ClientsTab() {
     <Card><CardContent className="p-6 space-y-4">
       <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} clientes</h3>
         <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />Novo</Button></DialogTrigger>
-          <ClientDialog client={edit} tenantId={tenantId} onDone={()=>{setOpen(false); setEdit(null); qc.invalidateQueries({queryKey:["clients"]});}}/></Dialog></div>
+          <ClientDialog key={edit?.id ?? "new"} client={edit} tenantId={tenantId} onDone={()=>{setOpen(false); setEdit(null); qc.invalidateQueries({queryKey:["clients"]});}}/></Dialog></div>
       <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>WhatsApp</TableHead><TableHead>Email</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
         <TableBody>{(data ?? []).map((c: any) => (
           <TableRow key={c.id}><TableCell className="font-medium">{c.full_name}</TableCell><TableCell>{c.whatsapp}</TableCell><TableCell className="text-muted-foreground">{c.email}</TableCell>
@@ -221,7 +221,7 @@ function ServicesTab() {
   return (<Card><CardContent className="p-6 space-y-4">
     <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} serviços</h3>
       <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2"/>Novo</Button></DialogTrigger>
-        <ServiceDialog svc={edit} tenantId={tenantId} onDone={()=>{setOpen(false);setEdit(null);qc.invalidateQueries({queryKey:["services-all"]});}}/></Dialog></div>
+        <ServiceDialog key={edit?.id ?? "new"} svc={edit} tenantId={tenantId} onDone={()=>{setOpen(false);setEdit(null);qc.invalidateQueries({queryKey:["services-all"]});}}/></Dialog></div>
     <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Preço</TableHead><TableHead>Duração</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
       <TableBody>{(data ?? []).map((s:any) => (
         <TableRow key={s.id}><TableCell className="font-medium">{s.name}</TableCell><TableCell>{brl(s.price)}</TableCell><TableCell>{s.duration_min} min</TableCell>
