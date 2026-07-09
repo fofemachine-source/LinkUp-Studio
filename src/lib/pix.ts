@@ -15,6 +15,21 @@ function crc16(payload: string) {
   return crc.toString(16).toUpperCase().padStart(4, "0");
 }
 
+export function normalizePixKey(raw: string) {
+  const s = (raw || "").trim();
+  if (!s) return "";
+  if (s.includes("@")) return s;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) return s.toLowerCase();
+  if (s.startsWith("+")) return s.replace(/[^+\d]/g, "");
+  const digits = s.replace(/\D/g, "");
+  if (digits.length === 11) {
+    if (s.includes("(") && s.includes(")")) return "+55" + digits;
+    return digits;
+  }
+  if (digits.length === 14) return digits;
+  if (digits.length === 10) return "+55" + digits;
+  return digits || s;
+}
 export function buildPixPayload(opts: {
   key: string;
   merchant: string;
@@ -26,7 +41,8 @@ export function buildPixPayload(opts: {
   const merchant = opts.merchant.substring(0, 25).toUpperCase();
   const city = (opts.city ?? "SAO PAULO").substring(0, 15).toUpperCase();
   const gui = tlv("00", "br.gov.bcb.pix");
-  const keyTlv = tlv("01", opts.key);
+  const normalizedKey = normalizePixKey(opts.key);
+  const keyTlv = tlv("01", normalizedKey);
   const desc = opts.description ? tlv("02", opts.description.substring(0, 40)) : "";
   const acc = tlv("26", gui + keyTlv + desc);
   const amount = opts.amount ? tlv("54", opts.amount.toFixed(2)) : "";
