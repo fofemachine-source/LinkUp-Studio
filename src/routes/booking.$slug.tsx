@@ -369,8 +369,6 @@ function BookingPage() {
               <div className="mt-6 grid grid-cols-2 gap-3">
                 <Button variant="outline" className="border-amber-500/20 hover:bg-amber-50 text-xs font-bold" onClick={() => window.open(`https://maps.google.com/?q=${tenant.name}`, "_blank")}><MapPin className="h-4 w-4 mr-2" /> GOOGLE MAPS</Button>
                 <Button variant="outline" className="bg-black hover:bg-neutral-800 text-amber-500 border-none text-xs font-bold" onClick={() => window.open(`https://wa.me/?text=Olá! Fiz um agendamento na ${tenant.name} para o dia ${format(date!, "dd/MM/yyyy")} às ${time}.`, "_blank")}><MessageCircle className="h-4 w-4 mr-2" /> WHATSAPP</Button>
-                <Button variant="outline" className="border-amber-500/20 hover:bg-amber-50 text-xs font-bold" onClick={() => { navigator.clipboard.writeText(`Reserva: ${tenant.name} - ${format(date!, "dd/MM/yyyy")} às ${time}`); toast.success("Reserva copiada!"); }}><Share2 className="h-4 w-4 mr-2" /> COMPARTILHAR RESERVA</Button>
-                <Button variant="outline" className="border-amber-500/20 hover:bg-amber-50 text-xs font-bold" onClick={() => window.print()}><Download className="h-4 w-4 mr-2" /> BAIXAR PDF</Button>
               </div>
 
               <div className="mt-4">
