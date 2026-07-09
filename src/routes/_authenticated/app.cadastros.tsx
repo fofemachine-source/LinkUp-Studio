@@ -106,35 +106,77 @@ function ProsTab() {
 }
 
 function ProDialog({ pro, tenantId, onDone }: any) {
-  const [f, setF] = useState({ full_name: pro?.full_name ?? "", role_label: pro?.role_label ?? "Barbeiro", whatsapp: pro?.whatsapp ?? "", commission_pct: pro?.commission_pct ?? 45, photo_url: pro?.photo_url ?? "", active: pro?.active ?? true });
+  const [f, setF] = useState({
+    full_name: pro?.full_name ?? "",
+    role_label: pro?.role_label ?? "Barbeiro",
+    whatsapp: pro?.whatsapp ?? "",
+    email: pro?.email ?? "",
+    specialty: pro?.specialty ?? "",
+    commission_pct: pro?.commission_pct ?? 45,
+    lunch_start: pro?.lunch_start ?? "12:00",
+    lunch_end: pro?.lunch_end ?? "13:00",
+    photo_url: pro?.photo_url ?? "",
+    active: pro?.active ?? true,
+  });
   const [file, setFile] = useState<File | null>(null);
   async function save() {
+    if (!f.full_name.trim()) return toast.error("Informe o nome do colaborador");
     let photo_url = f.photo_url;
     if (file) {
-      const path = `${tenantId}/pros/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from("assets").upload(path, file, { upsert: true });
-      if (error) return toast.error(error.message);
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${tenantId}/pros/${Date.now()}-${safeName}`;
+      const { error } = await supabase.storage.from("assets").upload(path, file, { upsert: true, contentType: file.type });
+      if (error) return toast.error("Erro no upload: " + error.message);
       const { data: signed } = await supabase.storage.from("assets").createSignedUrl(path, 60 * 60 * 24 * 365);
       photo_url = signed?.signedUrl ?? "";
     }
-    const payload = { ...f, photo_url, tenant_id: tenantId };
-    const { error } = pro ? await supabase.from("professionals").update({ ...f, photo_url }).eq("id", pro.id) : await supabase.from("professionals").insert(payload);
+    const payload: any = { ...f, photo_url, tenant_id: tenantId };
+    const { error } = pro
+      ? await supabase.from("professionals").update({ ...f, photo_url }).eq("id", pro.id)
+      : await supabase.from("professionals").insert(payload);
     if (error) return toast.error(error.message);
     toast.success("Salvo"); onDone();
   }
-  return (<DialogContent><DialogHeader><DialogTitle>{pro?"Editar":"Novo"} profissional</DialogTitle></DialogHeader>
-    <div className="space-y-3">
-      <div><Label>Nome</Label><Input value={f.full_name} onChange={e=>setF({...f,full_name:e.target.value})}/></div>
+  return (<DialogContent className="max-w-2xl"><DialogHeader><DialogTitle className="flex items-center gap-2 text-primary uppercase text-sm tracking-wide">✓ {pro?"Editar":"Novo"} Registro</DialogTitle></DialogHeader>
+    <div className="space-y-4">
+      <div>
+        <Label className="text-xs uppercase tracking-wide text-muted-foreground">Nome Colaborador</Label>
+        <Input value={f.full_name} onChange={e=>setF({...f,full_name:e.target.value})} placeholder="Ex.: Richard Lyan"/>
+      </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><Label>Função</Label><Input value={f.role_label} onChange={e=>setF({...f,role_label:e.target.value})}/></div>
-        <div><Label>WhatsApp</Label><Input value={f.whatsapp} onChange={e=>setF({...f,whatsapp:e.target.value})}/></div>
-        <div><Label>Comissão %</Label><Input type="number" value={f.commission_pct} onChange={e=>setF({...f,commission_pct:Number(e.target.value)})}/></div>
-        <div className="flex items-end gap-2"><Switch checked={f.active} onCheckedChange={(v)=>setF({...f,active:v})}/><Label>Ativo</Label></div>
+        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">WhatsApp</Label><Input value={f.whatsapp} onChange={e=>setF({...f,whatsapp:e.target.value})} placeholder="(99) 99999-9999"/></div>
+        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">E-mail</Label><Input type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})} placeholder="email@exemplo.com"/></div>
+        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Cargo / Categoria</Label><Input value={f.role_label} onChange={e=>setF({...f,role_label:e.target.value})} placeholder="Barbeiro Sênior"/></div>
+        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Especialidade</Label><Input value={f.specialty} onChange={e=>setF({...f,specialty:e.target.value})} placeholder="Navalhado, pigmentação..."/></div>
+        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Comissão Padrão (%)</Label><Input type="number" value={f.commission_pct} onChange={e=>setF({...f,commission_pct:Number(e.target.value)})}/></div>
+        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Situação Cadastral</Label>
+          <select className="w-full h-10 px-3 rounded-md border bg-background" value={f.active?"1":"0"} onChange={e=>setF({...f,active:e.target.value==="1"})}>
+            <option value="1">Ativo Operando</option><option value="0">Inativo</option>
+          </select>
+        </div>
+        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Início Almoço</Label><Input type="time" value={f.lunch_start} onChange={e=>setF({...f,lunch_start:e.target.value})}/></div>
+        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Término Almoço</Label><Input type="time" value={f.lunch_end} onChange={e=>setF({...f,lunch_end:e.target.value})}/></div>
       </div>
-      <div><Label>Foto</Label><Input type="file" accept="image/*" onChange={(e)=>setFile(e.target.files?.[0]??null)}/>
-        {f.photo_url && <img src={f.photo_url} className="h-16 w-16 rounded-full object-cover mt-2"/>}
+      <div>
+        <Label className="text-xs uppercase tracking-wide text-muted-foreground">Foto do Barbeiro</Label>
+        <div className="flex items-center gap-3 p-3 rounded-md border">
+          {f.photo_url ? (
+            <div className="relative">
+              <img src={f.photo_url} className="h-16 w-16 rounded-md object-cover"/>
+              <button type="button" onClick={()=>setF({...f,photo_url:""})} className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-white text-xs flex items-center justify-center">×</button>
+            </div>
+          ) : (
+            <div className="h-16 w-16 rounded-md bg-muted flex items-center justify-center text-muted-foreground text-xs">Sem foto</div>
+          )}
+          <div className="flex-1">
+            <Input type="file" accept="image/*" onChange={(e)=>setFile(e.target.files?.[0]??null)}/>
+            <p className="text-[11px] text-muted-foreground mt-1">Carregue foto quadrada para exibição perfeita no quadrante de horários.</p>
+            {file && <p className="text-[11px] text-primary mt-1">✓ {file.name} pronto para upload</p>}
+          </div>
+        </div>
       </div>
-    </div><DialogFooter><Button onClick={save}>Salvar</Button></DialogFooter></DialogContent>);
+    </div>
+    <DialogFooter className="gap-2"><Button variant="outline" onClick={onDone}>Fechar</Button><Button onClick={save}>SALVAR MUDANÇAS</Button></DialogFooter></DialogContent>);
 }
 
 function ServicesTab() {
