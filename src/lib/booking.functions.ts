@@ -27,7 +27,7 @@ export const validateVip = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const supabase = await pub();
     const cpf = data.cpf.replace(/\D/g, "");
-    const { data: sub } = await supabase.from("subscribers").select("id,full_name,plan,status").eq("tenant_id", data.tenantId).eq("cpf", cpf).maybeSingle();
+    const { data: sub } = await supabase.from("subscribers").select("id,full_name,plan,status,price").eq("tenant_id", data.tenantId).eq("cpf", cpf).maybeSingle();
     return sub ?? null;
   });
 

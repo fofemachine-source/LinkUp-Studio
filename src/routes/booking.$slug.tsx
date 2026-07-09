@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { brl, cpfMask, phoneMask } from "@/lib/format";
 import { Calendar as CalendarUI } from "@/components/ui/calendar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, Scissors, Crown, ArrowLeft, ArrowRight, Calendar as CalendarIcon, Loader2, MapPin, MessageCircle, Share2, Download, Plus } from "lucide-react";
+import { Check, Scissors, Crown, ArrowLeft, ArrowRight, Calendar as CalendarIcon, Loader2, MapPin, MessageCircle, Share2, Download, Plus, Copy } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -23,6 +23,9 @@ export const Route = createFileRoute("/booking/$slug")({
 });
 
 type Step = "vip" | "service" | "pro" | "date" | "form" | "done";
+
+import { buildPixPayload } from "@/lib/pix";
+import { QrCode } from "@/lib/qr";
 
 function BookingPage() {
   const { slug } = Route.useParams();
@@ -59,6 +62,20 @@ function BookingPage() {
     onSuccess: () => { toast.success("Agendamento confirmado!"); setStep("done"); },
     onError: (e: any) => toast.error(e.message ?? "Erro"),
   });
+
+  let inactivePixPayload = "";
+  if (vipInfo && (vipInfo as any).status !== "active" && (data as any)?.tenant) {
+    const tenant = (data as any).tenant;
+    const key = String(tenant.pix_key || "").trim();
+    const holder = String(tenant.pix_holder || "BARBEARIA").substring(0, 25);
+    const cityStr = String(tenant.city || "SAO PAULO").substring(0, 15);
+    const txidStr = String((vipInfo as any).id || "TXID").replace(/[^a-zA-Z0-9]/g, "").substring(0, 25);
+    const amountNum = Number((vipInfo as any).price || 0);
+
+    if (key && amountNum > 0) {
+      try { inactivePixPayload = buildPixPayload({ key, merchant: holder, amount: amountNum, city: cityStr, txid: txidStr }); } catch (err) { console.error(err); }
+    }
+  }
 
   if (isLoading) return <div className="min-h-screen grid place-items-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   if (!data) return <div className="min-h-screen grid place-items-center p-6 text-center"><div><h1 className="text-2xl font-semibold">Barbearia não encontrada</h1><p className="text-muted-foreground mt-2">Verifique o link de agendamento.</p></div></div>;
@@ -117,13 +134,28 @@ function BookingPage() {
                       toast.success(`Bem-vindo, ${(v as any).full_name}!`);
                     }
                   }}>VALIDAR CPF</Button>
-                  {vipInfo && vipInfo.status === "active" && <div className="p-3 rounded-lg bg-success/10 text-sm flex items-center gap-2"><Check className="h-4 w-4 text-success" /> Assinatura ativa — {vipInfo.plan}</div>}
-                  {vipInfo && vipInfo.status !== "active" && (
-                    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm flex flex-col gap-2">
-                      <div className="flex items-center gap-2 text-red-500 font-medium">Assinatura inativa ou pendente</div>
-                      <div className="text-white/70">Sua assinatura VIP está desativada. Para voltar a agendar como assinante, regularize seu plano.</div>
-                      <a href={`https://wa.me/55${tenant.whatsapp?.replace(/\D/g, '')}?text=${encodeURIComponent('Olá, gostaria de regularizar minha assinatura VIP e fazer o pagamento via PIX.')}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 mt-2 bg-[#25D366] hover:bg-[#128C7E] text-white py-2 px-4 rounded-lg font-medium transition">
-                        <MessageCircle className="h-4 w-4" /> Regularizar via WhatsApp
+                  {vipInfo && (vipInfo as any).status === "active" && <div className="p-3 rounded-lg bg-success/10 text-sm flex items-center gap-2"><Check className="h-4 w-4 text-success" /> Assinatura ativa — {(vipInfo as any).plan}</div>}
+                  {vipInfo && (vipInfo as any).status !== "active" && (
+                    <div className="p-5 rounded-xl bg-black/40 border border-white/10 text-sm flex flex-col gap-5 text-center mt-4">
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="text-red-500 font-semibold text-base">Assinatura Inativa ou Pendente</div>
+                        <div className="text-white/70">Realize o pagamento da mensalidade de <strong className="text-primary">{brl(Number((vipInfo as any).price))}</strong> para reativar seu plano {(vipInfo as any).plan}.</div>
+                      </div>
+                      
+                      {inactivePixPayload && (
+                        <div className="bg-white p-3 rounded-xl mx-auto inline-flex shadow-lg">
+                          <QrCode value={inactivePixPayload} size={180} />
+                        </div>
+                      )}
+
+                      {inactivePixPayload && (
+                        <Button variant="outline" className="w-full bg-white/5 border-white/10 text-white hover:bg-white/10 py-5" onClick={()=>{navigator.clipboard.writeText(inactivePixPayload);toast.success("Código PIX copiado!");}}>
+                          <Copy className="h-4 w-4 mr-2" /> Copiar Código PIX Copia-e-Cola
+                        </Button>
+                      )}
+
+                      <a href={`https://wa.me/55${tenant?.whatsapp?.replace(/\D/g, '')}?text=${encodeURIComponent('Olá, acabei de realizar o pagamento do meu plano VIP via PIX. Segue o comprovante:')}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#128C7E] text-white py-3 px-4 rounded-xl font-medium transition w-full shadow-[0_0_15px_rgba(37,211,102,0.15)]">
+                        <MessageCircle className="h-5 w-5" /> Enviar Comprovante no WhatsApp
                       </a>
                     </div>
                   )}
