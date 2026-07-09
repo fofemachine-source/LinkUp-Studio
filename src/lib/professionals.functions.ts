@@ -7,7 +7,7 @@ const accessSchema = z.object({
   professionalId: z.string().uuid(),
   fullName: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(6).optional().nullable(),
 });
 
 export const createProfessionalAccess = createServerFn({ method: "POST" })
@@ -44,17 +44,20 @@ export const createProfessionalAccess = createServerFn({ method: "POST" })
     if (!authUser) {
       const created = await supabaseAdmin.auth.admin.createUser({
         email,
-        password: data.password,
+        password: data.password || "123456",
         email_confirm: true,
         user_metadata: { full_name: data.fullName },
       });
       if (created.error) throw new Error(created.error.message);
       authUser = created.data.user;
     } else {
-      const updated = await supabaseAdmin.auth.admin.updateUserById(authUser.id, {
-        password: data.password,
+      const updateParams: any = {
         user_metadata: { ...authUser.user_metadata, full_name: data.fullName },
-      });
+      };
+      if (data.password && data.password.trim().length >= 6) {
+        updateParams.password = data.password;
+      }
+      const updated = await supabaseAdmin.auth.admin.updateUserById(authUser.id, updateParams);
       if (updated.error) throw new Error(updated.error.message);
       authUser = updated.data.user;
     }
