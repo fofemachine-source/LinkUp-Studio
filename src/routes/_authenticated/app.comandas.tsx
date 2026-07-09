@@ -28,7 +28,7 @@ function ComandasPage() {
         <div><h1 className="text-3xl font-semibold flex items-center gap-2"><ShoppingCart className="h-7 w-7 text-primary"/>Comandas / Venda</h1>
           <p className="text-muted-foreground">Registre atendimentos e vendas.</p></div>
         <Dialog open={newOpen} onOpenChange={setNewOpen}><DialogTrigger asChild><Button size="lg"><Plus className="h-4 w-4 mr-2"/>NOVA COMANDA</Button></DialogTrigger>
-          <NewCmdDialog tenantId={tenantId} onDone={(id)=>{setNewOpen(false);qc.invalidateQueries({queryKey:["cmd-open"]});}}/></Dialog>
+          <NewCmdDialog tenantId={tenantId} onDone={()=>{setNewOpen(false);qc.invalidateQueries({queryKey:["cmd-open"]});}}/></Dialog>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">

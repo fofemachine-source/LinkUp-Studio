@@ -13,11 +13,17 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BookingSlugRouteImport } from './routes/booking.$slug'
+import { Route as AuthenticatedSaasRouteImport } from './routes/_authenticated/saas'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
+import { Route as AuthenticatedAppRelatoriosRouteImport } from './routes/_authenticated/app.relatorios'
+import { Route as AuthenticatedAppEstoqueRouteImport } from './routes/_authenticated/app.estoque'
 import { Route as AuthenticatedAppConfiguracoesRouteImport } from './routes/_authenticated/app.configuracoes'
 import { Route as AuthenticatedAppComissoesRouteImport } from './routes/_authenticated/app.comissoes'
+import { Route as AuthenticatedAppComandasRouteImport } from './routes/_authenticated/app.comandas'
+import { Route as AuthenticatedAppCaixaRouteImport } from './routes/_authenticated/app.caixa'
 import { Route as AuthenticatedAppCadastrosRouteImport } from './routes/_authenticated/app.cadastros'
+import { Route as AuthenticatedAppAssinaturaRouteImport } from './routes/_authenticated/app.assinatura'
 import { Route as AuthenticatedAppAssinantesRouteImport } from './routes/_authenticated/app.assinantes'
 import { Route as AuthenticatedAppAgendaRouteImport } from './routes/_authenticated/app.agenda'
 
@@ -40,6 +46,11 @@ const BookingSlugRoute = BookingSlugRouteImport.update({
   path: '/booking/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedSaasRoute = AuthenticatedSaasRouteImport.update({
+  id: '/saas',
+  path: '/saas',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   id: '/app',
   path: '/app',
@@ -48,6 +59,17 @@ const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
 const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
+const AuthenticatedAppRelatoriosRoute =
+  AuthenticatedAppRelatoriosRouteImport.update({
+    id: '/relatorios',
+    path: '/relatorios',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppEstoqueRoute = AuthenticatedAppEstoqueRouteImport.update({
+  id: '/estoque',
+  path: '/estoque',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
 const AuthenticatedAppConfiguracoesRoute =
@@ -62,10 +84,27 @@ const AuthenticatedAppComissoesRoute =
     path: '/comissoes',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppComandasRoute =
+  AuthenticatedAppComandasRouteImport.update({
+    id: '/comandas',
+    path: '/comandas',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppCaixaRoute = AuthenticatedAppCaixaRouteImport.update({
+  id: '/caixa',
+  path: '/caixa',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
 const AuthenticatedAppCadastrosRoute =
   AuthenticatedAppCadastrosRouteImport.update({
     id: '/cadastros',
     path: '/cadastros',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppAssinaturaRoute =
+  AuthenticatedAppAssinaturaRouteImport.update({
+    id: '/assinatura',
+    path: '/assinatura',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
 const AuthenticatedAppAssinantesRoute =
@@ -84,23 +123,35 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
+  '/saas': typeof AuthenticatedSaasRoute
   '/booking/$slug': typeof BookingSlugRoute
   '/app/agenda': typeof AuthenticatedAppAgendaRoute
   '/app/assinantes': typeof AuthenticatedAppAssinantesRoute
+  '/app/assinatura': typeof AuthenticatedAppAssinaturaRoute
   '/app/cadastros': typeof AuthenticatedAppCadastrosRoute
+  '/app/caixa': typeof AuthenticatedAppCaixaRoute
+  '/app/comandas': typeof AuthenticatedAppComandasRoute
   '/app/comissoes': typeof AuthenticatedAppComissoesRoute
   '/app/configuracoes': typeof AuthenticatedAppConfiguracoesRoute
+  '/app/estoque': typeof AuthenticatedAppEstoqueRoute
+  '/app/relatorios': typeof AuthenticatedAppRelatoriosRoute
   '/app/': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/saas': typeof AuthenticatedSaasRoute
   '/booking/$slug': typeof BookingSlugRoute
   '/app/agenda': typeof AuthenticatedAppAgendaRoute
   '/app/assinantes': typeof AuthenticatedAppAssinantesRoute
+  '/app/assinatura': typeof AuthenticatedAppAssinaturaRoute
   '/app/cadastros': typeof AuthenticatedAppCadastrosRoute
+  '/app/caixa': typeof AuthenticatedAppCaixaRoute
+  '/app/comandas': typeof AuthenticatedAppComandasRoute
   '/app/comissoes': typeof AuthenticatedAppComissoesRoute
   '/app/configuracoes': typeof AuthenticatedAppConfiguracoesRoute
+  '/app/estoque': typeof AuthenticatedAppEstoqueRoute
+  '/app/relatorios': typeof AuthenticatedAppRelatoriosRoute
   '/app': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRoutesById {
@@ -109,12 +160,18 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
+  '/_authenticated/saas': typeof AuthenticatedSaasRoute
   '/booking/$slug': typeof BookingSlugRoute
   '/_authenticated/app/agenda': typeof AuthenticatedAppAgendaRoute
   '/_authenticated/app/assinantes': typeof AuthenticatedAppAssinantesRoute
+  '/_authenticated/app/assinatura': typeof AuthenticatedAppAssinaturaRoute
   '/_authenticated/app/cadastros': typeof AuthenticatedAppCadastrosRoute
+  '/_authenticated/app/caixa': typeof AuthenticatedAppCaixaRoute
+  '/_authenticated/app/comandas': typeof AuthenticatedAppComandasRoute
   '/_authenticated/app/comissoes': typeof AuthenticatedAppComissoesRoute
   '/_authenticated/app/configuracoes': typeof AuthenticatedAppConfiguracoesRoute
+  '/_authenticated/app/estoque': typeof AuthenticatedAppEstoqueRoute
+  '/_authenticated/app/relatorios': typeof AuthenticatedAppRelatoriosRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRouteTypes {
@@ -123,23 +180,35 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/app'
+    | '/saas'
     | '/booking/$slug'
     | '/app/agenda'
     | '/app/assinantes'
+    | '/app/assinatura'
     | '/app/cadastros'
+    | '/app/caixa'
+    | '/app/comandas'
     | '/app/comissoes'
     | '/app/configuracoes'
+    | '/app/estoque'
+    | '/app/relatorios'
     | '/app/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
+    | '/saas'
     | '/booking/$slug'
     | '/app/agenda'
     | '/app/assinantes'
+    | '/app/assinatura'
     | '/app/cadastros'
+    | '/app/caixa'
+    | '/app/comandas'
     | '/app/comissoes'
     | '/app/configuracoes'
+    | '/app/estoque'
+    | '/app/relatorios'
     | '/app'
   id:
     | '__root__'
@@ -147,12 +216,18 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/app'
+    | '/_authenticated/saas'
     | '/booking/$slug'
     | '/_authenticated/app/agenda'
     | '/_authenticated/app/assinantes'
+    | '/_authenticated/app/assinatura'
     | '/_authenticated/app/cadastros'
+    | '/_authenticated/app/caixa'
+    | '/_authenticated/app/comandas'
     | '/_authenticated/app/comissoes'
     | '/_authenticated/app/configuracoes'
+    | '/_authenticated/app/estoque'
+    | '/_authenticated/app/relatorios'
     | '/_authenticated/app/'
   fileRoutesById: FileRoutesById
 }
@@ -193,6 +268,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BookingSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/saas': {
+      id: '/_authenticated/saas'
+      path: '/saas'
+      fullPath: '/saas'
+      preLoaderRoute: typeof AuthenticatedSaasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/app': {
       id: '/_authenticated/app'
       path: '/app'
@@ -205,6 +287,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/app/'
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/relatorios': {
+      id: '/_authenticated/app/relatorios'
+      path: '/relatorios'
+      fullPath: '/app/relatorios'
+      preLoaderRoute: typeof AuthenticatedAppRelatoriosRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/estoque': {
+      id: '/_authenticated/app/estoque'
+      path: '/estoque'
+      fullPath: '/app/estoque'
+      preLoaderRoute: typeof AuthenticatedAppEstoqueRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
     '/_authenticated/app/configuracoes': {
@@ -221,11 +317,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppComissoesRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/comandas': {
+      id: '/_authenticated/app/comandas'
+      path: '/comandas'
+      fullPath: '/app/comandas'
+      preLoaderRoute: typeof AuthenticatedAppComandasRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/caixa': {
+      id: '/_authenticated/app/caixa'
+      path: '/caixa'
+      fullPath: '/app/caixa'
+      preLoaderRoute: typeof AuthenticatedAppCaixaRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/app/cadastros': {
       id: '/_authenticated/app/cadastros'
       path: '/cadastros'
       fullPath: '/app/cadastros'
       preLoaderRoute: typeof AuthenticatedAppCadastrosRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/assinatura': {
+      id: '/_authenticated/app/assinatura'
+      path: '/assinatura'
+      fullPath: '/app/assinatura'
+      preLoaderRoute: typeof AuthenticatedAppAssinaturaRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
     '/_authenticated/app/assinantes': {
@@ -248,18 +365,28 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedAppRouteChildren {
   AuthenticatedAppAgendaRoute: typeof AuthenticatedAppAgendaRoute
   AuthenticatedAppAssinantesRoute: typeof AuthenticatedAppAssinantesRoute
+  AuthenticatedAppAssinaturaRoute: typeof AuthenticatedAppAssinaturaRoute
   AuthenticatedAppCadastrosRoute: typeof AuthenticatedAppCadastrosRoute
+  AuthenticatedAppCaixaRoute: typeof AuthenticatedAppCaixaRoute
+  AuthenticatedAppComandasRoute: typeof AuthenticatedAppComandasRoute
   AuthenticatedAppComissoesRoute: typeof AuthenticatedAppComissoesRoute
   AuthenticatedAppConfiguracoesRoute: typeof AuthenticatedAppConfiguracoesRoute
+  AuthenticatedAppEstoqueRoute: typeof AuthenticatedAppEstoqueRoute
+  AuthenticatedAppRelatoriosRoute: typeof AuthenticatedAppRelatoriosRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
 }
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppAgendaRoute: AuthenticatedAppAgendaRoute,
   AuthenticatedAppAssinantesRoute: AuthenticatedAppAssinantesRoute,
+  AuthenticatedAppAssinaturaRoute: AuthenticatedAppAssinaturaRoute,
   AuthenticatedAppCadastrosRoute: AuthenticatedAppCadastrosRoute,
+  AuthenticatedAppCaixaRoute: AuthenticatedAppCaixaRoute,
+  AuthenticatedAppComandasRoute: AuthenticatedAppComandasRoute,
   AuthenticatedAppComissoesRoute: AuthenticatedAppComissoesRoute,
   AuthenticatedAppConfiguracoesRoute: AuthenticatedAppConfiguracoesRoute,
+  AuthenticatedAppEstoqueRoute: AuthenticatedAppEstoqueRoute,
+  AuthenticatedAppRelatoriosRoute: AuthenticatedAppRelatoriosRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
 }
 
@@ -268,10 +395,12 @@ const AuthenticatedAppRouteWithChildren =
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAppRoute: typeof AuthenticatedAppRouteWithChildren
+  AuthenticatedSaasRoute: typeof AuthenticatedSaasRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAppRoute: AuthenticatedAppRouteWithChildren,
+  AuthenticatedSaasRoute: AuthenticatedSaasRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
