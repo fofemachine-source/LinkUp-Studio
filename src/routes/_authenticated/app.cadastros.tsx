@@ -184,7 +184,7 @@ function ProductsTab() {
           <div className="space-y-3"><div><Label>Nome</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></div>
           <div className="grid grid-cols-2 gap-3"><div><Label>Preço</Label><Input type="number" step="0.01" value={f.price} onChange={e=>setF({...f,price:Number(e.target.value)})}/></div>
           <div><Label>Estoque</Label><Input type="number" value={f.stock} onChange={e=>setF({...f,stock:Number(e.target.value)})}/></div></div></div>
-          <DialogFooter><Button onClick={async()=>{const{error}=await supabase.from("products").insert({...f,tenant_id:tenantId});if(error)toast.error(error.message);else{toast.success("Salvo");setOpen(false);setF({name:"",price:0,stock:0});qc.invalidateQueries({queryKey:["products-all"]});}}}>Salvar</Button></DialogFooter>
+          <DialogFooter><Button onClick={async()=>{const{error}=await supabase.from("products").insert({...f,tenant_id:tenantId!});if(error)toast.error(error.message);else{toast.success("Salvo");setOpen(false);setF({name:"",price:0,stock:0});qc.invalidateQueries({queryKey:["products-all"]});}}}>Salvar</Button></DialogFooter>
         </DialogContent></Dialog></div>
     <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Preço</TableHead><TableHead>Estoque</TableHead></TableRow></TableHeader>
       <TableBody>{(data ?? []).map((p:any)=>(<TableRow key={p.id}><TableCell>{p.name}</TableCell><TableCell>{brl(p.price)}</TableCell><TableCell>{p.stock}</TableCell></TableRow>))}</TableBody></Table>

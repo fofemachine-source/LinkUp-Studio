@@ -82,7 +82,7 @@ function HoursTab() {
   const { data: t } = useCurrentTenant(); const tenantId = t?.id;
   const { data: s } = useQuery({ queryKey: ["settings", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("tenant_settings").select("*").eq("tenant_id", tenantId!).maybeSingle()).data });
   const [f, setF] = useState({ open_hour: 8, close_hour: 20, lunch_start: 12, lunch_end: 13, vip_days: [1,2,3,4], work_days: [1,2,3,4,5,6] });
-  useEffect(()=>{if(s)setF({open_hour:s.open_hour,close_hour:s.close_hour,lunch_start:s.lunch_start,lunch_end:s.lunch_end,vip_days:s.vip_days,work_days:s.work_days});},[s]);
+  useEffect(()=>{if(s)setF({open_hour:s.open_hour??8,close_hour:s.close_hour??20,lunch_start:s.lunch_start??12,lunch_end:s.lunch_end??13,vip_days:s.vip_days??[1,2,3,4],work_days:s.work_days??[1,2,3,4,5,6]});},[s]);
   const dayNames = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
   return (<Card><CardContent className="p-6 space-y-4">
     <div className="grid grid-cols-4 gap-4">
@@ -97,7 +97,7 @@ function HoursTab() {
           className={`h-10 px-4 rounded-lg border ${f.vip_days.includes(d)?"bg-primary text-primary-foreground border-primary":"border-border"}`}>{dayNames[d%7]}</button>
       ))}</div>
     </div>
-    <Button onClick={async()=>{const{error}=await supabase.from("tenant_settings").upsert({...f,tenant_id:tenantId});if(error)toast.error(error.message);else toast.success("Salvo");}}>Salvar</Button>
+    <Button onClick={async()=>{const{error}=await supabase.from("tenant_settings").upsert({...f,tenant_id:tenantId!});if(error)toast.error(error.message);else toast.success("Salvo");}}>Salvar</Button>
   </CardContent></Card>);
 }
 
@@ -114,6 +114,6 @@ function WaTab() {
     <div><Label>Mensagem para o cliente</Label><Textarea rows={3} value={f.message_client_template} onChange={e=>setF({...f,message_client_template:e.target.value})}/>
       <p className="text-xs text-muted-foreground mt-1">Variáveis: {"{cliente}, {barbearia}, {data}, {hora}, {profissional}"}</p></div>
     <div><Label>Mensagem para o barbeiro</Label><Textarea rows={3} value={f.message_pro_template} onChange={e=>setF({...f,message_pro_template:e.target.value})}/></div>
-    <Button onClick={async()=>{const{error}=await supabase.from("tenant_settings").upsert({...f,tenant_id:tenantId});if(error)toast.error(error.message);else toast.success("Salvo");}}>Salvar</Button>
+    <Button onClick={async()=>{const{error}=await supabase.from("tenant_settings").upsert({...f,tenant_id:tenantId!});if(error)toast.error(error.message);else toast.success("Salvo");}}>Salvar</Button>
   </CardContent></Card>);
 }
