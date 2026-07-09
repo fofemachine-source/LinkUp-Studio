@@ -155,7 +155,8 @@ function ServicesTab() {
 }
 
 function ServiceDialog({ svc, tenantId, onDone }: any) {
-  const [f, setF] = useState({ name: svc?.name ?? "", price: svc?.price ?? 0, duration_min: svc?.duration_min ?? 30, vip_only: svc?.vip_only ?? false, active: svc?.active ?? true });
+  const [f, setF] = useState({ name: svc?.name ?? "", category: svc?.category ?? "", price: svc?.price ?? 0, duration_min: svc?.duration_min ?? 30, vip_only: svc?.vip_only ?? false, active: svc?.active ?? true });
+  const suggestions = ["Cabelo", "Barba", "Combo", "Coloração", "Sobrancelha", "Tratamento", "Infantil"];
   async function save() {
     const { error } = svc ? await supabase.from("services").update(f).eq("id", svc.id) : await supabase.from("services").insert({ ...f, tenant_id: tenantId });
     if (error) return toast.error(error.message);
@@ -164,6 +165,11 @@ function ServiceDialog({ svc, tenantId, onDone }: any) {
   return (<DialogContent><DialogHeader><DialogTitle>{svc?"Editar":"Novo"} serviço</DialogTitle></DialogHeader>
     <div className="space-y-3">
       <div><Label>Nome</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></div>
+      <div>
+        <Label>Categoria (digite ou escolha)</Label>
+        <Input list="svc-categories" value={f.category} onChange={e=>setF({...f,category:e.target.value})} placeholder="Ex: Cabelo, Barba, Combo..." />
+        <datalist id="svc-categories">{suggestions.map(s => <option key={s} value={s} />)}</datalist>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <div><Label>Preço</Label><Input type="number" step="0.01" value={f.price} onChange={e=>setF({...f,price:Number(e.target.value)})}/></div>
         <div><Label>Duração (min)</Label><Input type="number" value={f.duration_min} onChange={e=>setF({...f,duration_min:Number(e.target.value)})}/></div>
@@ -171,6 +177,7 @@ function ServiceDialog({ svc, tenantId, onDone }: any) {
       <div className="flex items-center gap-2"><Switch checked={f.vip_only} onCheckedChange={(v)=>setF({...f,vip_only:v})}/><Label>Exclusivo VIP</Label></div>
     </div><DialogFooter><Button onClick={save}>Salvar</Button></DialogFooter></DialogContent>);
 }
+
 
 function ProductsTab() {
   const tenantId = useTenantId(); const qc = useQueryClient();
