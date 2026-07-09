@@ -23,7 +23,6 @@ function AgendaPage() {
   const qc = useQueryClient();
   const [date, setDate] = useState(new Date());
   const [openNew, setOpenNew] = useState(false);
-  const [editAppt, setEditAppt] = useState<any>(null);
   const tenantId = tenant?.id;
 
   const { data: pros } = useQuery({
@@ -102,7 +101,7 @@ function AgendaPage() {
                 return (
                   <div key={`${p.id}-${t}`} className="border-b border-l p-1 min-h-[54px]">
                     {a ? (
-                      <div onClick={() => setEditAppt(a)} className="h-full rounded-lg bg-primary/10 border-l-4 border-primary p-2 text-xs cursor-pointer hover:bg-primary/20 transition-colors">
+                      <div className="h-full rounded-lg bg-primary/10 border-l-4 border-primary p-2 text-xs">
                         <div className="font-semibold truncate">{a.client_name || a.clients?.full_name}</div>
                         <div className="text-muted-foreground truncate">{a.services?.name}</div>
                       </div>
@@ -116,12 +115,6 @@ function AgendaPage() {
           ))}
         </div>
       </div>
-
-      {editAppt && (
-        <Dialog open={!!editAppt} onOpenChange={(v) => !v && setEditAppt(null)}>
-          <EditAppointmentDialog appt={editAppt} tenantId={tenantId} pros={pros ?? []} onDone={() => { setEditAppt(null); qc.invalidateQueries({ queryKey: ["appts"] }); }} onDelete={() => { setEditAppt(null); qc.invalidateQueries({ queryKey: ["appts"] }); }} />
-        </Dialog>
-      )}
     </div>
   );
 }
@@ -302,212 +295,6 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate }: { tenantI
       <div className="p-6 pt-0 flex justify-end gap-3">
         <Button variant="outline" onClick={onDone} className="rounded-full">Fechar</Button>
         <Button onClick={save} disabled={busy || !clientId || !proId || selectedSvcs.length===0} className="rounded-full">CONFIRMAR RESERVA</Button>
-      </div>
-    </DialogContent>
-  );
-}
-
-function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete }: { appt: any; tenantId?: string; pros: any[]; onDone: () => void; onDelete: () => void }) {
-  const [clientId, setClientId] = useState<string>(appt.client_id || "");
-  const [proId, setProId] = useState(appt.professional_id);
-  const startDate = new Date(appt.start_at);
-  const [dateStr, setDateStr] = useState(format(startDate, "yyyy-MM-dd"));
-  const [time, setTime] = useState(format(startDate, "HH:mm"));
-  const [busy, setBusy] = useState(false);
-
-  const [selectedSvcs, setSelectedSvcs] = useState<string[]>([appt.service_id]);
-  const [selectedProds, setSelectedProds] = useState<string[]>([]);
-  const [status, setStatus] = useState(appt.status || "pending");
-  const [obs, setObs] = useState(appt.notes || "");
-
-  const { data: services } = useQuery({ queryKey: ["services-min", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("services").select("*").eq("tenant_id", tenantId!).eq("active", true)).data ?? [] });
-  const { data: products } = useQuery({ queryKey: ["products-min", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("products").select("*").eq("tenant_id", tenantId!).eq("active", true)).data ?? [] });
-  const { data: clients } = useQuery({ queryKey: ["clients-min", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("clients").select("*").eq("tenant_id", tenantId!)).data ?? [] });
-
-  const totalTime = selectedSvcs.reduce((acc, id) => {
-    const s = services?.find(x => x.id === id);
-    return acc + (s?.duration_min ?? 0);
-  }, 0);
-
-  const totalSvcValue = selectedSvcs.reduce((acc, id) => {
-    const s = services?.find(x => x.id === id);
-    return acc + Number(s?.price ?? 0);
-  }, 0);
-
-  const totalProdValue = selectedProds.reduce((acc, id) => {
-    const p = products?.find(x => x.id === id);
-    return acc + Number(p?.price ?? 0);
-  }, 0);
-
-  const totalValue = totalSvcValue + totalProdValue;
-
-  async function save() {
-    setBusy(true);
-    try {
-      if (!clientId && !appt.client_name) throw new Error("Selecione um cliente.");
-      if (selectedSvcs.length === 0) throw new Error("Selecione pelo menos um serviço.");
-      
-      const client = clients?.find(c => c.id === clientId);
-      const name = client?.full_name || appt.client_name || "Cliente";
-      const wa = client?.whatsapp || appt.client_whatsapp || "";
-      
-      const [h, m] = time.split(":").map(Number);
-      let currentStart = new Date(dateStr + "T00:00:00"); 
-      currentStart.setHours(h, m, 0, 0);
-
-      const prodNames = selectedProds.map(id => products?.find(p=>p.id===id)?.name).filter(Boolean).join(", ");
-      const finalObs = [obs, prodNames ? `Produtos: ${prodNames}` : ""].filter(Boolean).join(" | ");
-
-      const firstSvcId = selectedSvcs[0];
-      const firstDuration = services?.find(s => s.id === firstSvcId)?.duration_min ?? 30;
-      const firstEnd = new Date(currentStart.getTime() + firstDuration * 60000);
-
-      const { error: err1 } = await supabase.from("appointments").update({
-          professional_id: proId, service_id: firstSvcId, client_id: clientId || null,
-          client_name: name, client_whatsapp: wa.replace(/\D/g,""),
-          start_at: currentStart.toISOString(), end_at: firstEnd.toISOString(),
-          status: status, notes: finalObs
-      }).eq("id", appt.id);
-      if (err1) throw err1;
-
-      currentStart = firstEnd;
-
-      for (let i = 1; i < selectedSvcs.length; i++) {
-        const sId = selectedSvcs[i];
-        const svc = services?.find(s => s.id === sId);
-        const duration = svc?.duration_min ?? 30;
-        const currentEnd = new Date(currentStart.getTime() + duration * 60000);
-        
-        await supabase.from("appointments").insert({
-          tenant_id: tenantId!, professional_id: proId, service_id: sId, client_id: clientId || null,
-          client_name: name, client_whatsapp: wa.replace(/\D/g,""),
-          start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
-          status: status, source: "manual", notes: null
-        });
-        currentStart = currentEnd;
-      }
-
-      toast.success("Agendamento atualizado!");
-      onDone();
-    } catch (e:any) { toast.error(e.message); } finally { setBusy(false); }
-  }
-
-  async function handleDelete() {
-     if(!confirm("Deseja realmente excluir este agendamento?")) return;
-     setBusy(true);
-     const { error } = await supabase.from("appointments").delete().eq("id", appt.id);
-     setBusy(false);
-     if (error) toast.error(error.message);
-     else { toast.success("Agendamento excluído!"); onDelete(); }
-  }
-
-  const statuses = [
-    {v: "pending", l: "AGENDADO"}, {v: "confirmed", l: "CONFIRMADO"},
-    {v: "in_progress", l: "EM ATENDIMENTO"}, {v: "completed", l: "FINALIZADO"},
-    {v: "cancelled", l: "CANCELADO"}, {v: "no_show", l: "FALTOU"}
-  ];
-
-  return (
-    <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-0">
-      <DialogHeader className="p-6 pb-4 border-b"><DialogTitle className="text-xl uppercase tracking-wide">Alterar Agendamento</DialogTitle></DialogHeader>
-      
-      <div className="p-6 space-y-6">
-        <div className="space-y-4">
-          <div><Label className="text-xs uppercase text-muted-foreground font-semibold">Cliente</Label>
-            <Select value={clientId} onValueChange={setClientId}><SelectTrigger><SelectValue placeholder="Busque ou selecione um cliente..." /></SelectTrigger>
-            <SelectContent>{clients?.map((c:any)=><SelectItem key={c.id} value={c.id}>{c.full_name} ({c.whatsapp})</SelectItem>)}</SelectContent></Select>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div><Label className="text-xs uppercase text-muted-foreground font-semibold">Barbeiro</Label>
-              <Select value={proId} onValueChange={setProId}><SelectTrigger><SelectValue placeholder="Escolha" /></SelectTrigger><SelectContent>{pros.map((p:any)=><SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>)}</SelectContent></Select>
-            </div>
-            <div><Label className="text-xs uppercase text-muted-foreground font-semibold">Dados</Label><Input type="date" value={dateStr} onChange={(e)=>setDateStr(e.target.value)} /></div>
-            <div><Label className="text-xs uppercase text-muted-foreground font-semibold">Horário</Label><Input type="time" value={time} onChange={(e)=>setTime(e.target.value)} /></div>
-          </div>
-        </div>
-
-        <div>
-          <Label className="text-xs uppercase text-muted-foreground font-semibold mb-2 block">Serviços (Selecione um ou mais)</Label>
-          <div className="border rounded-xl bg-background overflow-hidden divide-y">
-            {services?.map((s:any) => {
-              const sel = selectedSvcs.includes(s.id);
-              return (
-                <div key={s.id} onClick={()=>{
-                  if(sel && selectedSvcs.length > 1) setSelectedSvcs(selectedSvcs.filter(id=>id!==s.id));
-                  else if (!sel) setSelectedSvcs([...selectedSvcs, s.id]);
-                }} className={`flex items-center justify-between p-3 cursor-pointer text-sm transition-colors ${sel ? 'bg-primary/10' : 'hover:bg-muted/50'}`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`h-4 w-4 rounded flex items-center justify-center border transition-colors ${sel?'bg-primary border-primary text-primary-foreground':'border-input'}`}>{sel && "✓"}</div>
-                    <span className={sel ? "font-medium text-primary" : ""}>{s.name}</span>
-                  </div>
-                  <span className={sel ? "font-medium text-primary" : "text-muted-foreground"}>{brl(s.price)}</span>
-                </div>
-              )
-            })}
-            {services?.length === 0 && <div className="p-4 text-center text-xs text-muted-foreground">Nenhum serviço cadastrado.</div>}
-          </div>
-        </div>
-
-        <div>
-          <Label className="text-xs uppercase text-muted-foreground font-semibold mb-2 block">Produtos do Estoque (Opcional)</Label>
-          <div className="border rounded-xl bg-background overflow-hidden divide-y">
-            {products?.map((p:any) => {
-              const sel = selectedProds.includes(p.id);
-              return (
-                <div key={p.id} onClick={()=>{
-                  if(sel) setSelectedProds(selectedProds.filter(id=>id!==p.id));
-                  else setSelectedProds([...selectedProds, p.id]);
-                }} className={`flex items-center justify-between p-3 cursor-pointer text-sm transition-colors ${sel ? 'bg-primary/10' : 'hover:bg-muted/50'}`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`h-4 w-4 rounded flex items-center justify-center border transition-colors ${sel?'bg-primary border-primary text-primary-foreground':'border-input'}`}>{sel && "✓"}</div>
-                    <div>
-                      <div className={sel ? "font-medium text-primary" : ""}>{p.name}</div>
-                      <div className="text-xs text-muted-foreground">Estoque: {p.stock} un</div>
-                    </div>
-                  </div>
-                  <span className={sel ? "font-medium text-primary" : "text-muted-foreground"}>{brl(p.price)}</span>
-                </div>
-              )
-            })}
-            {products?.length === 0 && <div className="p-4 text-center text-xs text-muted-foreground">Nenhum produto cadastrado.</div>}
-          </div>
-        </div>
-
-        <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 flex justify-between items-center text-primary">
-          <div className="flex items-center gap-3">
-            <div className="bg-primary/20 p-2 rounded-lg text-lg">✂️</div>
-            <div>
-              <div className="font-semibold text-sm">Resumo Estimado</div>
-              <div className="text-xs opacity-80">Tempo de Cadeira: {totalTime} min</div>
-            </div>
-          </div>
-          <div className="text-xl font-bold">{brl(totalValue)}</div>
-        </div>
-
-        <div>
-          <Label className="text-xs uppercase text-muted-foreground font-semibold mb-2 block">Status do Agendamento</Label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {statuses.map(s => (
-              <button key={s.v} type="button" onClick={()=>setStatus(s.v)} className={`text-xs font-semibold py-2 rounded-full border transition-colors ${status === s.v ? 'bg-primary border-primary text-primary-foreground' : 'bg-background border-border text-muted-foreground hover:border-primary/50'}`}>
-                {s.l}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <Label className="text-xs uppercase text-muted-foreground font-semibold mb-2 block">Observações / Alergias</Label>
-          <textarea value={obs} onChange={e=>setObs(e.target.value)} placeholder="Ex: alergia a mentol, degradê navalhado nas laterais..." className="w-full min-h-[80px] p-3 rounded-xl border border-input bg-transparent text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
-        </div>
-      </div>
-      
-      <div className="p-6 pt-0 flex justify-between gap-3">
-        <Button variant="destructive" onClick={handleDelete} className="rounded-full bg-red-100 text-red-600 hover:bg-red-200 shadow-none border-none">Excluir</Button>
-        <div className="flex gap-3">
-            <Button variant="outline" onClick={onDone} className="rounded-full">Fechar</Button>
-            <Button onClick={save} disabled={busy || (!clientId && !appt.client_name) || !proId || selectedSvcs.length===0} className="rounded-full">SALVAR MUDANÇAS</Button>
-        </div>
       </div>
     </DialogContent>
   );
