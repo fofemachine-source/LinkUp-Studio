@@ -81,18 +81,36 @@ function SubDialog({ tenantId, onDone }: any) {
 }
 
 function PixDialog({ sub, tenant }: { sub: any; tenant: any }) {
-  const key = (tenant?.pix_key ?? "05117727266").replace(/\D/g, "");
-  const holder = tenant?.pix_holder ?? "ERNESTH F P COUTO SILVA";
-  const payload = buildPixPayload({ key, merchant: holder, amount: Number(sub.price), city: tenant?.city ?? "SAO PAULO", txid: sub.id.slice(0,10) });
-  return (<DialogContent><DialogHeader><DialogTitle>PIX — {sub.full_name}</DialogTitle></DialogHeader>
+  const key = String(tenant?.pix_key || "05117727266").replace(/\D/g, "");
+  const holder = String(tenant?.pix_holder || "ERNESTH F P COUTO SILVA").substring(0, 25);
+  const cityStr = String(tenant?.city || "SAO PAULO").substring(0, 15);
+  const txidStr = String(sub?.id || "TXID123").replace(/[^a-zA-Z0-9]/g, "").substring(0, 25);
+  const amountNum = Number(sub?.price || 0);
+
+  let payload = "";
+  try {
+    payload = buildPixPayload({ 
+      key, 
+      merchant: holder, 
+      amount: amountNum, 
+      city: cityStr, 
+      txid: txidStr 
+    });
+  } catch (err) {
+    console.error("Erro gerando PIX:", err);
+  }
+
+  return (<DialogContent><DialogHeader><DialogTitle>PIX — {sub?.full_name || "Assinante"}</DialogTitle></DialogHeader>
     <div className="space-y-4 text-center">
-      <div className="text-3xl font-semibold text-primary">{brl(sub.price)}</div>
-      <div className="text-xs text-muted-foreground">{sub.plan}</div>
-      <div className="flex justify-center"><QrCode value={payload} size={240} /></div>
+      <div className="text-3xl font-semibold text-primary">{brl(amountNum)}</div>
+      <div className="text-xs text-muted-foreground">{sub?.plan || "Plano Mensal"}</div>
+      <div className="flex justify-center">
+        {payload ? <QrCode value={payload} size={240} /> : <div className="p-8 text-xs text-red-500 border rounded-lg">Erro ao gerar QRCode. Verifique as configurações do PIX.</div>}
+      </div>
       <div className="p-3 bg-muted/50 rounded-lg text-left space-y-1 text-xs">
         <div><span className="text-muted-foreground">Chave:</span> <span className="font-mono">{cpfMask(key)}</span></div>
         <div><span className="text-muted-foreground">Favorecido:</span> {holder}</div>
       </div>
-      <Button className="w-full" onClick={()=>{navigator.clipboard.writeText(payload);toast.success("Código PIX copiado!");}}><Copy className="h-4 w-4 mr-2"/>COPIAR CÓDIGO PIX</Button>
+      <Button disabled={!payload} className="w-full" onClick={()=>{navigator.clipboard.writeText(payload);toast.success("Código PIX copiado!");}}><Copy className="h-4 w-4 mr-2"/>COPIAR CÓDIGO PIX</Button>
     </div></DialogContent>);
 }
