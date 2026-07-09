@@ -32,29 +32,29 @@ function AuthPage() {
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
-      <div className="hidden lg:flex flex-col justify-between p-12 bg-gradient-to-br from-primary via-primary to-[oklch(0.35_0.18_264)] text-primary-foreground">
+      <div className="hidden lg:flex flex-col justify-between p-12 bg-[#0a0a0a] text-white border-r border-white/5">
         <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur"><Scissors className="h-6 w-6" /></div>
+          <div className="h-11 w-11 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center backdrop-blur"><Scissors className="h-6 w-6 text-amber-500" /></div>
           <div>
-            <div className="font-semibold text-lg">Ernesth Barbearia</div>
-            <div className="text-xs opacity-80">Soluções Premium</div>
+            <div className="font-semibold text-lg text-white">Ernesth Barbearia</div>
+            <div className="text-xs text-amber-500">Soluções Premium</div>
           </div>
         </div>
         <div>
-          <h1 className="text-4xl font-semibold leading-tight">Gestão completa para sua barbearia.</h1>
-          <p className="mt-4 text-primary-foreground/80 max-w-md">Agenda inteligente, comandas, assinaturas VIP e agendamento online — tudo em um único painel.</p>
+          <h1 className="text-4xl font-semibold leading-tight text-white">Gestão completa para sua barbearia.</h1>
+          <p className="mt-4 text-white/60 max-w-md">Agenda inteligente, comandas, assinaturas VIP e agendamento online — tudo em um único painel.</p>
         </div>
-        <div className="text-xs opacity-70">© {new Date().getFullYear()} Ernesth Soluções</div>
+        <div className="text-xs text-white/40">© {new Date().getFullYear()} Ernesth Soluções</div>
       </div>
 
       <div className="flex items-center justify-center p-6">
         <Card className="w-full max-w-md">
           <CardHeader>
             <div className="flex items-center gap-3 mb-2 lg:hidden">
-              <div className="h-10 w-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center"><Scissors className="h-5 w-5" /></div>
+              <div className="h-10 w-10 rounded-lg bg-[#0a0a0a] text-amber-500 flex items-center justify-center border border-amber-500/30"><Scissors className="h-5 w-5" /></div>
               <div>
                 <div className="font-semibold">Ernesth Barbearia</div>
-                <div className="text-xs text-muted-foreground">Soluções Premium</div>
+                <div className="text-xs text-amber-500">Soluções Premium</div>
               </div>
             </div>
             <CardTitle>Bem-vindo de volta</CardTitle>
@@ -108,7 +108,7 @@ function LoginForm({ onDone, bootstrap }: { onDone: () => void; bootstrap: Retur
     <form onSubmit={submit} className="space-y-4">
       <div className="space-y-2"><Label>E-mail</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus /></div>
       <div className="space-y-2"><Label>Senha</Label><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
-      <Button className="w-full" disabled={busy}>{busy ? "Entrando..." : "Entrar"}</Button>
+      <Button className="w-full bg-[#0a0a0a] hover:bg-black text-amber-500 border border-amber-500/30" disabled={busy}>{busy ? "Entrando..." : "Entrar"}</Button>
     </form>
   );
 }
@@ -145,7 +145,7 @@ function SignupForm({ onDone, provisionOwner }: { onDone: () => void; provisionO
       <div className="space-y-2"><Label>Nome completo</Label><Input value={name} onChange={(e) => setName(e.target.value)} required /></div>
       <div className="space-y-2"><Label>E-mail</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
       <div className="space-y-2"><Label>Senha</Label><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} /></div>
-      <Button className="w-full" disabled={busy}>{busy ? "Criando..." : "Criar conta"}</Button>
+      <Button className="w-full bg-[#0a0a0a] hover:bg-black text-amber-500 border border-amber-500/30" disabled={busy}>{busy ? "Criando..." : "Criar conta"}</Button>
     </form>
   );
 }
