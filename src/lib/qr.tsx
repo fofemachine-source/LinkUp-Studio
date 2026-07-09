@@ -34,5 +34,11 @@ export function QrCode({ value, size = 220 }: { value: string; size?: number }) 
     });
     return () => { cancelled = true; };
   }, [value, size]);
-  return <div ref={ref} className="bg-white rounded-lg p-2 inline-block" style={{ minWidth: size, minHeight: size }}>{!ready && <div className="text-xs text-muted-foreground">Gerando QR…</div>}</div>;
+
+  return (
+    <div className="bg-white rounded-lg p-2 inline-flex items-center justify-center" style={{ minWidth: size, minHeight: size }}>
+      {!ready && <div className="text-xs text-muted-foreground">Gerando QR…</div>}
+      <div ref={ref} style={{ display: ready ? "block" : "none" }} />
+    </div>
+  );
 }
