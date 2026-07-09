@@ -41,9 +41,10 @@ function AgendaPage() {
     return arr;
   }, [slotMin]);
 
-  const bookingLink = typeof window !== "undefined" && tenant?.slug
-    ? `${window.location.origin}/booking/${tenant.slug}`
-    : "";
+  const bookingSlug = tenant?.slug || "ernesth";
+  const bookingLink = typeof window !== "undefined"
+    ? `${window.location.origin}/booking/${bookingSlug}`
+    : `https://barber-pro-plus.lovable.app/booking/${bookingSlug}`;
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">

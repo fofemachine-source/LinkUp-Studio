@@ -23,7 +23,7 @@ export function AppHeader() {
     await qc.cancelQueries();
     qc.clear();
     await supabase.auth.signOut();
-    nav({ to: "/auth", replace: true });
+    nav({ to: "/auth", search: { redirect: "/app" }, replace: true });
   }
 
   return (

@@ -14,6 +14,7 @@ import { signUpOwner } from "@/lib/bootstrap.functions";
 import { useServerFn } from "@tanstack/react-start";
 
 export const Route = createFileRoute("/auth")({
+  ssr: false,
   validateSearch: (s: Record<string, unknown>) => ({ redirect: (s.redirect as string) ?? "/app" }),
   component: AuthPage,
 });

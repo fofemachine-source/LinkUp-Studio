@@ -19,7 +19,7 @@ export const Route = createFileRoute("/_authenticated/saas")({
   ssr: false,
   beforeLoad: async () => {
     const { data: userRes } = await supabase.auth.getUser();
-    if (!userRes.user) throw redirect({ to: "/auth" });
+    if (!userRes.user) throw redirect({ to: "/auth", search: { redirect: "/saas" } });
     const { data } = await supabase.from("user_roles").select("role").eq("user_id", userRes.user.id).eq("role", "super_admin");
     if (!data || data.length === 0) throw redirect({ to: "/app" });
     return {};
@@ -29,7 +29,7 @@ export const Route = createFileRoute("/_authenticated/saas")({
 
 function SaasPanel() {
   const nav = useNavigate();
-  async function signOut() { await supabase.auth.signOut(); nav({ to: "/auth" }); }
+  async function signOut() { await supabase.auth.signOut(); nav({ to: "/auth", search: { redirect: "/saas" } }); }
   const { data: user } = useQuery({ queryKey: ["saas-user"], queryFn: async () => (await supabase.auth.getUser()).data.user });
   const displayName = (user?.user_metadata?.full_name as string) || user?.email?.split("@")[0] || "Super Admin";
 

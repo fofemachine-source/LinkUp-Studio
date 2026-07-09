@@ -16,8 +16,9 @@ export function useCurrentTenant() {
       const { data: userRes } = await supabase.auth.getUser();
       const uid = userRes.user?.id;
       if (!uid) return null;
+      const { data: profile } = await supabase.from("profiles").select("active_tenant_id").eq("id", uid).maybeSingle();
       const { data: roles } = await supabase.from("user_roles").select("tenant_id, role").eq("user_id", uid);
-      const tenantId = roles?.find((r) => r.tenant_id)?.tenant_id;
+      const tenantId = profile?.active_tenant_id ?? roles?.find((r) => r.tenant_id)?.tenant_id;
       if (!tenantId) return null;
       const { data: tenant } = await supabase.from("tenants").select("*").eq("id", tenantId).maybeSingle();
       return tenant as Tenant | null;
