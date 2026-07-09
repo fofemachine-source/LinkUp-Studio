@@ -88,17 +88,17 @@ function BookingPage() {
             {tenant.logo_url ? <img src={tenant.logo_url} className="h-full w-full object-cover rounded-2xl" alt="" /> : <Scissors className="h-6 w-6" />}
           </div>
           <div>
-            <h1 className="text-2xl md:text-3xl font-semibold">{tenant.name}</h1>
-            <p className="text-sm text-muted-foreground">{tenant.subtitle}</p>
+            <h1 className="text-2xl md:text-3xl font-semibold text-white">{tenant.name}</h1>
+            <p className="text-sm text-white/60">{tenant.subtitle}</p>
           </div>
         </div>
 
         {step === "vip" && (
-          <Card>
+          <Card className="bg-neutral-900/80 backdrop-blur-md border-white/10 text-white">
             <CardContent className="p-6 md:p-8 space-y-6">
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-accent">
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10">
                 <Crown className="h-6 w-6 text-primary" />
-                <div className="flex-1"><div className="font-semibold">Sou assinante VIP</div><div className="text-xs text-muted-foreground">Assinantes têm acesso exclusivo de segunda a quinta.</div></div>
+                <div className="flex-1"><div className="font-semibold">Sou assinante VIP</div><div className="text-xs text-white/60">Assinantes têm acesso exclusivo de segunda a quinta.</div></div>
                 <Switch checked={isVip} onCheckedChange={(v) => { setIsVip(v); setVipInfo(null); }} />
               </div>
               {isVip && (
