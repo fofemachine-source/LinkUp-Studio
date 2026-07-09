@@ -109,7 +109,6 @@ function LoginForm({ onDone, bootstrap }: { onDone: () => void; bootstrap: Retur
       <div className="space-y-2"><Label>E-mail</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus /></div>
       <div className="space-y-2"><Label>Senha</Label><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
       <Button className="w-full" disabled={busy}>{busy ? "Entrando..." : "Entrar"}</Button>
-      <p className="text-xs text-muted-foreground text-center">Dica: use <span className="font-mono">william.pinnheiro.g1@gmail.com</span> / <span className="font-mono">WpG@8858</span> para o painel SaaS.</p>
     </form>
   );
 }
