@@ -77,6 +77,59 @@ function BookingPage() {
     }
   }
 
+  const handleVipContinue = () => {
+    let parsedPlan = { name: "", services: [] as string[], professional_id: "" };
+    try {
+      if (vipInfo?.plan?.startsWith("{") || vipInfo?.plan?.startsWith("[")) {
+        parsedPlan = JSON.parse(vipInfo.plan);
+      }
+    } catch(e){}
+
+    if (isVip && parsedPlan.services && parsedPlan.services.length > 0) {
+      if (parsedPlan.professional_id) {
+        setStep("date");
+      } else {
+        setStep("pro");
+      }
+    } else {
+      setStep("service");
+    }
+  };
+
+  const handleProBack = () => {
+    let parsedPlan = { name: "", services: [] as string[], professional_id: "" };
+    try {
+      if (vipInfo?.plan?.startsWith("{") || vipInfo?.plan?.startsWith("[")) {
+        parsedPlan = JSON.parse(vipInfo.plan);
+      }
+    } catch(e){}
+
+    if (isVip && parsedPlan.services && parsedPlan.services.length > 0) {
+      setStep("vip");
+    } else {
+      setStep("service");
+    }
+  };
+
+  const handleDateBack = () => {
+    let parsedPlan = { name: "", services: [] as string[], professional_id: "" };
+    try {
+      if (vipInfo?.plan?.startsWith("{") || vipInfo?.plan?.startsWith("[")) {
+        parsedPlan = JSON.parse(vipInfo.plan);
+      }
+    } catch(e){}
+
+    if (isVip && parsedPlan.services && parsedPlan.services.length > 0) {
+      if (parsedPlan.professional_id) {
+        setStep("vip");
+      } else {
+        setStep("pro");
+      }
+    } else {
+      setStep("pro");
+    }
+  };
+
   if (isLoading) return <div className="min-h-screen grid place-items-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   if (!data) return <div className="min-h-screen grid place-items-center p-6 text-center"><div><h1 className="text-2xl font-semibold">Barbearia não encontrada</h1><p className="text-muted-foreground mt-2">Verifique o link de agendamento.</p></div></div>;
 
@@ -118,7 +171,7 @@ function BookingPage() {
             <CardContent className="p-6 md:p-8 space-y-6">
               <div className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10">
                 <Crown className="h-6 w-6 text-primary" />
-                <div className="flex-1"><div className="font-semibold">Sou assinante VIP</div><div className="text-xs text-white/60">Assinantes têm acesso exclusivo de segunda a quinta.</div></div>
+                <div className="flex-1"><div className="font-semibold">Sou assinante VIP</div><div className="text-xs text-white/60">Assinantes têm acesso exclusive de segunda a quinta.</div></div>
                 <Switch checked={isVip} onCheckedChange={(v) => { setIsVip(v); setVipInfo(null); }} />
               </div>
               {isVip && (
@@ -132,14 +185,48 @@ function BookingPage() {
                     if ((v as any).status === "active") {
                       setName((v as any).full_name); 
                       toast.success(`Bem-vindo, ${(v as any).full_name}!`);
+
+                      // Auto prefill plan service and barber
+                      let parsedPlan = { name: "", services: [] as string[], professional_id: "" };
+                      try {
+                        if ((v as any).plan?.startsWith("{") || (v as any).plan?.startsWith("[")) {
+                          parsedPlan = JSON.parse((v as any).plan);
+                        }
+                      } catch(e){}
+                      
+                      if (parsedPlan.services && parsedPlan.services.length > 0) {
+                        setServiceId(parsedPlan.services[0]);
+                        if (parsedPlan.professional_id) {
+                          setProId(parsedPlan.professional_id);
+                        }
+                      }
                     }
                   }}>VALIDAR CPF</Button>
-                  {vipInfo && (vipInfo as any).status === "active" && <div className="p-3 rounded-lg bg-success/10 text-sm flex items-center gap-2"><Check className="h-4 w-4 text-success" /> Assinatura ativa — {(vipInfo as any).plan}</div>}
+                  {vipInfo && (vipInfo as any).status === "active" && (
+                    <div className="p-3 rounded-lg bg-success/10 text-sm flex items-center gap-2">
+                      <Check className="h-4 w-4 text-success" /> 
+                      Assinatura ativa — {(() => {
+                        try {
+                          if ((vipInfo as any).plan?.startsWith("{") || (vipInfo as any).plan?.startsWith("[")) {
+                            return JSON.parse((vipInfo as any).plan).name;
+                          }
+                        } catch(e){}
+                        return (vipInfo as any).plan;
+                      })()}
+                    </div>
+                  )}
                   {vipInfo && (vipInfo as any).status !== "active" && (
                     <div className="p-5 rounded-xl bg-black/40 border border-white/10 text-sm flex flex-col gap-5 text-center mt-4">
                       <div className="flex flex-col items-center gap-1">
                         <div className="text-red-500 font-semibold text-base">Assinatura Inativa ou Pendente</div>
-                        <div className="text-white/70">Realize o pagamento da mensalidade de <strong className="text-primary">{brl(Number((vipInfo as any).price))}</strong> para reativar seu plano {(vipInfo as any).plan}.</div>
+                        <div className="text-white/70">Realize o pagamento da mensalidade de <strong className="text-primary">{brl(Number((vipInfo as any).price))}</strong> para reativar seu plano {(() => {
+                          try {
+                            if ((vipInfo as any).plan?.startsWith("{") || (vipInfo as any).plan?.startsWith("[")) {
+                              return JSON.parse((vipInfo as any).plan).name;
+                            }
+                          } catch(e){}
+                          return (vipInfo as any).plan;
+                        })()}.</div>
                       </div>
                       
                       {inactivePixPayload && (
@@ -161,7 +248,7 @@ function BookingPage() {
                   )}
                 </div>
               )}
-              <Button className="w-full py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" size="lg" disabled={isVip && (!vipInfo || (vipInfo as any).status !== "active")} onClick={() => setStep("service")}>
+              <Button className="w-full py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" size="lg" disabled={isVip && (!vipInfo || (vipInfo as any).status !== "active")} onClick={handleVipContinue}>
                 <span>CONTINUAR</span>
                 <ArrowRight className="h-5 w-5" />
               </Button>
@@ -178,7 +265,7 @@ function BookingPage() {
                   <div className="flex items-center justify-between"><div className="font-medium">{s.name}</div>{s.vip_only && <Crown className="h-4 w-4 text-primary" />}</div>
                   <div className="text-xs text-muted-foreground mt-1">{s.duration_min} min</div>
                   <div className="font-semibold text-primary mt-2">{brl(s.price)}</div>
-                </button>
+                  </button>
               ))}
             </div>
           </CardContent></Card>
@@ -186,7 +273,7 @@ function BookingPage() {
 
         {step === "pro" && (
           <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
-            <StepHeader title="Escolha o profissional" onBack={() => setStep("service")} />
+            <StepHeader title="Escolha o profissional" onBack={handleProBack} />
             <div className="grid sm:grid-cols-2 gap-3">
               {availableProsForService.map((p: any) => (
                 <button key={p.id} onClick={() => { setProId(p.id); setStep("date"); }} className={`flex items-center gap-3 p-4 rounded-xl border-2 transition ${proId === p.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
@@ -203,7 +290,7 @@ function BookingPage() {
             <CardContent className="p-0">
               <div className="p-6 pb-2">
                 <div className="flex items-center gap-3 mb-1">
-                  <button onClick={() => setStep("pro")} className="text-amber-500 hover:text-amber-400">
+                  <button onClick={handleDateBack} className="text-amber-500 hover:text-amber-400">
                     <ArrowLeft className="h-5 w-5" />
                   </button>
                   <h2 className="font-semibold text-xl">Escolha a data e o horário</h2>
