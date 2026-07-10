@@ -27,7 +27,7 @@ function ComissoesPage() {
         { data: appts },
         { data: services }
       ] = await Promise.all([
-        supabase.from("commanda_items").select("*, professionals(full_name, commission_pct), commandas(closed_at, number)").eq("tenant_id", tenantId!).not("professional_id", "is", null),
+        supabase.from("commanda_items").select("*, professionals(full_name, commission_pct), commandas(closed_at, number, client_name)").eq("tenant_id", tenantId!).not("professional_id", "is", null),
         supabase.from("appointments").select("*, professionals(full_name, commission_pct), services(*)").eq("tenant_id", tenantId!).eq("status", "completed"),
         supabase.from("services").select("*").eq("tenant_id", tenantId!)
       ]);
@@ -63,6 +63,7 @@ function ComissoesPage() {
           id: `appt-${appt.id}`,
           created_at: appt.start_at,
           professional_id: appt.professional_id,
+          client_name: appt.client_name,
           name: serviceNames.filter(Boolean).join(", "),
           unit_price: servicesVal,
           quantity: 1,
@@ -148,18 +149,22 @@ function ComissoesPage() {
             {selectedProId === "all" ? "Pagar TODAS pendentes" : `Pagar pendentes de ${professionals?.find((p:any) => p.id === selectedProId)?.full_name || ""}`}
           </Button>
         </div>
-        <Table><TableHeader><TableRow><TableHead>Data</TableHead><TableHead>Colaborador</TableHead><TableHead>Item</TableHead><TableHead>Valor</TableHead><TableHead>%</TableHead><TableHead>Comissão</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-          <TableBody>{(filteredItems ?? []).map((i:any) => (
-            <TableRow key={i.id}>
-              <TableCell className="text-xs">{i.commandas?.closed_at ? dateBR(i.commandas.closed_at) : "—"}</TableCell>
-              <TableCell className="font-medium">{i.professionals?.full_name}</TableCell>
-              <TableCell>{i.name}</TableCell>
-              <TableCell>{brl(Number(i.unit_price)*i.quantity)}</TableCell>
-              <TableCell>{i.commission_pct}%</TableCell>
-              <TableCell className="font-semibold text-primary">{brl(i.commission_value)}</TableCell>
-              <TableCell><span className={`text-xs px-2 py-0.5 rounded-full ${i.commission_status==="paid"?"bg-success/10 text-success":"bg-warning/20 text-[oklch(0.5_0.15_60)]"}`}>{i.commission_status}</span></TableCell>
-            </TableRow>
-          ))}</TableBody></Table>
+        <Table><TableHeader><TableRow><TableHead>Data</TableHead><TableHead>Colaborador</TableHead><TableHead>Cliente</TableHead><TableHead>Item</TableHead><TableHead>Valor</TableHead><TableHead>%</TableHead><TableHead>Comissão</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+          <TableBody>{(filteredItems ?? []).map((i:any) => {
+            const clientName = i.client_name || i.commandas?.client_name || "Cliente";
+            return (
+              <TableRow key={i.id}>
+                <TableCell className="text-xs">{i.commandas?.closed_at ? dateBR(i.commandas.closed_at) : "—"}</TableCell>
+                <TableCell className="font-medium">{i.professionals?.full_name}</TableCell>
+                <TableCell className="text-muted-foreground font-medium">{clientName}</TableCell>
+                <TableCell>{i.name}</TableCell>
+                <TableCell>{brl(Number(i.unit_price)*i.quantity)}</TableCell>
+                <TableCell>{i.commission_pct}%</TableCell>
+                <TableCell className="font-semibold text-primary">{brl(i.commission_value)}</TableCell>
+                <TableCell><span className={`text-xs px-2 py-0.5 rounded-full ${i.commission_status==="paid"?"bg-success/10 text-success":"bg-warning/20 text-[oklch(0.5_0.15_60)]"}`}>{i.commission_status}</span></TableCell>
+              </TableRow>
+            );
+          })}</TableBody></Table>
       </CardContent></Card>
     </div>
   );
