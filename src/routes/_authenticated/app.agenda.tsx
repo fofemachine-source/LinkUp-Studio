@@ -40,7 +40,7 @@ function AgendaPage() {
   const slotMin = tenant?.slot_minutes ?? 30;
   const times = useMemo(() => {
     const arr: string[] = [];
-    for (let h = 8; h < 20; h++) for (let m = 0; m < 60; m += slotMin) arr.push(`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
+    for (let h = 8; h < 22; h++) for (let m = 0; m < 60; m += slotMin) arr.push(`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
     return arr;
   }, [slotMin]);
 
