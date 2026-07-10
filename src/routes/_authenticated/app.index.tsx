@@ -5,12 +5,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { brl } from "@/lib/format";
 import { TrendingUp, DollarSign, Users, Award, Copy, Plus, UserPlus, Link2, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Area, AreaChart } from "recharts";
 import { format, subDays, startOfDay, endOfDay, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/app/")({
   beforeLoad: async () => {
@@ -35,6 +37,7 @@ function PainelGeral() {
   const { data: tenant } = useCurrentTenant();
   const tenantId = tenant?.id;
   const { data: role, isLoading: roleLoading } = useUserRole(tenantId);
+  const [showApptsModal, setShowApptsModal] = useState(false);
 
   if (!roleLoading && role === "barber") {
     return <Navigate to="/app/agenda" replace />;
@@ -69,7 +72,7 @@ function PainelGeral() {
         supabase.from("commanda_items").select("commission_value").eq("tenant_id", tenantId!).eq("commission_status", "pending"),
         supabase.from("services").select("*").eq("tenant_id", tenantId!),
         supabase.from("products").select("*").eq("tenant_id", tenantId!),
-        supabase.from("appointments").select("*, professionals(commission_pct)").eq("tenant_id", tenantId!).eq("status", "completed").gte("start_at", monthStart)
+        supabase.from("appointments").select("*, professionals(full_name, commission_pct), services(*)").eq("tenant_id", tenantId!).eq("status", "completed").gte("start_at", monthStart)
       ]);
 
       const svcList = services ?? [];
@@ -102,6 +105,23 @@ function PainelGeral() {
           }
         }
         return total;
+      }
+
+      function getPaymentMethod(appt: any) {
+        if (appt.notes && appt.notes.includes("Pagamento: ")) {
+          const payPart = appt.notes.split("Pagamento: ")[1];
+          if (payPart) {
+            const method = payPart.split(" | ")[0].trim();
+            const methodsMap: Record<string, string> = {
+              pix: "PIX",
+              cash: "Dinheiro",
+              credit: "Cartão de Crédito",
+              debit: "Cartão de Débito"
+            };
+            return methodsMap[method.toLowerCase()] || method;
+          }
+        }
+        return "Não informado";
       }
 
       function getApptCommission(appt: any) {
@@ -156,6 +176,15 @@ function PainelGeral() {
         appointments: allApptsToday?.length ?? 0,
         pendingCommission: (commPending ?? []).reduce((a, b: any) => a + Number(b.commission_value || 0), 0) + apptCommPending,
         chart: days,
+        apptsTodayDetail: apptsToday.map(a => ({
+          id: a.id,
+          time: format(new Date(a.start_at), "HH:mm"),
+          client_name: a.client_name,
+          professional_name: a.professionals?.full_name || "Não atribuído",
+          services: [a.services?.name, a.notes && a.notes.includes("Serviços: ") ? a.notes.split("Serviços: ")[1].split(" | ")[0] : null].filter(Boolean).join(", "),
+          total: getApptTotal(a),
+          paymentMethod: getPaymentMethod(a)
+        }))
       };
     },
   });
@@ -184,7 +213,7 @@ function PainelGeral() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="FATURAMENTO HOJE" value={brl(stats?.today)} icon={TrendingUp} tone="info" />
         <StatCard title="FATURAMENTO MÊS" value={brl(stats?.month)} icon={DollarSign} tone="success" />
-        <StatCard title="ATENDIMENTOS HOJE" value={String(stats?.appointments ?? 0)} icon={Users} tone="accent" />
+        <StatCard title="ATENDIMENTOS HOJE" value={String(stats?.appointments ?? 0)} icon={Users} tone="accent" onClick={() => setShowApptsModal(true)} />
         <StatCard title="COMISSÕES PENDENTES" value={brl(stats?.pendingCommission)} icon={Award} tone="warning" />
       </div>
 
@@ -262,11 +291,49 @@ function PainelGeral() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={showApptsModal} onOpenChange={setShowApptsModal}>
+        <DialogContent className="max-w-[700px] w-[95vw] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Atendimentos Realizados Hoje</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {(!stats?.apptsTodayDetail || stats.apptsTodayDetail.length === 0) ? (
+              <div className="text-center text-muted-foreground py-8 text-sm italic">
+                Nenhum atendimento finalizado hoje até o momento.
+              </div>
+            ) : (
+              <div className="border rounded-xl overflow-hidden divide-y">
+                {stats.apptsTodayDetail.map((a: any) => (
+                  <div key={a.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 hover:bg-muted/30 transition-colors">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary">{a.time}</span>
+                        <span className="font-semibold text-sm">{a.client_name}</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        <span className="font-medium text-foreground">Serviços:</span> {a.services}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">Profissional:</span> {a.professional_name}
+                      </div>
+                    </div>
+                    <div className="flex sm:flex-col items-end justify-between sm:justify-center w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 mt-1 sm:mt-0">
+                      <span className="text-xs font-medium bg-muted px-2 py-1 rounded text-muted-foreground">{a.paymentMethod}</span>
+                      <span className="text-sm font-bold text-primary sm:mt-1">{brl(a.total)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function StatCard({ title, value, icon: Icon, tone }: { title: string; value: string; icon: any; tone: "info" | "success" | "warning" | "accent" }) {
+function StatCard({ title, value, icon: Icon, tone, onClick }: { title: string; value: string; icon: any; tone: "info" | "success" | "warning" | "accent"; onClick?: () => void }) {
   const tones: Record<string, string> = {
     info: "bg-info/10 text-info",
     success: "bg-success/10 text-success",
@@ -274,7 +341,7 @@ function StatCard({ title, value, icon: Icon, tone }: { title: string; value: st
     accent: "bg-primary/10 text-primary",
   };
   return (
-    <Card className="premium-card">
+    <Card className={`premium-card ${onClick ? "cursor-pointer hover:border-primary transition-all duration-200" : ""}`} onClick={onClick}>
       <CardContent className="p-5 flex items-center gap-4">
         <div className={`stat-icon ${tones[tone]}`}><Icon className="h-5 w-5" /></div>
         <div>

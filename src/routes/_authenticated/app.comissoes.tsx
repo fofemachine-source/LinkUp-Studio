@@ -2,17 +2,22 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCurrentTenant } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { brl, dateBR } from "@/lib/format";
 import { Award, DollarSign, Clock, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
+import { useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/app/comissoes")({ component: ComissoesPage });
 
 function ComissoesPage() {
   const tenantId = useCurrentTenant().data?.id; const qc = useQueryClient();
+  const [selectedProId, setSelectedProId] = useState<string>("all");
+
   const { data: items } = useQuery({
     queryKey: ["commissions", tenantId],
     enabled: !!tenantId,
@@ -76,9 +81,19 @@ function ComissoesPage() {
     }
   });
 
-  const pending = (items ?? []).filter((i:any)=>i.commission_status==="pending");
-  const paid = (items ?? []).filter((i:any)=>i.commission_status==="paid");
-  const totalGen = (items ?? []).reduce((a:number,b:any)=>a+Number(b.commission_value||0),0);
+  const { data: professionals } = useQuery({
+    queryKey: ["pros-list-comm", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => (await supabase.from("professionals").select("*").eq("tenant_id", tenantId!).eq("active", true)).data ?? []
+  });
+
+  const filteredItems = selectedProId === "all"
+    ? (items ?? [])
+    : (items ?? []).filter((i: any) => i.professional_id === selectedProId);
+
+  const pending = filteredItems.filter((i:any)=>i.commission_status==="pending");
+  const paid = filteredItems.filter((i:any)=>i.commission_status==="paid");
+  const totalGen = filteredItems.reduce((a:number,b:any)=>a+Number(b.commission_value||0),0);
   const totalPaid = paid.reduce((a:number,b:any)=>a+Number(b.commission_value||0),0);
   const totalPending = pending.reduce((a:number,b:any)=>a+Number(b.commission_value||0),0);
 
@@ -114,10 +129,27 @@ function ComissoesPage() {
       </div>
 
       <Card><CardContent className="p-6 space-y-4">
-        <div className="flex justify-between items-center"><h3 className="font-semibold">Movimentações</h3>
-          <Button onClick={()=>payAll()} disabled={pending.length===0}>Pagar TODAS pendentes</Button></div>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <Label className="text-xs uppercase text-muted-foreground font-semibold shrink-0">Profissional:</Label>
+            <Select value={selectedProId} onValueChange={setSelectedProId}>
+              <SelectTrigger className="w-[200px] h-9 bg-background">
+                <SelectValue placeholder="Todos os Profissionais" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os Profissionais</SelectItem>
+                {professionals?.map((p: any) => (
+                  <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={()=>payAll(selectedProId === "all" ? undefined : selectedProId)} disabled={pending.length===0}>
+            {selectedProId === "all" ? "Pagar TODAS pendentes" : `Pagar pendentes de ${professionals?.find((p:any) => p.id === selectedProId)?.full_name || ""}`}
+          </Button>
+        </div>
         <Table><TableHeader><TableRow><TableHead>Data</TableHead><TableHead>Colaborador</TableHead><TableHead>Item</TableHead><TableHead>Valor</TableHead><TableHead>%</TableHead><TableHead>Comissão</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-          <TableBody>{(items ?? []).map((i:any) => (
+          <TableBody>{(filteredItems ?? []).map((i:any) => (
             <TableRow key={i.id}>
               <TableCell className="text-xs">{i.commandas?.closed_at ? dateBR(i.commandas.closed_at) : "—"}</TableCell>
               <TableCell className="font-medium">{i.professionals?.full_name}</TableCell>

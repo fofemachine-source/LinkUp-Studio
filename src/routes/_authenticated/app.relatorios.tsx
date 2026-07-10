@@ -15,11 +15,66 @@ function RelPage() {
   const { data } = useQuery({
     queryKey: ["report-30", tenantId], enabled: !!tenantId,
     queryFn: async () => {
+      const startDate = subDays(startOfDay(new Date()), 29).toISOString();
+      const endDate = endOfDay(new Date()).toISOString();
+
+      const [
+        { data: commandas },
+        { data: appointments },
+        { data: services },
+        { data: products }
+      ] = await Promise.all([
+        supabase.from("commandas").select("total, closed_at").eq("tenant_id", tenantId!).eq("status", "closed").gte("closed_at", startDate).lte("closed_at", endDate),
+        supabase.from("appointments").select("*").eq("tenant_id", tenantId!).eq("status", "completed").gte("start_at", startDate).lte("start_at", endDate),
+        supabase.from("services").select("*").eq("tenant_id", tenantId!),
+        supabase.from("products").select("*").eq("tenant_id", tenantId!)
+      ]);
+
+      const svcList = services ?? [];
+      const prodList = products ?? [];
+
+      function getApptTotal(appt: any) {
+        let total = 0;
+        const mainSvc = svcList.find(s => s.id === appt.service_id);
+        total += Number(mainSvc?.price || 0);
+
+        if (appt.notes && appt.notes.includes("Serviços: ")) {
+          const svcPart = appt.notes.split("Serviços: ")[1];
+          if (svcPart) {
+            const names = svcPart.split(" | ")[0].split(", ").map((s: string) => s.trim().toLowerCase());
+            names.forEach((name: string) => {
+              const svc = svcList.find(s => (s.name || "").trim().toLowerCase() === name);
+              if (svc) total += Number(svc.price || 0);
+            });
+          }
+        }
+
+        if (appt.notes && appt.notes.includes("Produtos: ")) {
+          const prodPart = appt.notes.split("Produtos: ")[1];
+          if (prodPart) {
+            const names = prodPart.split(" | ")[0].split(", ").map((s: string) => s.trim().toLowerCase());
+            names.forEach((name: string) => {
+              const prod = prodList.find(p => (p.name || "").trim().toLowerCase() === name);
+              if (prod) total += Number(prod.price || 0);
+            });
+          }
+        }
+        return total;
+      }
+
       const days: any[] = [];
       for (let i = 29; i >= 0; i--) {
         const d = subDays(new Date(), i);
-        const { data: c } = await supabase.from("commandas").select("total").eq("tenant_id", tenantId!).eq("status","closed").gte("closed_at", startOfDay(d).toISOString()).lte("closed_at", endOfDay(d).toISOString());
-        days.push({ d: format(d, "dd/MM"), v: (c ?? []).reduce((a,b:any)=>a+Number(b.total||0),0) });
+        const dayS = startOfDay(d);
+        const dayE = endOfDay(d);
+
+        const dayCmds = (commandas ?? []).filter(c => new Date(c.closed_at!) >= dayS && new Date(c.closed_at!) <= dayE);
+        const dayAppts = (appointments ?? []).filter(a => new Date(a.start_at) >= dayS && new Date(a.start_at) <= dayE);
+
+        const cmdTotal = dayCmds.reduce((a, b) => a + Number(b.total || 0), 0);
+        const apptTotal = dayAppts.reduce((a, b) => a + getApptTotal(b), 0);
+
+        days.push({ d: format(d, "dd/MM"), v: cmdTotal + apptTotal });
       }
       return days;
     },
