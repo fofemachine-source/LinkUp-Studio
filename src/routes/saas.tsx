@@ -15,7 +15,7 @@ import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { dateBR, brl } from "@/lib/format";
 
-export const Route = createFileRoute("/_authenticated/saas")({
+export const Route = createFileRoute("/saas")({
   ssr: false,
   beforeLoad: async () => {
     const { data: userRes } = await supabase.auth.getUser();
@@ -29,7 +29,13 @@ export const Route = createFileRoute("/_authenticated/saas")({
 
 function SaasPanel() {
   const nav = useNavigate();
-  async function signOut() { await supabase.auth.signOut(); nav({ to: "/saas-login" }); }
+  const qc = useQueryClient();
+  async function signOut() {
+    await qc.cancelQueries();
+    qc.clear();
+    await supabase.auth.signOut();
+    nav({ to: "/saas-login" });
+  }
   const { data: user } = useQuery({ queryKey: ["saas-user"], queryFn: async () => (await supabase.auth.getUser()).data.user });
   const displayName = (user?.user_metadata?.full_name as string) || user?.email?.split("@")[0] || "Super Admin";
 

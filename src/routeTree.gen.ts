@@ -10,11 +10,11 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SaasLoginRouteImport } from './routes/saas-login'
+import { Route as SaasRouteImport } from './routes/saas'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BookingSlugRouteImport } from './routes/booking.$slug'
-import { Route as AuthenticatedSaasRouteImport } from './routes/_authenticated/saas'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
 import { Route as AuthenticatedAppRelatoriosRouteImport } from './routes/_authenticated/app.relatorios'
@@ -31,6 +31,11 @@ import { Route as AuthenticatedAppAgendaRouteImport } from './routes/_authentica
 const SaasLoginRoute = SaasLoginRouteImport.update({
   id: '/saas-login',
   path: '/saas-login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SaasRoute = SaasRouteImport.update({
+  id: '/saas',
+  path: '/saas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -51,11 +56,6 @@ const BookingSlugRoute = BookingSlugRouteImport.update({
   id: '/booking/$slug',
   path: '/booking/$slug',
   getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedSaasRoute = AuthenticatedSaasRouteImport.update({
-  id: '/saas',
-  path: '/saas',
-  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   id: '/app',
@@ -128,9 +128,9 @@ const AuthenticatedAppAgendaRoute = AuthenticatedAppAgendaRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/saas': typeof SaasRoute
   '/saas-login': typeof SaasLoginRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
-  '/saas': typeof AuthenticatedSaasRoute
   '/booking/$slug': typeof BookingSlugRoute
   '/app/agenda': typeof AuthenticatedAppAgendaRoute
   '/app/assinantes': typeof AuthenticatedAppAssinantesRoute
@@ -147,8 +147,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/saas': typeof SaasRoute
   '/saas-login': typeof SaasLoginRoute
-  '/saas': typeof AuthenticatedSaasRoute
   '/booking/$slug': typeof BookingSlugRoute
   '/app/agenda': typeof AuthenticatedAppAgendaRoute
   '/app/assinantes': typeof AuthenticatedAppAssinantesRoute
@@ -167,9 +167,9 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/saas': typeof SaasRoute
   '/saas-login': typeof SaasLoginRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
-  '/_authenticated/saas': typeof AuthenticatedSaasRoute
   '/booking/$slug': typeof BookingSlugRoute
   '/_authenticated/app/agenda': typeof AuthenticatedAppAgendaRoute
   '/_authenticated/app/assinantes': typeof AuthenticatedAppAssinantesRoute
@@ -188,9 +188,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/saas'
     | '/saas-login'
     | '/app'
-    | '/saas'
     | '/booking/$slug'
     | '/app/agenda'
     | '/app/assinantes'
@@ -207,8 +207,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
-    | '/saas-login'
     | '/saas'
+    | '/saas-login'
     | '/booking/$slug'
     | '/app/agenda'
     | '/app/assinantes'
@@ -226,9 +226,9 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/saas'
     | '/saas-login'
     | '/_authenticated/app'
-    | '/_authenticated/saas'
     | '/booking/$slug'
     | '/_authenticated/app/agenda'
     | '/_authenticated/app/assinantes'
@@ -247,6 +247,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  SaasRoute: typeof SaasRoute
   SaasLoginRoute: typeof SaasLoginRoute
   BookingSlugRoute: typeof BookingSlugRoute
 }
@@ -258,6 +259,13 @@ declare module '@tanstack/react-router' {
       path: '/saas-login'
       fullPath: '/saas-login'
       preLoaderRoute: typeof SaasLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/saas': {
+      id: '/saas'
+      path: '/saas'
+      fullPath: '/saas'
+      preLoaderRoute: typeof SaasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -287,13 +295,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/booking/$slug'
       preLoaderRoute: typeof BookingSlugRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/saas': {
-      id: '/_authenticated/saas'
-      path: '/saas'
-      fullPath: '/saas'
-      preLoaderRoute: typeof AuthenticatedSaasRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/app': {
       id: '/_authenticated/app'
@@ -415,12 +416,10 @@ const AuthenticatedAppRouteWithChildren =
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAppRoute: typeof AuthenticatedAppRouteWithChildren
-  AuthenticatedSaasRoute: typeof AuthenticatedSaasRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAppRoute: AuthenticatedAppRouteWithChildren,
-  AuthenticatedSaasRoute: AuthenticatedSaasRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -430,6 +429,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  SaasRoute: SaasRoute,
   SaasLoginRoute: SaasLoginRoute,
   BookingSlugRoute: BookingSlugRoute,
 }
