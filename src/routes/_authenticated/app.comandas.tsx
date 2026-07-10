@@ -79,7 +79,7 @@ function NewCmdDialog({ tenantId, onDone }: any) {
 
 function CmdDetail({ cmd, tenantId, onDone }: any) {
   const { data: role } = useUserRole(tenantId);
-  const isAdmin = role === "admin" || role === "owner" || role === "manager" || role !== "barber";
+  const isAdmin = role !== "barber";
 
   const [items, setItems] = useState<any[]>(cmd.commanda_items ?? []);
   const { data: services } = useQuery({ queryKey: ["svc-m", tenantId], queryFn: async () => (await supabase.from("services").select("*").eq("tenant_id", tenantId).eq("active", true)).data ?? [] });
@@ -95,9 +95,9 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
   const [addition, setAddition] = useState<number>(cmd.addition ?? 0);
   const [payment, setPayment] = useState<string>(cmd.payment_method ?? "pix");
 
-  const selectedSubtotal = (tab === "service" ? services : products)
+  const selectedSubtotal = ((tab === "service" ? services : products)
     ?.filter((i: any) => selectedIds.includes(i.id))
-    ?.reduce((a: number, b: any) => a + b.price, 0) * qty || 0;
+    ?.reduce((a: number, b: any) => a + b.price, 0) ?? 0) * qty;
 
   const baseSubtotal = items.reduce((a, b) => a + (b.unit_price * b.quantity), 0);
   const subtotal = baseSubtotal + selectedSubtotal;
