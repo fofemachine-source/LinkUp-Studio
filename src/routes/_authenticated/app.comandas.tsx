@@ -17,6 +17,14 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/app/comandas")({ component: ComandasPage });
 
+function getElapsedTime(createdAtStr: string) {
+  const diff = Date.now() - new Date(createdAtStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h}h${m.toString().padStart(2, "0")}`;
+}
+
 function ComandasPage() {
   const tenantId = useCurrentTenant().data?.id; const qc = useQueryClient();
   const { data: open } = useQuery({ queryKey: ["cmd-open", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("commandas").select("*, commanda_items(*)").eq("tenant_id", tenantId!).eq("status", "open").order("created_at")).data ?? [] });
@@ -25,34 +33,102 @@ function ComandasPage() {
   const [newOpen, setNewOpen] = useState(false);
 
   return (
-    <div className="space-y-6 max-w-[1400px] mx-auto">
+    <div className="space-y-8 max-w-[1400px] mx-auto pb-12">
       <div className="flex justify-between items-start">
-        <div><h1 className="text-3xl font-semibold flex items-center gap-2"><ShoppingCart className="h-7 w-7 text-primary"/>Comandas / Venda</h1>
-          <p className="text-muted-foreground">Registre atendimentos e vendas.</p></div>
-        <Dialog open={newOpen} onOpenChange={setNewOpen}><DialogTrigger asChild><Button size="lg"><Plus className="h-4 w-4 mr-2"/>NOVA COMANDA</Button></DialogTrigger>
-          <NewCmdDialog tenantId={tenantId} onDone={()=>{setNewOpen(false);qc.invalidateQueries({queryKey:["cmd-open"]});}}/></Dialog>
+        <div>
+          <h1 className="text-3xl font-semibold flex items-center gap-2">
+            <ShoppingCart className="h-7 w-7 text-primary"/>
+            Comandas / Venda
+          </h1>
+          <p className="text-muted-foreground">Registre atendimentos e vendas.</p>
+        </div>
+        <Dialog open={newOpen} onOpenChange={setNewOpen}>
+          <DialogTrigger asChild>
+            <Button size="lg">
+              <Plus className="h-4 w-4 mr-2"/>NOVA COMANDA
+            </Button>
+          </DialogTrigger>
+          <NewCmdDialog tenantId={tenantId} onDone={()=>{setNewOpen(false);qc.invalidateQueries({queryKey:["cmd-open"]});}}/>
+        </Dialog>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        <div className="space-y-3">
-          <h3 className="font-semibold">Abertas ({open?.length ?? 0})</h3>
-          {(open ?? []).map((c:any) => (
-            <Card key={c.id} className="cursor-pointer hover:border-primary" onClick={()=>setSelected(c)}>
-              <CardContent className="p-4 flex items-center justify-between">
-                <div><div className="font-medium">#{c.number} — {c.client_name}</div><div className="text-xs text-muted-foreground">{c.commanda_items?.length ?? 0} itens</div></div>
-                <div className="text-lg font-semibold text-primary">{brl(c.total)}</div>
-              </CardContent></Card>
-          ))}
-          {(open?.length ?? 0) === 0 && <div className="text-sm text-muted-foreground p-6 border rounded-xl text-center">Sem comandas abertas</div>}
+      <div className="space-y-8">
+        <div>
+          <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+            Abertas 
+            <span className="px-2 py-0.5 text-xs bg-amber-500/10 text-amber-500 rounded-full font-bold">
+              {open?.length ?? 0}
+            </span>
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {(open ?? []).map((c: any) => {
+              const hasItems = (c.commanda_items?.length ?? 0) > 0;
+              const elapsed = getElapsedTime(c.created_at);
+              return (
+                <div 
+                  key={c.id} 
+                  className={`relative p-4 rounded-xl border transition-all cursor-pointer shadow-sm hover:shadow-md hover:scale-[1.02] flex flex-col justify-between min-h-[130px] ${
+                    hasItems 
+                      ? "bg-amber-50/50 border-amber-200/60 hover:border-amber-400 text-amber-900"
+                      : "bg-rose-50/40 border-rose-100 hover:border-rose-300 text-rose-900"
+                  }`}
+                  onClick={() => setSelected(c)}
+                >
+                  <div>
+                    <div className="font-bold text-xs truncate uppercase tracking-wider">#{c.number} — {c.client_name}</div>
+                    <div className="text-[11px] opacity-70 mt-1">
+                      {hasItems ? `${c.commanda_items.length} itens` : "Sem itens"}
+                    </div>
+                  </div>
+                  <div className="flex items-end justify-between mt-4">
+                    <div className="text-lg font-extrabold">{brl(c.total)}</div>
+                    <div className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      hasItems ? "bg-amber-500/20 text-amber-700" : "bg-rose-500/20 text-rose-700"
+                    }`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
+                      {elapsed}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {(open?.length ?? 0) === 0 && (
+              <div className="col-span-full text-sm text-muted-foreground p-8 border border-dashed rounded-xl text-center">
+                Sem comandas abertas
+              </div>
+            )}
+          </div>
         </div>
-        <div className="space-y-3">
-          <h3 className="font-semibold">Fechadas recentes</h3>
-          {(closed ?? []).map((c:any) => (
-            <Card key={c.id} className="cursor-pointer hover:border-primary" onClick={()=>setSelected(c)}><CardContent className="p-4 flex items-center justify-between text-sm">
-              <div><div className="font-medium">#{c.number} — {c.client_name}</div><div className="text-xs text-muted-foreground">{c.closed_at ? dateBR(c.closed_at) : ""} • {c.payment_method?.toUpperCase()}</div></div>
-              <div className="font-semibold text-success">{brl(c.total)}</div>
-            </CardContent></Card>
-          ))}
+
+        <div>
+          <h3 className="font-semibold text-lg mb-4">Fechadas recentes</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {(closed ?? []).map((c: any) => (
+              <div 
+                key={c.id} 
+                className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/40 hover:border-emerald-300 hover:scale-[1.02] transition-all cursor-pointer shadow-sm hover:shadow-md flex flex-col justify-between min-h-[130px] text-emerald-950"
+                onClick={() => setSelected(c)}
+              >
+                <div>
+                  <div className="font-bold text-xs truncate uppercase tracking-wider">#{c.number} — {c.client_name}</div>
+                  <div className="text-[10px] opacity-70 mt-1">
+                    {c.closed_at ? dateBR(c.closed_at) : ""}
+                  </div>
+                </div>
+                <div className="flex items-end justify-between mt-4">
+                  <div className="text-lg font-extrabold text-emerald-700">{brl(c.total)}</div>
+                  <div className="text-[9px] uppercase font-bold bg-emerald-500/10 text-emerald-700 px-2 py-0.5 rounded-full">
+                    {c.payment_method}
+                  </div>
+                </div>
+              </div>
+            ))}
+            {(closed?.length ?? 0) === 0 && (
+              <div className="col-span-full text-sm text-muted-foreground p-8 border border-dashed rounded-xl text-center">
+                Nenhuma comanda fechada recentemente
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
