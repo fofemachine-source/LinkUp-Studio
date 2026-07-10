@@ -236,7 +236,10 @@ function ServicesTab() {
         <TableBody>{(data ?? []).map((s:any) => (
           <TableRow key={s.id}><TableCell className="font-medium whitespace-nowrap">{s.name}</TableCell><TableCell className="whitespace-nowrap">{brl(s.price)}</TableCell><TableCell className="whitespace-nowrap">{s.duration_min} min</TableCell>
           <TableCell className="whitespace-nowrap">{s.vip_only && <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">VIP</span>}</TableCell>
-          <TableCell className="text-right whitespace-nowrap"><Button size="icon" variant="ghost" onClick={()=>{setEdit(s);setOpen(true);}}><Pencil className="h-4 w-4"/></Button></TableCell></TableRow>
+          <TableCell className="text-right whitespace-nowrap">
+            <Button size="icon" variant="ghost" onClick={()=>{setEdit(s);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
+            <Button size="icon" variant="ghost" onClick={async()=>{if(confirm("Deseja realmente excluir este serviço?")){await supabase.from("services").delete().eq("id",s.id);qc.invalidateQueries({queryKey:["services-all"]});toast.success("Serviço excluído!");}}}><Trash2 className="h-4 w-4"/></Button>
+          </TableCell></TableRow>
         ))}</TableBody></Table>
     </div>
   </CardContent></Card>);

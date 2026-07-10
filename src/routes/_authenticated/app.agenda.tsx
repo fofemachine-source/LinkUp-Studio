@@ -149,6 +149,10 @@ function AgendaPage() {
 function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProId, defaultTime }: { tenantId?: string; pros: any[]; onDone: () => void; defaultDate: Date; defaultProId?: string; defaultTime?: string }) {
   const navigate = useNavigate();
   const [clientId, setClientId] = useState<string>("");
+  const [isRegisteringNewClient, setIsRegisteringNewClient] = useState(false);
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientWa, setNewClientWa] = useState("");
+
   const [proId, setProId] = useState(defaultProId ?? "");
   const [dateStr, setDateStr] = useState(format(defaultDate, "yyyy-MM-dd"));
   const [time, setTime] = useState(defaultTime ?? "09:00");
@@ -184,15 +188,43 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
   async function save() {
     setBusy(true);
     try {
-      if (!clientId) throw new Error("Selecione um cliente.");
+      if (!clientId && !isRegisteringNewClient) throw new Error("Selecione um cliente.");
       if (selectedSvcs.length === 0) throw new Error("Selecione pelo menos um serviço.");
       if (status === "completed" && !paymentMethod) {
         throw new Error("Por favor, selecione a forma de pagamento para finalizar o agendamento.");
       }
-      
-      const client = clients?.find(c => c.id === clientId);
-      const name = client?.full_name || "Cliente";
-      const wa = client?.whatsapp || "";
+
+      let finalClientId = clientId;
+      let finalName = "";
+      let finalWa = "";
+
+      if (isRegisteringNewClient) {
+        if (!newClientName.trim()) throw new Error("Informe o nome do novo cliente.");
+        if (!newClientWa.trim()) throw new Error("Informe o WhatsApp do novo cliente.");
+        
+        const cleanWa = newClientWa.replace(/\D/g, "");
+        let { data: existing } = await supabase.from("clients").select("id, full_name, whatsapp").eq("tenant_id", tenantId!).eq("whatsapp", cleanWa).maybeSingle();
+        
+        if (existing) {
+          finalClientId = existing.id;
+          finalName = existing.full_name;
+          finalWa = existing.whatsapp || "";
+        } else {
+          const { data: newC, error: newCErr } = await supabase.from("clients").insert({
+            tenant_id: tenantId!,
+            full_name: newClientName,
+            whatsapp: cleanWa
+          }).select("id").single();
+          if (newCErr) throw newCErr;
+          finalClientId = newC.id;
+          finalName = newClientName;
+          finalWa = cleanWa;
+        }
+      } else {
+        const client = clients?.find(c => c.id === clientId);
+        finalName = client?.full_name || "Cliente";
+        finalWa = client?.whatsapp || "";
+      }
       
       const firstSvcId = selectedSvcs[0];
       
@@ -216,8 +248,8 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
       const finalObs = [obs, svcsText, prodsText, payText].filter(Boolean).join(" | ");
 
       const { error } = await supabase.from("appointments").insert({
-        tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: clientId,
-        client_name: name, client_whatsapp: wa.replace(/\D/g,""),
+        tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: finalClientId,
+        client_name: finalName, client_whatsapp: finalWa.replace(/\D/g,""),
         start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
         status: status, source: "manual", notes: finalObs
       });
@@ -237,7 +269,7 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
         const cmdNumber = (countRes as any)?.count ? (countRes as any).count + 1 : Math.floor(Math.random() * 10000);
 
         const { data: cmd, error: cmdErr } = await supabase.from("commandas").insert({
-          tenant_id: tenantId!, client_name: name, number: cmdNumber, status: "closed",
+          tenant_id: tenantId!, client_name: finalName, number: cmdNumber, status: "closed",
           closed_at: new Date().toISOString(), subtotal: totalValue, total: totalValue, payment_method: mappedMethod
         }).select("*").single();
 
@@ -268,7 +300,7 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
         }
 
         await supabase.from("cash_movements").insert({
-          tenant_id: tenantId!, kind: "in", amount: totalValue, description: `Agendamento #${cmdNumber} — ${name}`
+          tenant_id: tenantId!, kind: "in", amount: totalValue, description: `Agendamento #${cmdNumber} — ${finalName}`
         });
       }
 
@@ -293,9 +325,33 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
       <div className="p-6 space-y-6">
         <div className="space-y-4">
           <div><Label className="text-xs uppercase text-muted-foreground font-semibold">Cliente</Label>
-            <Select value={clientId} onValueChange={setClientId}><SelectTrigger><SelectValue placeholder="Busque ou selecione um cliente..." /></SelectTrigger>
-            <SelectContent>{clients?.map((c:any)=><SelectItem key={c.id} value={c.id}>{c.full_name} ({c.whatsapp})</SelectItem>)}</SelectContent></Select>
+            <Select value={isRegisteringNewClient ? "new_client" : clientId} onValueChange={(val) => {
+              if (val === "new_client") {
+                setIsRegisteringNewClient(true);
+                setClientId("");
+              } else {
+                setIsRegisteringNewClient(false);
+                setClientId(val);
+              }
+            }}><SelectTrigger><SelectValue placeholder="Busque ou selecione um cliente..." /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="new_client" className="text-primary font-semibold font-medium">+ Cadastrar Novo Cliente</SelectItem>
+              {clients?.map((c:any)=><SelectItem key={c.id} value={c.id}>{c.full_name} ({c.whatsapp})</SelectItem>)}
+            </SelectContent></Select>
           </div>
+
+          {isRegisteringNewClient && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-muted/40 border border-dashed rounded-xl animate-fade-in">
+              <div>
+                <Label className="text-xs uppercase text-muted-foreground font-semibold">Nome do Novo Cliente</Label>
+                <Input value={newClientName} onChange={e=>setNewClientName(e.target.value)} placeholder="Nome completo do cliente" />
+              </div>
+              <div>
+                <Label className="text-xs uppercase text-muted-foreground font-semibold">WhatsApp do Novo Cliente</Label>
+                <Input value={newClientWa} onChange={e=>setNewClientWa(e.target.value)} placeholder="(99) 99999-9999" />
+              </div>
+            </div>
+          )}
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div><Label className="text-xs uppercase text-muted-foreground font-semibold">Barbeiro</Label>
@@ -408,6 +464,10 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [clientId, setClientId] = useState<string>(appt.client_id || "");
+  const [isRegisteringNewClient, setIsRegisteringNewClient] = useState(false);
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientWa, setNewClientWa] = useState("");
+
   const [proId, setProId] = useState(appt.professional_id || "");
   const [dateStr, setDateStr] = useState(format(new Date(appt.start_at), "yyyy-MM-dd"));
   const [time, setTime] = useState(format(new Date(appt.start_at), "HH:mm"));
@@ -499,15 +559,43 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
   async function save() {
     setBusy(true);
     try {
-      if (!clientId && !appt.client_name) throw new Error("Selecione um cliente.");
+      if (!clientId && !isRegisteringNewClient && !appt.client_name) throw new Error("Selecione um cliente.");
       if (selectedSvcs.length === 0) throw new Error("Selecione pelo menos um serviço.");
       if (status === "completed" && !paymentMethod) {
         throw new Error("Por favor, selecione a forma de pagamento para finalizar o agendamento.");
       }
       
-      const client = clients?.find(c => c.id === clientId);
-      const name = client?.full_name || appt.client_name || "Cliente";
-      const wa = client?.whatsapp || appt.client_whatsapp || "";
+      let finalClientId = clientId;
+      let finalName = "";
+      let finalWa = "";
+
+      if (isRegisteringNewClient) {
+        if (!newClientName.trim()) throw new Error("Informe o nome do novo cliente.");
+        if (!newClientWa.trim()) throw new Error("Informe o WhatsApp do novo cliente.");
+        
+        const cleanWa = newClientWa.replace(/\D/g, "");
+        let { data: existing } = await supabase.from("clients").select("id, full_name, whatsapp").eq("tenant_id", tenantId!).eq("whatsapp", cleanWa).maybeSingle();
+        
+        if (existing) {
+          finalClientId = existing.id;
+          finalName = existing.full_name;
+          finalWa = existing.whatsapp || "";
+        } else {
+          const { data: newC, error: newCErr } = await supabase.from("clients").insert({
+            tenant_id: tenantId!,
+            full_name: newClientName,
+            whatsapp: cleanWa
+          }).select("id").single();
+          if (newCErr) throw newCErr;
+          finalClientId = newC.id;
+          finalName = newClientName;
+          finalWa = cleanWa;
+        }
+      } else {
+        const client = clients?.find(c => c.id === clientId);
+        finalName = client?.full_name || appt.client_name || "Cliente";
+        finalWa = client?.whatsapp || appt.client_whatsapp || "";
+      }
       
       const firstSvcId = selectedSvcs[0];
       const totalDuration = selectedSvcs.reduce((acc, id) => {
@@ -534,8 +622,8 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
 
       // Insert ONE single consolidated row
       const { error } = await supabase.from("appointments").insert({
-        tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: clientId || null,
-        client_name: name, client_whatsapp: wa.replace(/\D/g,""),
+        tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: finalClientId || null,
+        client_name: finalName, client_whatsapp: finalWa.replace(/\D/g,""),
         start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
         status: status, notes: finalObs
       });
@@ -555,7 +643,7 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
         const cmdNumber = (countRes as any)?.count ? (countRes as any).count + 1 : Math.floor(Math.random() * 10000);
 
         const { data: cmd, error: cmdErr } = await supabase.from("commandas").insert({
-          tenant_id: tenantId!, client_name: name, number: cmdNumber, status: "closed",
+          tenant_id: tenantId!, client_name: finalName, number: cmdNumber, status: "closed",
           closed_at: new Date().toISOString(), subtotal: totalValue, total: totalValue, payment_method: mappedMethod
         }).select("*").single();
 
@@ -586,7 +674,7 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
         }
 
         await supabase.from("cash_movements").insert({
-          tenant_id: tenantId!, kind: "in", amount: totalValue, description: `Agendamento #${cmdNumber} — ${name}`
+          tenant_id: tenantId!, kind: "in", amount: totalValue, description: `Agendamento #${cmdNumber} — ${finalName}`
         });
       }
 
@@ -621,9 +709,33 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
       <div className="p-6 space-y-6">
         <div className="space-y-4">
           <div><Label className="text-xs uppercase text-muted-foreground font-semibold">Cliente</Label>
-            <Select value={clientId} onValueChange={setClientId}><SelectTrigger><SelectValue placeholder="Busque ou selecione um cliente..." /></SelectTrigger>
-            <SelectContent>{clients?.map((c:any)=><SelectItem key={c.id} value={c.id}>{c.full_name} ({c.whatsapp})</SelectItem>)}</SelectContent></Select>
+            <Select value={isRegisteringNewClient ? "new_client" : clientId} onValueChange={(val) => {
+              if (val === "new_client") {
+                setIsRegisteringNewClient(true);
+                setClientId("");
+              } else {
+                setIsRegisteringNewClient(false);
+                setClientId(val);
+              }
+            }}><SelectTrigger><SelectValue placeholder="Busque ou selecione um cliente..." /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="new_client" className="text-primary font-semibold font-medium">+ Cadastrar Novo Cliente</SelectItem>
+              {clients?.map((c:any)=><SelectItem key={c.id} value={c.id}>{c.full_name} ({c.whatsapp})</SelectItem>)}
+            </SelectContent></Select>
           </div>
+
+          {isRegisteringNewClient && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-muted/40 border border-dashed rounded-xl animate-fade-in">
+              <div>
+                <Label className="text-xs uppercase text-muted-foreground font-semibold">Nome do Novo Cliente</Label>
+                <Input value={newClientName} onChange={e=>setNewClientName(e.target.value)} placeholder="Nome completo" />
+              </div>
+              <div>
+                <Label className="text-xs uppercase text-muted-foreground font-semibold">WhatsApp do Novo Cliente</Label>
+                <Input value={newClientWa} onChange={e=>setNewClientWa(e.target.value)} placeholder="(99) 99999-9999" />
+              </div>
+            </div>
+          )}
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div><Label className="text-xs uppercase text-muted-foreground font-semibold">Barbeiro</Label>
