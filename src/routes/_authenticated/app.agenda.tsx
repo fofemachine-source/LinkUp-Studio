@@ -99,14 +99,33 @@ function AgendaPage() {
               {(pros ?? []).map((p: any) => {
                 const [h, m] = t.split(":").map(Number);
                 const slotTs = new Date(date); slotTs.setHours(h, m, 0, 0);
-                const a = (appts ?? []).find((x: any) => x.professional_id === p.id && new Date(x.start_at).getTime() === slotTs.getTime() && x.status !== "no_show" && x.status !== "cancelled");
+                const slotEnd = new Date(slotTs.getTime() + slotMin * 60000);
+                const a = (appts ?? []).find((x: any) => 
+                  x.professional_id === p.id && 
+                  x.status !== "no_show" && 
+                  x.status !== "cancelled" &&
+                  new Date(x.start_at) < slotEnd && 
+                  new Date(x.end_at) > slotTs
+                );
+                const isStart = a && new Date(a.start_at).getTime() >= slotTs.getTime() && new Date(a.start_at).getTime() < slotEnd.getTime();
                 return (
                   <div key={`${p.id}-${t}`} className="border-b border-l p-1 min-h-[54px]">
                     {a ? (
-                      <div onClick={() => setEditAppt(a)} className="h-full rounded-lg bg-primary/10 border-l-4 border-primary p-2 text-xs cursor-pointer hover:bg-primary/20 transition-colors">
-                        <div className="font-semibold truncate">{a.client_name || a.clients?.full_name}</div>
-                        <div className="text-muted-foreground truncate">{a.services?.name}</div>
-                      </div>
+                      isStart ? (
+                        <div onClick={() => setEditAppt(a)} className="h-full rounded-lg bg-primary/10 border-l-4 border-primary p-2 text-xs cursor-pointer hover:bg-primary/20 transition-colors">
+                          <div className="font-semibold truncate">{a.client_name || a.clients?.full_name}</div>
+                          <div className="text-muted-foreground truncate">
+                            {a.services?.name}
+                            {a.notes?.includes("Serviços:") 
+                              ? ` + ${a.notes.split("Serviços:")[1].split("|")[0].trim()}` 
+                              : ""}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="h-full rounded-lg bg-muted/20 border border-transparent p-2 text-xs text-muted-foreground/40 flex items-center justify-center cursor-not-allowed opacity-50 select-none">
+                          Ocupado
+                        </div>
+                      )
                     ) : (
                       <div onClick={() => { setSelectedSlot({ proId: p.id, time: t }); setOpenNew(true); }} className="h-full rounded-lg border border-dashed border-transparent hover:border-primary/50 hover:bg-primary/5 grid place-items-center text-xs text-muted-foreground cursor-pointer opacity-0 hover:opacity-100">Livre</div>
                     )}
@@ -170,29 +189,33 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
       const name = client?.full_name || "Cliente";
       const wa = client?.whatsapp || "";
       
+      const firstSvcId = selectedSvcs[0];
+      
+      // Calculate total duration of all selected services combined
+      const totalDuration = selectedSvcs.reduce((acc, id) => {
+        const s = services?.find(x => x.id === id);
+        return acc + (s?.duration_min ?? 0);
+      }, 0);
+      
       const [h, m] = time.split(":").map(Number);
-      let currentStart = new Date(dateStr + "T00:00:00"); 
+      const currentStart = new Date(dateStr + "T00:00:00"); 
       currentStart.setHours(h, m, 0, 0);
+      const currentEnd = new Date(currentStart.getTime() + totalDuration * 60000);
 
+      // Save additional services and products inside notes column
+      const additionalSvcs = selectedSvcs.slice(1).map(id => services?.find(s => s.id === id)?.name).filter(Boolean);
+      const svcsText = additionalSvcs.length > 0 ? `Serviços: ${additionalSvcs.join(", ")}` : "";
       const prodNames = selectedProds.map(id => products?.find(p=>p.id===id)?.name).filter(Boolean).join(", ");
-      const finalObs = [obs, prodNames ? `Produtos: ${prodNames}` : ""].filter(Boolean).join(" | ");
+      const prodsText = prodNames ? `Produtos: ${prodNames}` : "";
+      const finalObs = [obs, svcsText, prodsText].filter(Boolean).join(" | ");
 
-      for (let i = 0; i < selectedSvcs.length; i++) {
-        const sId = selectedSvcs[i];
-        const svc = services?.find(s => s.id === sId);
-        const duration = svc?.duration_min ?? 30;
-        const currentEnd = new Date(currentStart.getTime() + duration * 60000);
-        
-        const { error } = await supabase.from("appointments").insert({
-          tenant_id: tenantId!, professional_id: proId, service_id: sId, client_id: clientId,
-          client_name: name, client_whatsapp: wa.replace(/\D/g,""),
-          start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
-          status: status, source: "manual", notes: i === 0 ? finalObs : null
-        });
-        if (error) throw error;
-        
-        currentStart = currentEnd;
-      }
+      const { error } = await supabase.from("appointments").insert({
+        tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: clientId,
+        client_name: name, client_whatsapp: wa.replace(/\D/g,""),
+        start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
+        status: status, source: "manual", notes: finalObs
+      });
+      if (error) throw error;
 
       toast.success("Agendamento criado!");
       onDone();
@@ -330,6 +353,24 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
   const { data: clients } = useQuery({ queryKey: ["clients-min", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("clients").select("*").eq("tenant_id", tenantId!)).data ?? [] });
 
   useEffect(() => {
+    if (services && services.length > 0 && appt.notes) {
+      const notesText = appt.notes || "";
+      const servicesList = [appt.service_id];
+      if (notesText.includes("Serviços: ")) {
+        const svcPart = notesText.split("Serviços: ")[1];
+        if (svcPart) {
+          const names = svcPart.split(" | ")[0].split(", ").map((s: string) => s.trim());
+          const matchingIds = services.filter((s: any) => names.includes(s.name)).map((s: any) => s.id);
+          servicesList.push(...matchingIds);
+        }
+      }
+      setSelectedSvcs(servicesList);
+    } else {
+      setSelectedSvcs([appt.service_id]);
+    }
+  }, [services, appt.notes, appt.service_id]);
+
+  useEffect(() => {
     if (products && products.length > 0 && appt.notes) {
       const notesText = appt.notes || "";
       if (notesText.includes("Produtos: ")) {
@@ -346,13 +387,8 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
   useEffect(() => {
     if (appt.notes !== undefined) {
       const raw = appt.notes || "";
-      let clean = raw;
-      if (raw.includes(" | Produtos:")) {
-        clean = raw.split(" | Produtos:")[0];
-      } else if (raw.includes("Produtos:")) {
-        clean = raw.split("Produtos:")[0];
-      }
-      setObs(clean.trim());
+      const parts = raw.split(" | ").filter((p: string) => !p.startsWith("Serviços:") && !p.startsWith("Produtos:"));
+      setObs(parts.join(" | ").trim());
     }
   }, [appt.notes]);
 
@@ -383,34 +419,36 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
       const name = client?.full_name || appt.client_name || "Cliente";
       const wa = client?.whatsapp || appt.client_whatsapp || "";
       
+      const firstSvcId = selectedSvcs[0];
+      const totalDuration = selectedSvcs.reduce((acc, id) => {
+        const s = services?.find(x => x.id === id);
+        return acc + (s?.duration_min ?? 0);
+      }, 0);
+
       const [h, m] = time.split(":").map(Number);
-      let currentStart = new Date(dateStr + "T00:00:00"); 
+      const currentStart = new Date(dateStr + "T00:00:00"); 
       currentStart.setHours(h, m, 0, 0);
+      const currentEnd = new Date(currentStart.getTime() + totalDuration * 60000);
 
       const prodNames = selectedProds.map(id => products?.find(p=>p.id===id)?.name).filter(Boolean).join(", ");
-      const finalObs = [obs, prodNames ? `Produtos: ${prodNames}` : ""].filter(Boolean).join(" | ");
+      const prodsText = prodNames ? `Produtos: ${prodNames}` : "";
+      const additionalSvcs = selectedSvcs.slice(1).map(id => services?.find(s => s.id === id)?.name).filter(Boolean);
+      const svcsText = additionalSvcs.length > 0 ? `Serviços: ${additionalSvcs.join(", ")}` : "";
+      const finalObs = [obs, svcsText, prodsText].filter(Boolean).join(" | ");
 
       // Delete all old appointments in the contiguous chain
       const idsToDelete = chain.map(x => x.id);
       const { error: delError } = await supabase.from("appointments").delete().in("id", idsToDelete);
       if (delError) throw delError;
 
-      // Insert new ones starting at selected start time
-      for (let i = 0; i < selectedSvcs.length; i++) {
-        const sId = selectedSvcs[i];
-        const svc = services?.find(s => s.id === sId);
-        const duration = svc?.duration_min ?? 30;
-        const currentEnd = new Date(currentStart.getTime() + duration * 60000);
-        
-        const { error } = await supabase.from("appointments").insert({
-          tenant_id: tenantId!, professional_id: proId, service_id: sId, client_id: clientId || null,
-          client_name: name, client_whatsapp: wa.replace(/\D/g,""),
-          start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
-          status: status, source: "manual", notes: i === 0 ? finalObs : null
-        });
-        if (error) throw error;
-        currentStart = currentEnd;
-      }
+      // Insert ONE single consolidated row
+      const { error } = await supabase.from("appointments").insert({
+        tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: clientId || null,
+        client_name: name, client_whatsapp: wa.replace(/\D/g,""),
+        start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
+        status: status, source: "manual", notes: finalObs
+      });
+      if (error) throw error;
 
       toast.success("Agendamento atualizado!");
       onDone();
