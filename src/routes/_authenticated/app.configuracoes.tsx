@@ -91,6 +91,7 @@ function LocationTab() {
 
 function HoursTab() {
   const { data: t } = useCurrentTenant(); const tenantId = t?.id;
+  const qc = useQueryClient();
   const { data: s } = useQuery({ queryKey: ["settings", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("tenant_settings").select("*").eq("tenant_id", tenantId!).maybeSingle()).data });
   const [f, setF] = useState<any>({ open_hour: 8, close_hour: 20, lunch_start: 12, lunch_end: 13, vip_days: [1,2,3,4], work_days: [1,2,3,4,5,6], vip_mode: "strict" });
   useEffect(()=>{if(s)setF({open_hour:s.open_hour??8,close_hour:s.close_hour??20,lunch_start:s.lunch_start??12,lunch_end:s.lunch_end??13,vip_days:s.vip_days??[1,2,3,4],work_days:s.work_days??[1,2,3,4,5,6],vip_mode:(s as any).vip_mode ?? "strict"});},[s]);
@@ -128,7 +129,7 @@ function HoursTab() {
         </button>
       </div>
     </div>
-    <Button onClick={async()=>{const{error}=await supabase.from("tenant_settings").upsert({...f,tenant_id:tenantId!});if(error)toast.error(error.message);else toast.success("Salvo");}}>Salvar</Button>
+    <Button onClick={async()=>{const{error}=await supabase.from("tenant_settings").upsert({...f,tenant_id:tenantId!});if(error)toast.error(error.message);else{toast.success("Salvo");qc.invalidateQueries({queryKey:["settings"]});}}}>Salvar</Button>
   </CardContent></Card>);
 }
 

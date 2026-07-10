@@ -400,8 +400,9 @@ function buildSlots(date: Date, settings: any, slotMin: number, duration: number
   const lunchS = settings?.lunch_start ?? 12;
   const lunchE = settings?.lunch_end ?? 13;
   const slots: { time: string; free: boolean }[] = [];
-  for (let h = open; h < close; h++) {
+  for (let h = open; h <= close; h++) {
     for (let m = 0; m < 60; m += slotMin) {
+      if (h === close && m > 0) break;
       if (h >= lunchS && h < lunchE) continue;
       const t = new Date(date); t.setHours(h, m, 0, 0);
       if (t < new Date()) continue;
