@@ -69,7 +69,11 @@ function RelPage() {
         const dayE = endOfDay(d);
 
         const dayCmds = (commandas ?? []).filter(c => new Date(c.closed_at!) >= dayS && new Date(c.closed_at!) <= dayE);
-        const dayAppts = (appointments ?? []).filter(a => new Date(a.start_at) >= dayS && new Date(a.start_at) <= dayE);
+        const dayAppts = (appointments ?? []).filter(a => 
+          new Date(a.start_at) >= dayS && 
+          new Date(a.start_at) <= dayE &&
+          !(a.notes && a.notes.includes("Comanda ID:"))
+        );
 
         const cmdTotal = dayCmds.reduce((a, b) => a + Number(b.total || 0), 0);
         const apptTotal = dayAppts.reduce((a, b) => a + getApptTotal(b), 0);

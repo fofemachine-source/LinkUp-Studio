@@ -67,11 +67,7 @@ function ComandasPage() {
               return (
                 <div 
                   key={c.id} 
-                  className={`relative p-4 rounded-xl border transition-all cursor-pointer shadow-sm hover:shadow-md hover:scale-[1.02] flex flex-col justify-between min-h-[130px] ${
-                    hasItems 
-                      ? "bg-amber-50/50 border-amber-200/60 hover:border-amber-400 text-amber-900"
-                      : "bg-rose-50/40 border-rose-100 hover:border-rose-300 text-rose-900"
-                  }`}
+                  className="relative p-4 rounded-xl border transition-all cursor-pointer shadow-sm hover:shadow-md hover:scale-[1.02] flex flex-col justify-between min-h-[130px] bg-amber-50/50 border-amber-200/60 hover:border-amber-400 text-amber-900"
                   onClick={() => setSelected(c)}
                 >
                   <div>
@@ -82,9 +78,7 @@ function ComandasPage() {
                   </div>
                   <div className="flex items-end justify-between mt-4">
                     <div className="text-lg font-extrabold">{brl(c.total)}</div>
-                    <div className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                      hasItems ? "bg-amber-500/20 text-amber-700" : "bg-rose-500/20 text-rose-700"
-                    }`}>
+                    <div className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700">
                       <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
                       {elapsed}
                     </div>
