@@ -90,8 +90,8 @@ export const createBooking = createServerFn({ method: "POST" })
         tenant_id: data.tenantId,
         full_name: data.clientName,
         whatsapp: cleanWhatsapp,
-        is_vip: data.isVip
-      }).select("id").single();
+        is_vip: data.isVip,
+      } as any).select("id").single();
       if (!errClient && newClient) clientId = newClient.id;
     }
 
