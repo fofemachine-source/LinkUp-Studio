@@ -184,9 +184,12 @@ function BookingPage() {
                     setVipInfo(v); 
                     if ((v as any).status === "active") {
                       setName((v as any).full_name); 
+                      if ((v as any).whatsapp) {
+                        setPhone((v as any).whatsapp);
+                      }
                       toast.success(`Bem-vindo, ${(v as any).full_name}!`);
 
-                      // Auto prefill plan service and barber
+                      // Auto prefill plan service and barber and advance steps immediately
                       let parsedPlan = { name: "", services: [] as string[], professional_id: "" };
                       try {
                         if ((v as any).plan?.startsWith("{") || (v as any).plan?.startsWith("[")) {
@@ -198,7 +201,12 @@ function BookingPage() {
                         setServiceId(parsedPlan.services[0]);
                         if (parsedPlan.professional_id) {
                           setProId(parsedPlan.professional_id);
+                          setStep("date");
+                        } else {
+                          setStep("pro");
                         }
+                      } else {
+                        setStep("service");
                       }
                     }
                   }}>VALIDAR CPF</Button>
