@@ -50,15 +50,6 @@ export function BottomNav() {
           </Link>
         );
       })}
-
-      {/* Menu / Mais button to toggle the sidebar drawer on mobile */}
-      <button
-        onClick={() => setOpenMobile(true)}
-        className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-all duration-200 active:scale-95 py-1 px-3 rounded-xl"
-      >
-        <Menu className="h-5 w-5" />
-        <span className="text-[10px] tracking-wide font-medium">Mais</span>
-      </button>
     </div>
   );
 }

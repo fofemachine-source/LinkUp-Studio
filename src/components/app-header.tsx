@@ -1,6 +1,6 @@
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { useSidebar } from "@/components/ui/sidebar";
 import { Input } from "@/components/ui/input";
-import { Search, Bell, LogOut } from "lucide-react";
+import { Search, Bell, LogOut, Menu } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -14,6 +14,7 @@ export function AppHeader() {
   const qc = useQueryClient();
   const { data: tenant } = useCurrentTenant();
   const { data: role } = useUserRole(tenant?.id);
+  const { toggleSidebar } = useSidebar();
   const [email, setEmail] = useState<string | null>(null);
   const [fullName, setFullName] = useState<string | null>(null);
   useEffect(() => { supabase.auth.getUser().then(({ data }) => {
@@ -41,7 +42,13 @@ export function AppHeader() {
 
   return (
     <header className="h-16 border-b bg-background flex items-center gap-3 px-4 sticky top-0 z-30">
-      <SidebarTrigger />
+      <button
+        onClick={toggleSidebar}
+        className="h-9 w-9 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-95 transition-all duration-200"
+        aria-label="Abrir Menu"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
       <div className="relative flex-1 max-w-2xl">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input placeholder="Buscar agendamentos, clientes..." className="pl-9 bg-muted/40 border-transparent focus-visible:bg-background" />
