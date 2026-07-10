@@ -35,12 +35,12 @@ function CadastrosPage() {
         <p className="text-muted-foreground">Clientes, profissionais, serviços, produtos e usuários.</p>
       </div>
       <Tabs defaultValue="clients">
-        <TabsList className="grid grid-cols-5 max-w-2xl">
-          <TabsTrigger value="clients"><Users className="h-4 w-4 mr-2" />Clientes</TabsTrigger>
-          <TabsTrigger value="pros"><Scissors className="h-4 w-4 mr-2" />Profissionais</TabsTrigger>
-          <TabsTrigger value="services"><Sparkles className="h-4 w-4 mr-2" />Serviços</TabsTrigger>
-          <TabsTrigger value="products"><Package className="h-4 w-4 mr-2" />Produtos</TabsTrigger>
-          <TabsTrigger value="users"><UserCog className="h-4 w-4 mr-2" />Usuários</TabsTrigger>
+        <TabsList className="flex w-full overflow-x-auto justify-start md:grid md:grid-cols-5 max-w-2xl h-auto p-1 gap-1 md:gap-0 scrollbar-none bg-muted/40">
+          <TabsTrigger value="clients" className="whitespace-nowrap"><Users className="h-4 w-4 mr-2" />Clientes</TabsTrigger>
+          <TabsTrigger value="pros" className="whitespace-nowrap"><Scissors className="h-4 w-4 mr-2" />Profissionais</TabsTrigger>
+          <TabsTrigger value="services" className="whitespace-nowrap"><Sparkles className="h-4 w-4 mr-2" />Serviços</TabsTrigger>
+          <TabsTrigger value="products" className="whitespace-nowrap"><Package className="h-4 w-4 mr-2" />Produtos</TabsTrigger>
+          <TabsTrigger value="users" className="whitespace-nowrap"><UserCog className="h-4 w-4 mr-2" />Usuários</TabsTrigger>
         </TabsList>
         <TabsContent value="clients"><ClientsTab /></TabsContent>
         <TabsContent value="pros"><ProsTab /></TabsContent>
@@ -59,17 +59,19 @@ function ClientsTab() {
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
   const { data } = useQuery({ queryKey: ["clients", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("clients").select("*").eq("tenant_id", tenantId!).order("full_name")).data ?? [] });
   return (
-    <Card><CardContent className="p-6 space-y-4">
+    <Card className="premium-card"><CardContent className="p-6 space-y-4">
       <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} clientes</h3>
         <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />Novo</Button></DialogTrigger>
           <ClientDialog key={edit?.id ?? "new"} client={edit} tenantId={tenantId} onDone={()=>{setOpen(false); setEdit(null); qc.invalidateQueries({queryKey:["clients"]});}}/></Dialog></div>
-      <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>WhatsApp</TableHead><TableHead>Email</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
-        <TableBody>{(data ?? []).map((c: any) => (
-          <TableRow key={c.id}><TableCell className="font-medium">{c.full_name}</TableCell><TableCell>{c.whatsapp}</TableCell><TableCell className="text-muted-foreground">{c.email}</TableCell>
-          <TableCell>{c.is_subscriber && <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">VIP</span>}</TableCell>
-          <TableCell className="text-right"><Button size="icon" variant="ghost" onClick={()=>{setEdit(c);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
-          <Button size="icon" variant="ghost" onClick={async()=>{if(confirm("Excluir?")){await supabase.from("clients").delete().eq("id",c.id);qc.invalidateQueries({queryKey:["clients"]});}}}><Trash2 className="h-4 w-4"/></Button></TableCell></TableRow>
-        ))}</TableBody></Table>
+      <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
+        <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>WhatsApp</TableHead><TableHead>Email</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
+          <TableBody>{(data ?? []).map((c: any) => (
+            <TableRow key={c.id}><TableCell className="font-medium whitespace-nowrap">{c.full_name}</TableCell><TableCell className="whitespace-nowrap">{c.whatsapp}</TableCell><TableCell className="text-muted-foreground whitespace-nowrap">{c.email}</TableCell>
+            <TableCell className="whitespace-nowrap">{c.is_subscriber && <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">VIP</span>}</TableCell>
+            <TableCell className="text-right whitespace-nowrap"><Button size="icon" variant="ghost" onClick={()=>{setEdit(c);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
+            <Button size="icon" variant="ghost" onClick={async()=>{if(confirm("Excluir?")){await supabase.from("clients").delete().eq("id",c.id);qc.invalidateQueries({queryKey:["clients"]});}}}><Trash2 className="h-4 w-4"/></Button></TableCell></TableRow>
+          ))}</TableBody></Table>
+      </div>
     </CardContent></Card>
   );
 }
@@ -97,13 +99,13 @@ function ProsTab() {
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
   const { data } = useQuery({ queryKey: ["pros-all", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("professionals").select("*").eq("tenant_id", tenantId!).order("full_name")).data ?? [] });
   return (
-    <Card><CardContent className="p-6 space-y-4">
+    <Card className="premium-card"><CardContent className="p-6 space-y-4">
       <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} profissionais</h3>
         <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />Novo</Button></DialogTrigger>
           <ProDialog key={edit?.id ?? "new"} pro={edit} tenantId={tenantId} onDone={()=>{setOpen(false);setEdit(null);qc.invalidateQueries({queryKey:["pros-all"]});qc.invalidateQueries({queryKey:["pros"]});}}/></Dialog></div>
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         {(data ?? []).map((p:any) => (
-          <div key={p.id} className="p-4 rounded-xl border flex items-center gap-3">
+          <div key={p.id} className="p-4 rounded-xl border flex items-center gap-3 bg-card premium-card">
             <Avatar className="h-14 w-14"><AvatarImage src={p.photo_url ?? undefined}/><AvatarFallback className="bg-primary/10 text-primary font-semibold">{p.full_name.split(" ").map((w:string)=>w[0]).slice(0,2).join("")}</AvatarFallback></Avatar>
             <div className="flex-1 min-w-0"><div className="font-medium truncate">{p.full_name}</div><div className="text-xs text-muted-foreground">{p.role_label} • {p.commission_pct}% comissão</div></div>
             <Button size="icon" variant="ghost" onClick={()=>{setEdit(p);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
@@ -225,16 +227,18 @@ function ServicesTab() {
   const tenantId = useTenantId(); const qc = useQueryClient();
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
   const { data } = useQuery({ queryKey: ["services-all", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("services").select("*").eq("tenant_id", tenantId!).order("name")).data ?? [] });
-  return (<Card><CardContent className="p-6 space-y-4">
+  return (<Card className="premium-card"><CardContent className="p-6 space-y-4">
     <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} serviços</h3>
       <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2"/>Novo</Button></DialogTrigger>
         <ServiceDialog key={edit?.id ?? "new"} svc={edit} tenantId={tenantId} onDone={()=>{setOpen(false);setEdit(null);qc.invalidateQueries({queryKey:["services-all"]});}}/></Dialog></div>
-    <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Preço</TableHead><TableHead>Duração</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
-      <TableBody>{(data ?? []).map((s:any) => (
-        <TableRow key={s.id}><TableCell className="font-medium">{s.name}</TableCell><TableCell>{brl(s.price)}</TableCell><TableCell>{s.duration_min} min</TableCell>
-        <TableCell>{s.vip_only && <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">VIP</span>}</TableCell>
-        <TableCell className="text-right"><Button size="icon" variant="ghost" onClick={()=>{setEdit(s);setOpen(true);}}><Pencil className="h-4 w-4"/></Button></TableCell></TableRow>
-      ))}</TableBody></Table>
+    <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
+      <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Preço</TableHead><TableHead>Duração</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
+        <TableBody>{(data ?? []).map((s:any) => (
+          <TableRow key={s.id}><TableCell className="font-medium whitespace-nowrap">{s.name}</TableCell><TableCell className="whitespace-nowrap">{brl(s.price)}</TableCell><TableCell className="whitespace-nowrap">{s.duration_min} min</TableCell>
+          <TableCell className="whitespace-nowrap">{s.vip_only && <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">VIP</span>}</TableCell>
+          <TableCell className="text-right whitespace-nowrap"><Button size="icon" variant="ghost" onClick={()=>{setEdit(s);setOpen(true);}}><Pencil className="h-4 w-4"/></Button></TableCell></TableRow>
+        ))}</TableBody></Table>
+    </div>
   </CardContent></Card>);
 }
 
@@ -267,16 +271,18 @@ function ProductsTab() {
   const tenantId = useTenantId(); const qc = useQueryClient();
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
   const { data } = useQuery({ queryKey: ["products-all", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("products").select("*").eq("tenant_id", tenantId!).order("name")).data ?? [] });
-  return (<Card><CardContent className="p-6 space-y-4">
+  return (<Card className="premium-card"><CardContent className="p-6 space-y-4">
     <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} produtos</h3>
       <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />Novo</Button></DialogTrigger>
         <ProductDialog key={edit?.id ?? "new"} product={edit} tenantId={tenantId} onDone={()=>{setOpen(false); setEdit(null); qc.invalidateQueries({queryKey:["products-all"]});}}/></Dialog></div>
-    <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Preço</TableHead><TableHead>Estoque</TableHead><TableHead></TableHead></TableRow></TableHeader>
-      <TableBody>{(data ?? []).map((p:any)=>(<TableRow key={p.id}><TableCell className="font-medium">{p.name}</TableCell><TableCell>{brl(p.price)}</TableCell><TableCell>{p.stock}</TableCell>
-        <TableCell className="text-right">
-          <Button size="icon" variant="ghost" onClick={()=>{setEdit(p);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
-          <Button size="icon" variant="ghost" onClick={async()=>{if(confirm("Excluir?")){await supabase.from("products").delete().eq("id",p.id);qc.invalidateQueries({queryKey:["products-all"]});}}}><Trash2 className="h-4 w-4"/></Button>
-        </TableCell></TableRow>))}</TableBody></Table>
+    <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
+      <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Preço</TableHead><TableHead>Estoque</TableHead><TableHead></TableHead></TableRow></TableHeader>
+        <TableBody>{(data ?? []).map((p:any)=>(<TableRow key={p.id}><TableCell className="font-medium whitespace-nowrap">{p.name}</TableCell><TableCell className="whitespace-nowrap">{brl(p.price)}</TableCell><TableCell className="whitespace-nowrap">{p.stock}</TableCell>
+          <TableCell className="text-right whitespace-nowrap">
+            <Button size="icon" variant="ghost" onClick={()=>{setEdit(p);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
+            <Button size="icon" variant="ghost" onClick={async()=>{if(confirm("Excluir?")){await supabase.from("products").delete().eq("id",p.id);qc.invalidateQueries({queryKey:["products-all"]});}}}><Trash2 className="h-4 w-4"/></Button>
+          </TableCell></TableRow>))}</TableBody></Table>
+    </div>
   </CardContent></Card>);
 }
 
@@ -301,5 +307,5 @@ function ProductDialog({ product, tenantId, onDone }: any) {
 }
 
 function UsersTab() {
-  return (<Card><CardContent className="p-6 text-sm text-muted-foreground">Convide usuários criando uma nova conta pelo login. O primeiro cadastro vira "dono"; os demais viram "staff". Gerenciamento avançado em breve.</CardContent></Card>);
+  return (<Card className="premium-card"><CardContent className="p-6 text-sm text-muted-foreground">Convide usuários criando uma nova conta pelo login. O primeiro cadastro vira "dono"; os demais viram "staff". Gerenciamento avançado em breve.</CardContent></Card>);
 }

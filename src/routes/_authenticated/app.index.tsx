@@ -113,7 +113,7 @@ function PainelGeral() {
         <StatCard title="COMISSÕES PENDENTES" value={brl(stats?.pendingCommission)} icon={Award} tone="warning" />
       </div>
 
-      <Card>
+      <Card className="premium-card">
         <CardContent className="p-6">
           <div className="flex items-center gap-2 text-primary text-xs font-semibold uppercase tracking-wide mb-2">
             <span className="h-2 w-2 rounded-full bg-primary animate-pulse" /> <Link2 className="h-3 w-3" /> Link de agendamento online
@@ -130,7 +130,7 @@ function PainelGeral() {
       </Card>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 premium-card">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -159,7 +159,7 @@ function PainelGeral() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="premium-card">
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold">Próximos Agendamentos</h3>
@@ -199,7 +199,7 @@ function StatCard({ title, value, icon: Icon, tone }: { title: string; value: st
     accent: "bg-primary/10 text-primary",
   };
   return (
-    <Card>
+    <Card className="premium-card">
       <CardContent className="p-5 flex items-center gap-4">
         <div className={`stat-icon ${tones[tone]}`}><Icon className="h-5 w-5" /></div>
         <div>
