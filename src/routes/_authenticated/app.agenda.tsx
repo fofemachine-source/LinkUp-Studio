@@ -12,7 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { addDays, format, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { brl } from "@/lib/format";
 
@@ -323,11 +323,38 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
   );
   const [selectedProds, setSelectedProds] = useState<string[]>([]);
   const [status, setStatus] = useState(appt.status || "pending");
-  const [obs, setObs] = useState(appt.notes || "");
+  const [obs, setObs] = useState("");
 
   const { data: services } = useQuery({ queryKey: ["services-min", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("services").select("*").eq("tenant_id", tenantId!).eq("active", true)).data ?? [] });
   const { data: products } = useQuery({ queryKey: ["products-min", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("products").select("*").eq("tenant_id", tenantId!).eq("active", true)).data ?? [] });
   const { data: clients } = useQuery({ queryKey: ["clients-min", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("clients").select("*").eq("tenant_id", tenantId!)).data ?? [] });
+
+  useEffect(() => {
+    if (products && products.length > 0 && appt.notes) {
+      const notesText = appt.notes || "";
+      if (notesText.includes("Produtos: ")) {
+        const prodPart = notesText.split("Produtos: ")[1];
+        if (prodPart) {
+          const names = prodPart.split(" | ")[0].split(", ").map((s: string) => s.trim());
+          const matchingIds = products.filter((p: any) => names.includes(p.name)).map((p: any) => p.id);
+          setSelectedProds(matchingIds);
+        }
+      }
+    }
+  }, [products, appt.notes]);
+
+  useEffect(() => {
+    if (appt.notes !== undefined) {
+      const raw = appt.notes || "";
+      let clean = raw;
+      if (raw.includes(" | Produtos:")) {
+        clean = raw.split(" | Produtos:")[0];
+      } else if (raw.includes("Produtos:")) {
+        clean = raw.split("Produtos:")[0];
+      }
+      setObs(clean.trim());
+    }
+  }, [appt.notes]);
 
   const totalTime = selectedSvcs.reduce((acc, id) => {
     const s = services?.find(x => x.id === id);
