@@ -377,8 +377,8 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
       if (notesText.includes("Serviços: ")) {
         const svcPart = notesText.split("Serviços: ")[1];
         if (svcPart) {
-          const names = svcPart.split(" | ")[0].split(", ").map((s: string) => s.trim());
-          const matchingIds = services.filter((s: any) => names.includes(s.name)).map((s: any) => s.id);
+          const names = svcPart.split(" | ")[0].split(", ").map((s: string) => s.trim().toLowerCase());
+          const matchingIds = services.filter((s: any) => names.includes((s.name || "").trim().toLowerCase())).map((s: any) => s.id);
           servicesList.push(...matchingIds);
         }
       }
@@ -394,8 +394,8 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
       if (notesText.includes("Produtos: ")) {
         const prodPart = notesText.split("Produtos: ")[1];
         if (prodPart) {
-          const names = prodPart.split(" | ")[0].split(", ").map((s: string) => s.trim());
-          const matchingIds = products.filter((p: any) => names.includes(p.name)).map((p: any) => p.id);
+          const names = prodPart.split(" | ")[0].split(", ").map((s: string) => s.trim().toLowerCase());
+          const matchingIds = products.filter((p: any) => names.includes((p.name || "").trim().toLowerCase())).map((p: any) => p.id);
           setSelectedProds(matchingIds);
         }
       }
