@@ -95,6 +95,31 @@ export const createBooking = createServerFn({ method: "POST" })
       if (!errClient && newClient) clientId = newClient.id;
     }
 
+    // Create an open comanda
+    const { data: countRes } = await supabase.from("commandas").select("id", { count: "exact", head: true }).eq("tenant_id", data.tenantId);
+    const cmdNumber = (countRes as any)?.count ? (countRes as any).count + 1 : Math.floor(Math.random() * 10000);
+
+    const { data: cmd, error: cmdErr } = await supabase.from("commandas").insert({
+      tenant_id: data.tenantId, client_name: data.clientName, number: cmdNumber,
+      status: "open", subtotal: svc.price, total: svc.price
+    }).select("*").single();
+
+    if (!cmdErr && cmd) {
+      // Find pro commission
+      const { data: pro } = await supabase.from("professionals").select("commission_pct").eq("id", data.professionalId).maybeSingle();
+      const commission_pct = pro?.commission_pct ?? 0;
+      const commission_value = (Number(svc.price) * commission_pct) / 100;
+
+      await supabase.from("commanda_items").insert({
+        commanda_id: cmd.id, tenant_id: data.tenantId, kind: "service", ref_id: data.serviceId,
+        name: svc.name, quantity: 1, unit_price: svc.price, professional_id: data.professionalId,
+        commission_pct, commission_value, commission_status: "pending"
+      });
+    }
+
+    const comandaText = cmd ? `Comanda ID: ${cmd.id}` : "";
+    const notesText = ["Agendamento Online", comandaText].filter(Boolean).join(" | ");
+
     const { data: appt, error } = await supabase.from("appointments").insert({
       tenant_id: data.tenantId,
       professional_id: data.professionalId,
@@ -107,6 +132,7 @@ export const createBooking = createServerFn({ method: "POST" })
       status: "confirmed",
       is_vip: data.isVip,
       source: "online",
+      notes: notesText
     }).select("id").single();
     if (error) throw new Error(error.message);
     return { id: appt.id };
