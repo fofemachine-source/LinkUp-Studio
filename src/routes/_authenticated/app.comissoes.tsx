@@ -13,7 +13,69 @@ export const Route = createFileRoute("/_authenticated/app/comissoes")({ componen
 
 function ComissoesPage() {
   const tenantId = useCurrentTenant().data?.id; const qc = useQueryClient();
-  const { data: items } = useQuery({ queryKey: ["commissions", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("commanda_items").select("*, professionals(full_name), commandas(closed_at, number)").eq("tenant_id", tenantId!).not("professional_id", "is", null).order("created_at", { ascending: false })).data ?? [] });
+  const { data: items } = useQuery({
+    queryKey: ["commissions", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const [
+        { data: cmdItems },
+        { data: appts },
+        { data: services }
+      ] = await Promise.all([
+        supabase.from("commanda_items").select("*, professionals(full_name, commission_pct), commandas(closed_at, number)").eq("tenant_id", tenantId!).not("professional_id", "is", null),
+        supabase.from("appointments").select("*, professionals(full_name, commission_pct), services(*)").eq("tenant_id", tenantId!).eq("status", "completed"),
+        supabase.from("services").select("*").eq("tenant_id", tenantId!)
+      ]);
+
+      const svcList = services ?? [];
+
+      const apptItems = (appts ?? []).map(appt => {
+        const pro = appt.professionals;
+        const commission_pct = pro?.commission_pct ?? 0;
+        
+        let servicesVal = Number(appt.services?.price || 0);
+        if (appt.notes && appt.notes.includes("Serviços: ")) {
+          const svcPart = appt.notes.split("Serviços: ")[1];
+          if (svcPart) {
+            const names = svcPart.split(" | ")[0].split(", ").map((s: string) => s.trim().toLowerCase());
+            names.forEach((name: string) => {
+              const svc = svcList.find(s => (s.name || "").trim().toLowerCase() === name);
+              if (svc) servicesVal += Number(svc.price || 0);
+            });
+          }
+        }
+        
+        const commission_value = (servicesVal * commission_pct) / 100;
+        const isPaid = appt.notes && appt.notes.includes("Comissão: paid");
+        
+        const serviceNames = [appt.services?.name];
+        if (appt.notes && appt.notes.includes("Serviços: ")) {
+          const svcPart = appt.notes.split("Serviços: ")[1].split(" | ")[0];
+          if (svcPart) serviceNames.push(svcPart);
+        }
+        
+        return {
+          id: `appt-${appt.id}`,
+          created_at: appt.start_at,
+          professional_id: appt.professional_id,
+          name: serviceNames.filter(Boolean).join(", "),
+          unit_price: servicesVal,
+          quantity: 1,
+          commission_pct,
+          commission_value,
+          commission_status: isPaid ? "paid" : "pending",
+          professionals: pro,
+          commandas: {
+            closed_at: appt.start_at,
+            number: `${appt.id.substring(0, 4)}`
+          }
+        };
+      });
+
+      return [...(cmdItems ?? []), ...apptItems].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+  });
+
   const pending = (items ?? []).filter((i:any)=>i.commission_status==="pending");
   const paid = (items ?? []).filter((i:any)=>i.commission_status==="paid");
   const totalGen = (items ?? []).reduce((a:number,b:any)=>a+Number(b.commission_value||0),0);
@@ -24,8 +86,20 @@ function ComissoesPage() {
     const q = supabase.from("commanda_items").update({ commission_status: "paid" }).eq("tenant_id", tenantId!).eq("commission_status", "pending");
     const { error } = proId ? await q.eq("professional_id", proId) : await q;
     if (error) return toast.error(error.message);
+
+    // Mark completed appointments commissions as paid
+    const apptQuery = supabase.from("appointments").select("id, notes").eq("tenant_id", tenantId!).eq("status", "completed");
+    const { data: toPayAppts } = proId ? await apptQuery.eq("professional_id", proId) : await apptQuery;
+    
+    for (const appt of toPayAppts ?? []) {
+      if (appt.notes && appt.notes.includes("Comissão: paid")) continue;
+      const newNotes = [appt.notes, "Comissão: paid"].filter(Boolean).join(" | ");
+      await supabase.from("appointments").update({ notes: newNotes }).eq("id", appt.id);
+    }
+
     toast.success("Comissões pagas");
     qc.invalidateQueries({ queryKey: ["commissions"] });
+    qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
   }
 
   return (

@@ -54,12 +54,82 @@ function PainelGeral() {
       const dayEnd = endOfDay(today).toISOString();
       const monthStart = startOfMonth(today).toISOString();
 
-      const [{ data: dayCmds }, { data: monthCmds }, { data: appts }, { data: commPending }] = await Promise.all([
+      const [
+        { data: dayCmds },
+        { data: monthCmds },
+        { data: allApptsToday },
+        { data: commPending },
+        { data: services },
+        { data: products },
+        { data: completedAppts }
+      ] = await Promise.all([
         supabase.from("commandas").select("total").eq("tenant_id", tenantId!).eq("status", "closed").gte("closed_at", dayStart).lte("closed_at", dayEnd),
         supabase.from("commandas").select("total").eq("tenant_id", tenantId!).eq("status", "closed").gte("closed_at", monthStart),
         supabase.from("appointments").select("id").eq("tenant_id", tenantId!).gte("start_at", dayStart).lte("start_at", dayEnd),
         supabase.from("commanda_items").select("commission_value").eq("tenant_id", tenantId!).eq("commission_status", "pending"),
+        supabase.from("services").select("*").eq("tenant_id", tenantId!),
+        supabase.from("products").select("*").eq("tenant_id", tenantId!),
+        supabase.from("appointments").select("*, professionals(commission_pct)").eq("tenant_id", tenantId!).eq("status", "completed").gte("start_at", monthStart)
       ]);
+
+      const svcList = services ?? [];
+      const prodList = products ?? [];
+
+      function getApptTotal(appt: any) {
+        let total = 0;
+        const mainSvc = svcList.find(s => s.id === appt.service_id);
+        total += Number(mainSvc?.price || 0);
+
+        if (appt.notes && appt.notes.includes("Serviços: ")) {
+          const svcPart = appt.notes.split("Serviços: ")[1];
+          if (svcPart) {
+            const names = svcPart.split(" | ")[0].split(", ").map((s: string) => s.trim().toLowerCase());
+            names.forEach((name: string) => {
+              const svc = svcList.find(s => (s.name || "").trim().toLowerCase() === name);
+              if (svc) total += Number(svc.price || 0);
+            });
+          }
+        }
+
+        if (appt.notes && appt.notes.includes("Produtos: ")) {
+          const prodPart = appt.notes.split("Produtos: ")[1];
+          if (prodPart) {
+            const names = prodPart.split(" | ")[0].split(", ").map((s: string) => s.trim().toLowerCase());
+            names.forEach((name: string) => {
+              const prod = prodList.find(p => (p.name || "").trim().toLowerCase() === name);
+              if (prod) total += Number(prod.price || 0);
+            });
+          }
+        }
+        return total;
+      }
+
+      function getApptCommission(appt: any) {
+        const pct = appt.professionals?.commission_pct ?? 0;
+        let servicesVal = 0;
+        const mainSvc = svcList.find(s => s.id === appt.service_id);
+        servicesVal += Number(mainSvc?.price || 0);
+
+        if (appt.notes && appt.notes.includes("Serviços: ")) {
+          const svcPart = appt.notes.split("Serviços: ")[1];
+          if (svcPart) {
+            const names = svcPart.split(" | ")[0].split(", ").map((s: string) => s.trim().toLowerCase());
+            names.forEach((name: string) => {
+              const svc = svcList.find(s => (s.name || "").trim().toLowerCase() === name);
+              if (svc) servicesVal += Number(svc.price || 0);
+            });
+          }
+        }
+        return (servicesVal * pct) / 100;
+      }
+
+      const apptsToday = (completedAppts ?? []).filter(a => new Date(a.start_at) >= new Date(dayStart) && new Date(a.start_at) <= new Date(dayEnd));
+      const apptRevenueToday = apptsToday.reduce((acc, a) => acc + getApptTotal(a), 0);
+      const apptRevenueMonth = (completedAppts ?? []).reduce((acc, a) => acc + getApptTotal(a), 0);
+
+      const apptCommPending = (completedAppts ?? [])
+        .filter(a => !(a.notes && a.notes.includes("Comissão: paid")))
+        .reduce((acc, a) => acc + getApptCommission(a), 0);
 
       // last 7 days revenue
       const daysPromises = [];
@@ -69,17 +139,22 @@ function PainelGeral() {
         const e = endOfDay(d).toISOString();
         daysPromises.push(
           supabase.from("commandas").select("total").eq("tenant_id", tenantId!).eq("status", "closed").gte("closed_at", s).lte("closed_at", e).then(({ data }) => {
-            return { d: format(d, "dd/MM"), v: (data ?? []).reduce((a, b: any) => a + Number(b.total || 0), 0), order: -i };
+            const cmdRev = (data ?? []).reduce((a, b: any) => a + Number(b.total || 0), 0);
+            const apptRev = (completedAppts ?? [])
+              .filter(a => new Date(a.start_at) >= new Date(s) && new Date(a.start_at) <= new Date(e))
+              .reduce((acc, a) => acc + getApptTotal(a), 0);
+            return { d: format(d, "dd/MM"), v: cmdRev + apptRev, order: -i };
           })
         );
       }
       const daysResults = await Promise.all(daysPromises);
       const days = daysResults.sort((a, b) => a.order - b.order).map(x => ({ d: x.d, v: x.v }));
+
       return {
-        today: (dayCmds ?? []).reduce((a, b: any) => a + Number(b.total || 0), 0),
-        month: (monthCmds ?? []).reduce((a, b: any) => a + Number(b.total || 0), 0),
-        appointments: appts?.length ?? 0,
-        pendingCommission: (commPending ?? []).reduce((a, b: any) => a + Number(b.commission_value || 0), 0),
+        today: (dayCmds ?? []).reduce((a, b: any) => a + Number(b.total || 0), 0) + apptRevenueToday,
+        month: (monthCmds ?? []).reduce((a, b: any) => a + Number(b.total || 0), 0) + apptRevenueMonth,
+        appointments: allApptsToday?.length ?? 0,
+        pendingCommission: (commPending ?? []).reduce((a, b: any) => a + Number(b.commission_value || 0), 0) + apptCommPending,
         chart: days,
       };
     },
