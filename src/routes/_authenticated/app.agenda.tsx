@@ -24,6 +24,7 @@ function AgendaPage() {
   const [date, setDate] = useState(new Date());
   const [openNew, setOpenNew] = useState(false);
   const [editAppt, setEditAppt] = useState<any>(null);
+  const [selectedSlot, setSelectedSlot] = useState<{ proId: string, time: string } | null>(null);
   const tenantId = tenant?.id;
 
   const { data: pros } = useQuery({
@@ -55,9 +56,9 @@ function AgendaPage() {
           <h1 className="text-3xl font-semibold">Agenda</h1>
           <p className="text-muted-foreground">Agendamentos por profissional.</p>
         </div>
-        <Dialog open={openNew} onOpenChange={setOpenNew}>
-          <DialogTrigger asChild><Button size="lg"><Plus className="h-4 w-4 mr-2" /> NOVO AGENDAMENTO</Button></DialogTrigger>
-          <NewAppointmentDialog tenantId={tenantId} pros={pros ?? []} onDone={() => { setOpenNew(false); qc.invalidateQueries({ queryKey: ["appts"] }); }} defaultDate={date} />
+        <Dialog open={openNew} onOpenChange={(v) => { setOpenNew(v); if(!v) setSelectedSlot(null); }}>
+          <DialogTrigger asChild><Button size="lg" onClick={() => setSelectedSlot(null)}><Plus className="h-4 w-4 mr-2" /> NOVO AGENDAMENTO</Button></DialogTrigger>
+          <NewAppointmentDialog key={selectedSlot ? `${selectedSlot.proId}-${selectedSlot.time}` : "new"} tenantId={tenantId} pros={pros ?? []} onDone={() => { setOpenNew(false); setSelectedSlot(null); qc.invalidateQueries({ queryKey: ["appts"] }); }} defaultDate={date} defaultProId={selectedSlot?.proId} defaultTime={selectedSlot?.time} />
         </Dialog>
       </div>
 
@@ -107,7 +108,7 @@ function AgendaPage() {
                         <div className="text-muted-foreground truncate">{a.services?.name}</div>
                       </div>
                     ) : (
-                      <div className="h-full rounded-lg border border-dashed border-transparent hover:border-primary/50 hover:bg-primary/5 grid place-items-center text-xs text-muted-foreground cursor-pointer opacity-0 hover:opacity-100">Livre</div>
+                      <div onClick={() => { setSelectedSlot({ proId: p.id, time: t }); setOpenNew(true); }} className="h-full rounded-lg border border-dashed border-transparent hover:border-primary/50 hover:bg-primary/5 grid place-items-center text-xs text-muted-foreground cursor-pointer opacity-0 hover:opacity-100">Livre</div>
                     )}
                   </div>
                 );
@@ -118,19 +119,19 @@ function AgendaPage() {
       </div>
 
       {editAppt && (
-        <Dialog open={!!editAppt} onOpenChange={(v) => !v && setEditAppt(null)}>
-          <EditAppointmentDialog appt={editAppt} tenantId={tenantId} pros={pros ?? []} onDone={() => { setEditAppt(null); qc.invalidateQueries({ queryKey: ["appts"] }); }} onDelete={() => { setEditAppt(null); qc.invalidateQueries({ queryKey: ["appts"] }); }} />
+        <Dialog open={editAppt} onOpenChange={(v) => !v && setEditAppt(null)}>
+          <EditAppointmentDialog appt={editAppt} tenantId={tenantId} pros={pros ?? []} onDone={() => { setEditAppt(null); qc.invalidateQueries({ queryKey: ["appts"] }); }} onDelete={() => { setEditAppt(null); qc.invalidateQueries({ queryKey: ["appts"] }); }} appts={appts ?? []} />
         </Dialog>
       )}
     </div>
   );
 }
 
-function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate }: { tenantId?: string; pros: any[]; onDone: () => void; defaultDate: Date }) {
+function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProId, defaultTime }: { tenantId?: string; pros: any[]; onDone: () => void; defaultDate: Date; defaultProId?: string; defaultTime?: string }) {
   const [clientId, setClientId] = useState<string>("");
-  const [proId, setProId] = useState("");
+  const [proId, setProId] = useState(defaultProId ?? "");
   const [dateStr, setDateStr] = useState(format(defaultDate, "yyyy-MM-dd"));
-  const [time, setTime] = useState("09:00");
+  const [time, setTime] = useState(defaultTime ?? "09:00");
   const [busy, setBusy] = useState(false);
 
   const [selectedSvcs, setSelectedSvcs] = useState<string[]>([]);
@@ -307,7 +308,9 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate }: { tenantI
   );
 }
 
-function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete }: { appt: any; tenantId?: string; pros: any[]; onDone: () => void; onDelete: () => void }) {
+function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }: { appt: any; tenantId?: string; pros: any[]; onDone: () => void; onDelete: () => void; appts: any[] }) {
+  const chain = useMemo(() => getContiguousChain(appt, appts ?? []), [appt, appts]);
+
   const [clientId, setClientId] = useState<string>(appt.client_id || "");
   const [proId, setProId] = useState(appt.professional_id);
   const startDate = new Date(appt.start_at);
@@ -315,7 +318,9 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete }: { app
   const [time, setTime] = useState(format(startDate, "HH:mm"));
   const [busy, setBusy] = useState(false);
 
-  const [selectedSvcs, setSelectedSvcs] = useState<string[]>([appt.service_id]);
+  const [selectedSvcs, setSelectedSvcs] = useState<string[]>(
+    chain.map(x => x.service_id).filter(Boolean)
+  );
   const [selectedProds, setSelectedProds] = useState<string[]>([]);
   const [status, setStatus] = useState(appt.status || "pending");
   const [obs, setObs] = useState(appt.notes || "");
@@ -358,32 +363,25 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete }: { app
       const prodNames = selectedProds.map(id => products?.find(p=>p.id===id)?.name).filter(Boolean).join(", ");
       const finalObs = [obs, prodNames ? `Produtos: ${prodNames}` : ""].filter(Boolean).join(" | ");
 
-      const firstSvcId = selectedSvcs[0];
-      const firstDuration = services?.find(s => s.id === firstSvcId)?.duration_min ?? 30;
-      const firstEnd = new Date(currentStart.getTime() + firstDuration * 60000);
+      // Delete all old appointments in the contiguous chain
+      const idsToDelete = chain.map(x => x.id);
+      const { error: delError } = await supabase.from("appointments").delete().in("id", idsToDelete);
+      if (delError) throw delError;
 
-      const { error: err1 } = await supabase.from("appointments").update({
-          professional_id: proId, service_id: firstSvcId, client_id: clientId || null,
-          client_name: name, client_whatsapp: wa.replace(/\D/g,""),
-          start_at: currentStart.toISOString(), end_at: firstEnd.toISOString(),
-          status: status, notes: finalObs
-      }).eq("id", appt.id);
-      if (err1) throw err1;
-
-      currentStart = firstEnd;
-
-      for (let i = 1; i < selectedSvcs.length; i++) {
+      // Insert new ones starting at selected start time
+      for (let i = 0; i < selectedSvcs.length; i++) {
         const sId = selectedSvcs[i];
         const svc = services?.find(s => s.id === sId);
         const duration = svc?.duration_min ?? 30;
         const currentEnd = new Date(currentStart.getTime() + duration * 60000);
         
-        await supabase.from("appointments").insert({
+        const { error } = await supabase.from("appointments").insert({
           tenant_id: tenantId!, professional_id: proId, service_id: sId, client_id: clientId || null,
           client_name: name, client_whatsapp: wa.replace(/\D/g,""),
           start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
-          status: status, source: "manual", notes: null
+          status: status, source: "manual", notes: i === 0 ? finalObs : null
         });
+        if (error) throw error;
         currentStart = currentEnd;
       }
 
@@ -393,9 +391,10 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete }: { app
   }
 
   async function handleDelete() {
-     if(!confirm("Deseja realmente excluir este agendamento?")) return;
+     if(!confirm("Deseja realmente excluir este agendamento (incluindo todos os serviços associados)?")) return;
      setBusy(true);
-     const { error } = await supabase.from("appointments").delete().eq("id", appt.id);
+     const idsToDelete = chain.map(x => x.id);
+     const { error } = await supabase.from("appointments").delete().in("id", idsToDelete);
      setBusy(false);
      if (error) toast.error(error.message);
      else { toast.success("Agendamento excluído!"); onDelete(); }
@@ -511,4 +510,30 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete }: { app
       </div>
     </DialogContent>
   );
+}
+
+function getContiguousChain(appt: any, allAppts: any[]) {
+  const sameGroup = allAppts.filter(x => 
+    x.professional_id === appt.professional_id &&
+    x.status !== "cancelled" && x.status !== "no_show" &&
+    (appt.client_id ? x.client_id === appt.client_id : x.client_name === appt.client_name)
+  );
+  
+  const chain = [appt];
+  let added = true;
+  while (added) {
+    added = false;
+    for (const x of sameGroup) {
+      if (chain.some(c => c.id === x.id)) continue;
+      const isContiguous = chain.some(c => 
+        new Date(x.end_at).getTime() === new Date(c.start_at).getTime() ||
+        new Date(x.start_at).getTime() === new Date(c.end_at).getTime()
+      );
+      if (isContiguous) {
+        chain.push(x);
+        added = true;
+      }
+    }
+  }
+  return chain.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
 }
