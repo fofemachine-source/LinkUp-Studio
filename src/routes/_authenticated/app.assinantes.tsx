@@ -243,11 +243,20 @@ function SubDialog({ tenantId, onDone, subscriber }: { tenantId?: string; onDone
                     type="checkbox" 
                     checked={selectedSvcs.includes(s.id)}
                     onChange={(e) => {
+                      let updatedSvcs = [];
                       if (e.target.checked) {
-                        setSelectedSvcs([...selectedSvcs, s.id]);
+                        updatedSvcs = [...selectedSvcs, s.id];
                       } else {
-                        setSelectedSvcs(selectedSvcs.filter(id => id !== s.id));
+                        updatedSvcs = selectedSvcs.filter(id => id !== s.id);
                       }
+                      setSelectedSvcs(updatedSvcs);
+                      
+                      // Auto-sum prices of selected services
+                      const sum = updatedSvcs.reduce((acc, id) => {
+                        const matched = (services ?? []).find(x => x.id === id);
+                        return acc + Number(matched?.price || 0);
+                      }, 0);
+                      setPrice(Number(sum.toFixed(2)));
                     }}
                     className="h-4 w-4 rounded border-input bg-background text-primary focus:ring-primary cursor-pointer"
                   />
