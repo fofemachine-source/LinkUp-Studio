@@ -64,16 +64,18 @@ function ComandasPage() {
             {(open ?? []).map((c: any) => {
               const hasItems = (c.commanda_items?.length ?? 0) > 0;
               const elapsed = getElapsedTime(c.created_at);
+              const openTime = new Date(c.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
               return (
                 <div 
                   key={c.id} 
-                  className="relative p-4 rounded-xl border transition-all cursor-pointer shadow-sm hover:shadow-md hover:scale-[1.02] flex flex-col justify-between min-h-[130px] bg-amber-50/50 border-amber-200/60 hover:border-amber-400 text-amber-900"
+                  className="relative p-4 rounded-xl border transition-all cursor-pointer shadow-sm hover:shadow-md hover:scale-[1.02] flex flex-col justify-between min-h-[140px] bg-amber-50/50 border-amber-200/60 hover:border-amber-400 text-amber-900"
                   onClick={() => setSelected(c)}
                 >
                   <div>
                     <div className="font-bold text-xs truncate uppercase tracking-wider">#{c.number} — {c.client_name}</div>
-                    <div className="text-[11px] opacity-70 mt-1">
-                      {hasItems ? `${c.commanda_items.length} itens` : "Sem itens"}
+                    <div className="text-[11px] opacity-70 mt-1.5 space-y-0.5">
+                      <div>{hasItems ? `${c.commanda_items.length} itens` : "Sem itens"}</div>
+                      <div className="text-[10px]">Abertura: {openTime}</div>
                     </div>
                   </div>
                   <div className="flex items-end justify-between mt-4">
@@ -97,26 +99,32 @@ function ComandasPage() {
         <div>
           <h3 className="font-semibold text-lg mb-4">Fechadas recentes</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {(closed ?? []).map((c: any) => (
-              <div 
-                key={c.id} 
-                className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/40 hover:border-emerald-300 hover:scale-[1.02] transition-all cursor-pointer shadow-sm hover:shadow-md flex flex-col justify-between min-h-[130px] text-emerald-950"
-                onClick={() => setSelected(c)}
-              >
-                <div>
-                  <div className="font-bold text-xs truncate uppercase tracking-wider">#{c.number} — {c.client_name}</div>
-                  <div className="text-[10px] opacity-70 mt-1">
-                    {c.closed_at ? dateBR(c.closed_at) : ""}
+            {(closed ?? []).map((c: any) => {
+              const openTime = new Date(c.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+              const closeTime = c.closed_at ? new Date(c.closed_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+              const closeDate = c.closed_at ? dateBR(c.closed_at) : "";
+              return (
+                <div 
+                  key={c.id} 
+                  className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/40 hover:border-emerald-300 hover:scale-[1.02] transition-all cursor-pointer shadow-sm hover:shadow-md flex flex-col justify-between min-h-[145px] text-emerald-950"
+                  onClick={() => setSelected(c)}
+                >
+                  <div>
+                    <div className="font-bold text-xs truncate uppercase tracking-wider">#{c.number} — {c.client_name}</div>
+                    <div className="text-[10px] opacity-70 mt-1.5 space-y-0.5">
+                      <div>Aberto: {openTime}</div>
+                      <div>Fechado: {closeDate} {closeTime ? `às ${closeTime}` : ""}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-end justify-between mt-4">
+                    <div className="text-lg font-extrabold text-emerald-700">{brl(c.total)}</div>
+                    <div className="text-[9px] uppercase font-bold bg-emerald-500/10 text-emerald-700 px-2 py-0.5 rounded-full">
+                      {c.payment_method}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-end justify-between mt-4">
-                  <div className="text-lg font-extrabold text-emerald-700">{brl(c.total)}</div>
-                  <div className="text-[9px] uppercase font-bold bg-emerald-500/10 text-emerald-700 px-2 py-0.5 rounded-full">
-                    {c.payment_method}
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             {(closed?.length ?? 0) === 0 && (
               <div className="col-span-full text-sm text-muted-foreground p-8 border border-dashed rounded-xl text-center">
                 Nenhuma comanda fechada recentemente
