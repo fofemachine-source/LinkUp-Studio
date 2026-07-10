@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCurrentTenant } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -147,6 +147,7 @@ function AgendaPage() {
 }
 
 function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProId, defaultTime }: { tenantId?: string; pros: any[]; onDone: () => void; defaultDate: Date; defaultProId?: string; defaultTime?: string }) {
+  const navigate = useNavigate();
   const [clientId, setClientId] = useState<string>("");
   const [proId, setProId] = useState(defaultProId ?? "");
   const [dateStr, setDateStr] = useState(format(defaultDate, "yyyy-MM-dd"));
@@ -185,6 +186,9 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
     try {
       if (!clientId) throw new Error("Selecione um cliente.");
       if (selectedSvcs.length === 0) throw new Error("Selecione pelo menos um serviço.");
+      if (status === "completed" && !paymentMethod) {
+        throw new Error("Por favor, selecione a forma de pagamento para finalizar o agendamento.");
+      }
       
       const client = clients?.find(c => c.id === clientId);
       const name = client?.full_name || "Cliente";
@@ -219,8 +223,60 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
       });
       if (error) throw error;
 
+      // Auto Comanda Creation
+      if (status === "completed") {
+        const paymentMapped: Record<string, string> = {
+          "Pix": "pix",
+          "Dinheiro": "cash",
+          "Cartão de Crédito": "credit",
+          "Cartão de Débito": "debit"
+        };
+        const mappedMethod = paymentMapped[paymentMethod] || "pix";
+
+        const { data: countRes } = await supabase.from("commandas").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId!);
+        const cmdNumber = (countRes as any)?.count ? (countRes as any).count + 1 : Math.floor(Math.random() * 10000);
+
+        const { data: cmd, error: cmdErr } = await supabase.from("commandas").insert({
+          tenant_id: tenantId!, client_name: name, number: cmdNumber, status: "closed",
+          closed_at: new Date().toISOString(), subtotal: totalValue, total: totalValue, payment_method: mappedMethod
+        }).select("*").single();
+
+        if (cmdErr) throw cmdErr;
+
+        const pro = pros.find((p: any) => p.id === proId);
+        const commission_pct = pro?.commission_pct ?? 0;
+
+        for (const sId of selectedSvcs) {
+          const svc = services?.find(s => s.id === sId);
+          if (!svc) continue;
+          const commission_value = (Number(svc.price) * commission_pct) / 100;
+          await supabase.from("commanda_items").insert({
+            commanda_id: cmd.id, tenant_id: tenantId!, kind: "service", ref_id: sId,
+            name: svc.name, quantity: 1, unit_price: svc.price, professional_id: proId || null,
+            commission_pct, commission_value, commission_status: "pending"
+          });
+        }
+
+        for (const pId of selectedProds) {
+          const prod = products?.find(p => p.id === pId);
+          if (!prod) continue;
+          await supabase.from("commanda_items").insert({
+            commanda_id: cmd.id, tenant_id: tenantId!, kind: "product", ref_id: pId,
+            name: prod.name, quantity: 1, unit_price: prod.price, professional_id: null,
+            commission_pct: 0, commission_value: 0, commission_status: "pending"
+          });
+        }
+
+        await supabase.from("cash_movements").insert({
+          tenant_id: tenantId!, kind: "in", amount: totalValue, description: `Agendamento #${cmdNumber} — ${name}`
+        });
+      }
+
       toast.success("Agendamento criado!");
       onDone();
+      if (status === "completed") {
+        navigate({ to: "/app/comandas" });
+      }
     } catch (e:any) { toast.error(e.message); } finally { setBusy(false); }
   }
 
@@ -349,18 +405,15 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
 }
 
 function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }: { appt: any; tenantId?: string; pros: any[]; onDone: () => void; onDelete: () => void; appts: any[] }) {
-  const chain = useMemo(() => getContiguousChain(appt, appts ?? []), [appt, appts]);
-
+  const navigate = useNavigate();
+  const qc = useQueryClient();
   const [clientId, setClientId] = useState<string>(appt.client_id || "");
-  const [proId, setProId] = useState(appt.professional_id);
-  const startDate = new Date(appt.start_at);
-  const [dateStr, setDateStr] = useState(format(startDate, "yyyy-MM-dd"));
-  const [time, setTime] = useState(format(startDate, "HH:mm"));
+  const [proId, setProId] = useState(appt.professional_id || "");
+  const [dateStr, setDateStr] = useState(format(new Date(appt.start_at), "yyyy-MM-dd"));
+  const [time, setTime] = useState(format(new Date(appt.start_at), "HH:mm"));
   const [busy, setBusy] = useState(false);
 
-  const [selectedSvcs, setSelectedSvcs] = useState<string[]>(
-    chain.map(x => x.service_id).filter(Boolean)
-  );
+  const [selectedSvcs, setSelectedSvcs] = useState<string[]>([]);
   const [selectedProds, setSelectedProds] = useState<string[]>([]);
   const [status, setStatus] = useState(appt.status || "pending");
   const [paymentMethod, setPaymentMethod] = useState<string>("");
@@ -369,6 +422,10 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
   const { data: services } = useQuery({ queryKey: ["services-min", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("services").select("*").eq("tenant_id", tenantId!).eq("active", true)).data ?? [] });
   const { data: products } = useQuery({ queryKey: ["products-min", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("products").select("*").eq("tenant_id", tenantId!).eq("active", true)).data ?? [] });
   const { data: clients } = useQuery({ queryKey: ["clients-min", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("clients").select("*").eq("tenant_id", tenantId!)).data ?? [] });
+
+  const chain = useMemo(() => {
+    return getContiguousChain(appt, appts);
+  }, [appt, appts]);
 
   useEffect(() => {
     if (services && services.length > 0 && appt.notes) {
@@ -444,6 +501,9 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
     try {
       if (!clientId && !appt.client_name) throw new Error("Selecione um cliente.");
       if (selectedSvcs.length === 0) throw new Error("Selecione pelo menos um serviço.");
+      if (status === "completed" && !paymentMethod) {
+        throw new Error("Por favor, selecione a forma de pagamento para finalizar o agendamento.");
+      }
       
       const client = clients?.find(c => c.id === clientId);
       const name = client?.full_name || appt.client_name || "Cliente";
@@ -481,8 +541,60 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
       });
       if (error) throw error;
 
+      // Auto Comanda Creation (only if it wasn't completed before)
+      if (status === "completed" && appt.status !== "completed") {
+        const paymentMapped: Record<string, string> = {
+          "Pix": "pix",
+          "Dinheiro": "cash",
+          "Cartão de Crédito": "credit",
+          "Cartão de Débito": "debit"
+        };
+        const mappedMethod = paymentMapped[paymentMethod] || "pix";
+
+        const { data: countRes } = await supabase.from("commandas").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId!);
+        const cmdNumber = (countRes as any)?.count ? (countRes as any).count + 1 : Math.floor(Math.random() * 10000);
+
+        const { data: cmd, error: cmdErr } = await supabase.from("commandas").insert({
+          tenant_id: tenantId!, client_name: name, number: cmdNumber, status: "closed",
+          closed_at: new Date().toISOString(), subtotal: totalValue, total: totalValue, payment_method: mappedMethod
+        }).select("*").single();
+
+        if (cmdErr) throw cmdErr;
+
+        const pro = pros.find((p: any) => p.id === proId);
+        const commission_pct = pro?.commission_pct ?? 0;
+
+        for (const sId of selectedSvcs) {
+          const svc = services?.find(s => s.id === sId);
+          if (!svc) continue;
+          const commission_value = (Number(svc.price) * commission_pct) / 100;
+          await supabase.from("commanda_items").insert({
+            commanda_id: cmd.id, tenant_id: tenantId!, kind: "service", ref_id: sId,
+            name: svc.name, quantity: 1, unit_price: svc.price, professional_id: proId || null,
+            commission_pct, commission_value, commission_status: "pending"
+          });
+        }
+
+        for (const pId of selectedProds) {
+          const prod = products?.find(p => p.id === pId);
+          if (!prod) continue;
+          await supabase.from("commanda_items").insert({
+            commanda_id: cmd.id, tenant_id: tenantId!, kind: "product", ref_id: pId,
+            name: prod.name, quantity: 1, unit_price: prod.price, professional_id: null,
+            commission_pct: 0, commission_value: 0, commission_status: "pending"
+          });
+        }
+
+        await supabase.from("cash_movements").insert({
+          tenant_id: tenantId!, kind: "in", amount: totalValue, description: `Agendamento #${cmdNumber} — ${name}`
+        });
+      }
+
       toast.success("Agendamento atualizado!");
       onDone();
+      if (status === "completed" && appt.status !== "completed") {
+        navigate({ to: "/app/comandas" });
+      }
     } catch (e:any) { toast.error(e.message); } finally { setBusy(false); }
   }
 
