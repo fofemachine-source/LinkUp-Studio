@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCurrentTenant } from "@/hooks/use-tenant";
+import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, DollarSign, ShoppingCart } from "lucide-react";
@@ -48,7 +48,7 @@ function ComandasPage() {
         <div className="space-y-3">
           <h3 className="font-semibold">Fechadas recentes</h3>
           {(closed ?? []).map((c:any) => (
-            <Card key={c.id}><CardContent className="p-4 flex items-center justify-between text-sm">
+            <Card key={c.id} className="cursor-pointer hover:border-primary" onClick={()=>setSelected(c)}><CardContent className="p-4 flex items-center justify-between text-sm">
               <div><div className="font-medium">#{c.number} — {c.client_name}</div><div className="text-xs text-muted-foreground">{c.closed_at ? dateBR(c.closed_at) : ""} • {c.payment_method?.toUpperCase()}</div></div>
               <div className="font-semibold text-success">{brl(c.total)}</div>
             </CardContent></Card>
@@ -78,6 +78,9 @@ function NewCmdDialog({ tenantId, onDone }: any) {
 }
 
 function CmdDetail({ cmd, tenantId, onDone }: any) {
+  const { data: role } = useUserRole(tenantId);
+  const isAdmin = role === "admin" || role === "owner" || role === "manager" || role !== "barber";
+
   const [items, setItems] = useState<any[]>(cmd.commanda_items ?? []);
   const { data: services } = useQuery({ queryKey: ["svc-m", tenantId], queryFn: async () => (await supabase.from("services").select("*").eq("tenant_id", tenantId).eq("active", true)).data ?? [] });
   const { data: products } = useQuery({ queryKey: ["prd-m", tenantId], queryFn: async () => (await supabase.from("products").select("*").eq("tenant_id", tenantId).eq("active", true)).data ?? [] });
@@ -88,9 +91,9 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
   const [proId, setProId] = useState<string>("");
   const [qty, setQty] = useState<number>(1);
 
-  const [discount, setDiscount] = useState<number>(0);
-  const [addition, setAddition] = useState<number>(0);
-  const [payment, setPayment] = useState<string>("pix");
+  const [discount, setDiscount] = useState<number>(cmd.discount ?? 0);
+  const [addition, setAddition] = useState<number>(cmd.addition ?? 0);
+  const [payment, setPayment] = useState<string>(cmd.payment_method ?? "pix");
 
   const selectedSubtotal = (tab === "service" ? services : products)
     ?.filter((i: any) => selectedIds.includes(i.id))
@@ -135,6 +138,20 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
     if (error) return toast.error(error.message);
     await supabase.from("cash_movements").insert({ tenant_id: tenantId, kind: "in", amount: liquidTotal, description: `Comanda #${cmd.number}` });
     toast.success("Comanda fechada"); onDone();
+  }
+
+  async function deleteComanda() {
+    if (!confirm("Deseja realmente excluir esta comanda e todos os seus itens associados?")) return;
+    try {
+      await supabase.from("commanda_items").delete().eq("commanda_id", cmd.id);
+      await supabase.from("cash_movements").delete().eq("tenant_id", tenantId!).eq("description", `Comanda #${cmd.number}`);
+      const { error } = await supabase.from("commandas").delete().eq("id", cmd.id);
+      if (error) throw error;
+      toast.success("Comanda excluída com sucesso");
+      onDone();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
   }
 
   return (
@@ -246,9 +263,14 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
             </div>
           </div>
           
-          <Button onClick={close} disabled={items.length===0} className="w-full h-12 text-md font-semibold w-full h-12 text-md font-semibold">
+          <Button onClick={close} disabled={items.length===0} className="w-full h-12 text-md font-semibold">
             FINALIZAR VENDA 💰
           </Button>
+          {isAdmin && (
+            <Button onClick={deleteComanda} variant="ghost" className="w-full h-12 text-md font-semibold text-destructive hover:bg-destructive/10 bg-destructive/5 mt-2 rounded-xl">
+              EXCLUIR COMANDA 🗑️
+            </Button>
+          )}
         </div>
       </div>
     </SheetContent>
