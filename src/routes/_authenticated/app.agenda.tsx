@@ -156,6 +156,7 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
   const [selectedSvcs, setSelectedSvcs] = useState<string[]>([]);
   const [selectedProds, setSelectedProds] = useState<string[]>([]);
   const [status, setStatus] = useState("pending");
+  const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [obs, setObs] = useState("");
 
   const { data: services } = useQuery({ queryKey: ["services-min", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("services").select("*").eq("tenant_id", tenantId!).eq("active", true)).data ?? [] });
@@ -202,12 +203,13 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
       currentStart.setHours(h, m, 0, 0);
       const currentEnd = new Date(currentStart.getTime() + totalDuration * 60000);
 
-      // Save additional services and products inside notes column
+      // Save additional services, products, and payment method inside notes column
       const additionalSvcs = selectedSvcs.slice(1).map(id => services?.find(s => s.id === id)?.name).filter(Boolean);
       const svcsText = additionalSvcs.length > 0 ? `Serviços: ${additionalSvcs.join(", ")}` : "";
       const prodNames = selectedProds.map(id => products?.find(p=>p.id===id)?.name).filter(Boolean).join(", ");
       const prodsText = prodNames ? `Produtos: ${prodNames}` : "";
-      const finalObs = [obs, svcsText, prodsText].filter(Boolean).join(" | ");
+      const payText = paymentMethod ? `Pagamento: ${paymentMethod}` : "";
+      const finalObs = [obs, svcsText, prodsText, payText].filter(Boolean).join(" | ");
 
       const { error } = await supabase.from("appointments").insert({
         tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: clientId,
@@ -318,6 +320,21 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
         </div>
 
         <div>
+          <Label className="text-xs uppercase text-muted-foreground font-semibold mb-2 block">Forma de Pagamento</Label>
+          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+            <SelectTrigger className="w-full bg-background">
+              <SelectValue placeholder="Selecione a forma de pagamento (ex: Pix, Dinheiro)..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Pix">PIX</SelectItem>
+              <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+              <SelectItem value="Cartão de Crédito">Cartão de Crédito</SelectItem>
+              <SelectItem value="Cartão de Débito">Cartão de Débito</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
           <Label className="text-xs uppercase text-muted-foreground font-semibold mb-2 block">Observações / Alergias</Label>
           <textarea value={obs} onChange={e=>setObs(e.target.value)} placeholder="Ex: alergia a mentol, degradê navalhado nas laterais..." className="w-full min-h-[80px] p-3 rounded-xl border border-input bg-transparent text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
         </div>
@@ -346,6 +363,7 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
   );
   const [selectedProds, setSelectedProds] = useState<string[]>([]);
   const [status, setStatus] = useState(appt.status || "pending");
+  const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [obs, setObs] = useState("");
 
   const { data: services } = useQuery({ queryKey: ["services-min", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("services").select("*").eq("tenant_id", tenantId!).eq("active", true)).data ?? [] });
@@ -385,9 +403,21 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
   }, [products, appt.notes]);
 
   useEffect(() => {
+    if (appt.notes) {
+      const notesText = appt.notes || "";
+      if (notesText.includes("Pagamento: ")) {
+        const payPart = notesText.split("Pagamento: ")[1];
+        if (payPart) {
+          setPaymentMethod(payPart.split(" | ")[0].trim());
+        }
+      }
+    }
+  }, [appt.notes]);
+
+  useEffect(() => {
     if (appt.notes !== undefined) {
       const raw = appt.notes || "";
-      const parts = raw.split(" | ").filter((p: string) => !p.startsWith("Serviços:") && !p.startsWith("Produtos:"));
+      const parts = raw.split(" | ").filter((p: string) => !p.startsWith("Serviços:") && !p.startsWith("Produtos:") && !p.startsWith("Pagamento:"));
       setObs(parts.join(" | ").trim());
     }
   }, [appt.notes]);
@@ -434,7 +464,8 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
       const prodsText = prodNames ? `Produtos: ${prodNames}` : "";
       const additionalSvcs = selectedSvcs.slice(1).map(id => services?.find(s => s.id === id)?.name).filter(Boolean);
       const svcsText = additionalSvcs.length > 0 ? `Serviços: ${additionalSvcs.join(", ")}` : "";
-      const finalObs = [obs, svcsText, prodsText].filter(Boolean).join(" | ");
+      const payText = paymentMethod ? `Pagamento: ${paymentMethod}` : "";
+      const finalObs = [obs, svcsText, prodsText, payText].filter(Boolean).join(" | ");
 
       // Delete all old appointments in the contiguous chain
       const idsToDelete = chain.map(x => x.id);
@@ -446,7 +477,7 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
         tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: clientId || null,
         client_name: name, client_whatsapp: wa.replace(/\D/g,""),
         start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
-        status: status, source: "manual", notes: finalObs
+        status: status, notes: finalObs
       });
       if (error) throw error;
 
@@ -558,6 +589,21 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <Label className="text-xs uppercase text-muted-foreground font-semibold mb-2 block">Forma de Pagamento</Label>
+          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+            <SelectTrigger className="w-full bg-background">
+              <SelectValue placeholder="Selecione a forma de pagamento (ex: Pix, Dinheiro)..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Pix">PIX</SelectItem>
+              <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+              <SelectItem value="Cartão de Crédito">Cartão de Crédito</SelectItem>
+              <SelectItem value="Cartão de Débito">Cartão de Débito</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div>
