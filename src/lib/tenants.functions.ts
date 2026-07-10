@@ -96,7 +96,9 @@ export const updateTenant = createServerFn({ method: "POST" })
         plan: data.plan,
       })
       .eq("id", data.id);
-    if (tErr) throw new Error(tErr.message);    if (data.owner_email) {
+    if (tErr) throw new Error(tErr.message);
+
+    if (data.owner_email) {
       const emailLower = data.owner_email.toLowerCase().trim();
       const { data: role } = await supabaseAdmin
         .from("user_roles")
@@ -132,10 +134,12 @@ export const updateTenant = createServerFn({ method: "POST" })
             });
             if (created.error) throw new Error(created.error.message);
             targetUser = created.data.user!;
-          } else if (data.owner_password && data.owner_password.trim().length >= 6) {
-            const { error: pwdErr } = await supabaseAdmin.auth.admin.updateUserById(targetUser.id, {
-              password: data.owner_password,
-            });
+          } else {
+            const updateParams: any = { email_confirm: true };
+            if (data.owner_password && data.owner_password.trim().length >= 6) {
+              updateParams.password = data.owner_password;
+            }
+            const { error: pwdErr } = await supabaseAdmin.auth.admin.updateUserById(targetUser.id, updateParams);
             if (pwdErr) throw new Error(pwdErr.message);
           }
 
@@ -144,7 +148,7 @@ export const updateTenant = createServerFn({ method: "POST" })
         } else {
           const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(role.user_id);
           if (userRes.user) {
-            const updateParams: any = { email: emailLower };
+            const updateParams: any = { email: emailLower, email_confirm: true };
             if (data.owner_password && data.owner_password.trim().length >= 6) {
               updateParams.password = data.owner_password;
             }
@@ -164,10 +168,12 @@ export const updateTenant = createServerFn({ method: "POST" })
           });
           if (created.error) throw new Error(created.error.message);
           targetUser = created.data.user!;
-        } else if (data.owner_password && data.owner_password.trim().length >= 6) {
-          const { error: pwdErr } = await supabaseAdmin.auth.admin.updateUserById(targetUser.id, {
-            password: data.owner_password,
-          });
+        } else {
+          const updateParams: any = { email_confirm: true };
+          if (data.owner_password && data.owner_password.trim().length >= 6) {
+            updateParams.password = data.owner_password;
+          }
+          const { error: pwdErr } = await supabaseAdmin.auth.admin.updateUserById(targetUser.id, updateParams);
           if (pwdErr) throw new Error(pwdErr.message);
         }
 
