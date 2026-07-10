@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ShieldAlert } from "lucide-react";
+import { ShieldAlert, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { bootstrapSuperAdmin } from "@/lib/bootstrap.functions";
@@ -19,6 +19,7 @@ function SaasLoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("william.pinheiro.g1@gmail.com");
   const [password, setPassword] = useState("WpG@8858");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const bootstrap = useServerFn(bootstrapSuperAdmin);
 
@@ -90,13 +91,18 @@ function SaasLoginPage() {
             </div>
             <div className="space-y-2">
               <Label className="text-white/70 text-xs font-semibold uppercase tracking-wider font-mono">Senha Secreta</Label>
-              <Input
-                type="password"
-                required
-                className="bg-white/5 border-white/10 text-white placeholder-white/30 focus-visible:ring-indigo-500"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <div className="relative">
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  className="bg-white/5 border-white/10 text-white placeholder-white/30 focus-visible:ring-indigo-500 pr-10"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white">
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             <Button type="submit" disabled={busy} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-5 rounded-xl transition mt-4 shadow-[0_0_20px_rgba(79,70,229,0.15)]">
               {busy ? "Autenticando..." : "Entrar no Console SaaS"}

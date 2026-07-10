@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Scissors } from "lucide-react";
+import { Scissors, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { bootstrapSuperAdmin } from "@/lib/bootstrap.functions";
@@ -71,6 +71,7 @@ function AuthPage() {
 function LoginForm({ onDone, bootstrap }: { onDone: () => void; bootstrap: ReturnType<typeof useServerFn<typeof bootstrapSuperAdmin>> }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -95,7 +96,15 @@ function LoginForm({ onDone, bootstrap }: { onDone: () => void; bootstrap: Retur
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="space-y-2"><Label>E-mail</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus /></div>
-      <div className="space-y-2"><Label>Senha</Label><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
+      <div className="space-y-2">
+        <Label>Senha</Label>
+        <div className="relative">
+          <Input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} required className="pr-10" />
+          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
       <Button className="w-full bg-[#0a0a0a] hover:bg-black text-amber-500 border border-amber-500/30" disabled={busy}>{busy ? "Entrando..." : "Entrar"}</Button>
     </form>
   );
