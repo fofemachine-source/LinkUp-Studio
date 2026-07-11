@@ -37,12 +37,26 @@ function AgendaPage() {
     queryFn: async () => (await supabase.from("appointments").select("*, services(name,duration_min), clients(full_name)").eq("tenant_id", tenantId!).gte("start_at", startOfDay(date).toISOString()).lte("start_at", endOfDay(date).toISOString()).order("start_at")).data ?? [],
   });
 
+  const { data: settings } = useQuery({
+    queryKey: ["tenant-settings", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => (await supabase.from("tenant_settings").select("*").eq("tenant_id", tenantId!).maybeSingle()).data,
+  });
+
   const slotMin = tenant?.slot_minutes ?? 30;
+  const openHour = settings?.open_hour ?? 8;
+  const closeHour = settings?.close_hour ?? 20;
+
   const times = useMemo(() => {
     const arr: string[] = [];
-    for (let h = 8; h < 22; h++) for (let m = 0; m < 60; m += slotMin) arr.push(`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
+    for (let h = openHour; h <= closeHour; h++) {
+      for (let m = 0; m < 60; m += slotMin) {
+        if (h === closeHour && m > 0) break;
+        arr.push(`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
+      }
+    }
     return arr;
-  }, [slotMin]);
+  }, [openHour, closeHour, slotMin]);
 
   const bookingSlug = tenant?.slug || "ernesth";
   const bookingLink = typeof window !== "undefined"

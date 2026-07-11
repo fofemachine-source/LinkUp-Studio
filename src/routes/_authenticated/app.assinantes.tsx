@@ -62,7 +62,7 @@ function SubscribersPage() {
       </div>
 
       <Card><CardContent className="p-6">
-        <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>CPF</TableHead><TableHead>WhatsApp</TableHead><TableHead>Plano</TableHead><TableHead>Valor</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Ações</TableHead></TableRow></TableHeader>
+        <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>CPF</TableHead><TableHead>WhatsApp</TableHead><TableHead>Plano</TableHead><TableHead>Vencimento</TableHead><TableHead>Valor</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Ações</TableHead></TableRow></TableHeader>
           <TableBody>{(data ?? []).map((s:any) => {
             const parsedPlanName = (() => {
               try {
@@ -72,12 +72,18 @@ function SubscribersPage() {
               } catch(e){}
               return s.plan;
             })();
+            const formatNextDueAt = (dateStr?: string) => {
+              if (!dateStr) return "-";
+              const [y, m, d] = dateStr.split("-");
+              return `${d}/${m}/${y}`;
+            };
             return (
               <TableRow key={s.id}>
                 <TableCell className="font-medium">{s.full_name}</TableCell>
                 <TableCell className="font-mono text-xs">{cpfMask(s.cpf)}</TableCell>
                 <TableCell>{s.whatsapp}</TableCell>
                 <TableCell>{parsedPlanName}</TableCell>
+                <TableCell>{formatNextDueAt(s.next_due_at)}</TableCell>
                 <TableCell>{brl(s.price)}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
@@ -138,6 +144,7 @@ function SubDialog({ tenantId, onDone, subscriber }: { tenantId?: string; onDone
   const [planName, setPlanName] = useState(initialPlanName);
   const [selectedSvcs, setSelectedSvcs] = useState<string[]>(initialServices);
   const [proId, setProId] = useState<string>(initialProId);
+  const [nextDueAt, setNextDueAt] = useState(subscriber?.next_due_at ?? "");
   const [busy, setBusy] = useState(false);
 
   const { data: services } = useQuery({ queryKey: ["svc-sub", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("services").select("*").eq("tenant_id", tenantId!).eq("active", true).order("name")).data ?? [] });
@@ -163,7 +170,8 @@ function SubDialog({ tenantId, onDone, subscriber }: { tenantId?: string; onDone
         whatsapp: whatsapp.replace(/\D/g, ""),
         plan: planPayload,
         price,
-        status: subscriber?.status ?? "active"
+        status: subscriber?.status ?? "active",
+        next_due_at: nextDueAt || null
       };
 
       let error;
@@ -210,13 +218,17 @@ function SubDialog({ tenantId, onDone, subscriber }: { tenantId?: string; onDone
           <div className="text-sm font-semibold uppercase tracking-wider text-primary">Configurações do Plano</div>
           
           <div className="grid grid-cols-2 gap-3">
-            <div>
+            <div className="col-span-2">
               <Label>Nome do Plano</Label>
               <Input value={planName} onChange={e=>setPlanName(e.target.value)} placeholder="Ex: Plano Mensal Corte" />
             </div>
             <div>
               <Label>Valor mensal</Label>
               <Input type="number" step="0.01" value={price} onChange={e=>setPrice(Number(e.target.value))} />
+            </div>
+            <div>
+              <Label>Data de Vencimento</Label>
+              <Input type="date" value={nextDueAt} onChange={e=>setNextDueAt(e.target.value)} />
             </div>
           </div>
 
