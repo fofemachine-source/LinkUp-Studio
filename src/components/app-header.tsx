@@ -191,7 +191,7 @@ export function AppHeader() {
               {uploading ? "Salvando..." : "Salvar Foto"}
             </Button>
           </DialogFooter>
-        </Dialog>
+        </DialogContent>
       </Dialog>
     </header>
   );
