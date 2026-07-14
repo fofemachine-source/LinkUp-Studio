@@ -11,7 +11,7 @@ import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, DollarSign, ShoppingCart } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { brl, dateBR } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -186,6 +186,55 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
   const [editingItemId, setEditingItemId] = useState<string|null>(null);
   const [editPrice, setEditPrice] = useState<string>("");
 
+  const startOfMonthStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+  // Query to find client subscriber status in database
+  const { data: clientDetails } = useQuery({
+    queryKey: ["client-details", cmd.client_id, cmd.client_name],
+    enabled: !!cmd.client_name,
+    queryFn: async () => {
+      let query = supabase.from("clients").select("*");
+      if (cmd.client_id) {
+        query = query.eq("id", cmd.client_id);
+      } else {
+        query = query.eq("full_name", cmd.client_name);
+      }
+      return (await query.maybeSingle()).data;
+    }
+  });
+
+  const isSubscriberClient = cmd.clients?.is_subscriber || clientDetails?.is_subscriber;
+
+  // Query to find how many VIP comandas this client had in the current month
+  const { data: usageCount } = useQuery({
+    queryKey: ["client-vip-usage", cmd.client_id, cmd.client_name, startOfMonthStr],
+    enabled: !!cmd.client_name,
+    queryFn: async () => {
+      let query = supabase
+        .from("commandas")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "closed")
+        .eq("payment_method", "vip")
+        .gte("closed_at", startOfMonthStr);
+        
+      if (cmd.client_id) {
+        query = query.eq("client_id", cmd.client_id);
+      } else {
+        query = query.eq("client_name", cmd.client_name);
+      }
+      
+      const { count } = await query;
+      return count ?? 0;
+    }
+  });
+
+  // Auto-set payment to VIP for subscribers if no method has been chosen yet
+  useEffect(() => {
+    if (isSubscriberClient && !cmd.payment_method) {
+      setPayment("vip");
+    }
+  }, [isSubscriberClient, cmd.payment_method]);
+
   async function saveEditedPrice(itemId: string) {
     const newPrice = Number(editPrice);
     if (isNaN(newPrice) || newPrice < 0) return toast.error("Preço inválido.");
@@ -216,7 +265,7 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
 
   const baseSubtotal = items.reduce((a, b) => a + (b.unit_price * b.quantity), 0);
   const subtotal = baseSubtotal + selectedSubtotal;
-  const liquidTotal = subtotal - discount + addition;
+  const liquidTotal = payment === "vip" ? 0 : (subtotal - discount + addition);
 
   async function confirmAddition() {
     if (selectedIds.length === 0) return toast.error("Selecione pelo menos um item.");
@@ -251,7 +300,9 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
       status: "closed", closed_at: new Date().toISOString(), total: liquidTotal, subtotal: subtotal, payment_method: payment 
     }).eq("id", cmd.id);
     if (error) return toast.error(error.message);
-    await supabase.from("cash_movements").insert({ tenant_id: tenantId, kind: "in", amount: liquidTotal, description: `Comanda #${cmd.number}` });
+    if (liquidTotal > 0) {
+      await supabase.from("cash_movements").insert({ tenant_id: tenantId, kind: "in", amount: liquidTotal, description: `Comanda #${cmd.number}` });
+    }
     toast.success("Comanda fechada"); onDone();
   }
 
@@ -401,10 +452,37 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
           </div>
           <div>
             <Label className="text-xs text-muted-foreground uppercase">Forma de Pagamento</Label>
-            <Select value={payment} onValueChange={setPayment}><SelectTrigger className="h-9"><SelectValue/></SelectTrigger><SelectContent>
-              <SelectItem value="pix">PIX Chave QR</SelectItem><SelectItem value="cash">Dinheiro</SelectItem><SelectItem value="credit">Cartão de Crédito</SelectItem><SelectItem value="debit">Cartão de Débito</SelectItem>
-            </SelectContent></Select>
+            <Select value={payment} onValueChange={setPayment}>
+              <SelectTrigger className="h-9"><SelectValue/></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pix">PIX Chave QR</SelectItem>
+                <SelectItem value="cash">Dinheiro</SelectItem>
+                <SelectItem value="credit">Cartão de Crédito</SelectItem>
+                <SelectItem value="debit">Cartão de Débito</SelectItem>
+                <SelectItem value="vip">Assinatura / VIP</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
+
+          {isSubscriberClient && (
+            <div className={`p-3.5 rounded-xl border text-xs font-semibold ${
+              (usageCount ?? 0) >= 4 
+                ? "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400" 
+                : "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+            }`}>
+              <div className="flex items-center justify-between">
+                <span>⭐ PLANO VIP ASSINANTE</span>
+                <span className="font-bold">
+                  {usageCount ?? 0} / 4 Cortes no Mês
+                </span>
+              </div>
+              {(usageCount ?? 0) >= 4 && (
+                <p className="text-[10px] text-muted-foreground mt-1 font-normal">
+                  Atenção: Este cliente já atingiu o limite mensal de 4 cortes.
+                </p>
+              )}
+            </div>
+          )}
           
           <div className="p-4 bg-muted/30 rounded-xl space-y-2">
             <div className="flex justify-between text-sm text-muted-foreground"><span>Subtotal</span><span>{brl(subtotal)}</span></div>
