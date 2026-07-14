@@ -48,6 +48,20 @@ function AgendaPage() {
   const openHour = settings?.open_hour ?? 8;
   const closeHour = settings?.close_hour ?? 20;
 
+  const isDayClosed = useMemo(() => {
+    if (!settings) return false;
+    const dateStr = format(date, "yyyy-MM-dd");
+    const closedDates = (settings as any).closed_dates ?? [];
+    if (closedDates.includes(dateStr)) return true;
+
+    const dayOfWeek = date.getDay();
+    const normalizedDay = dayOfWeek === 0 ? 7 : dayOfWeek;
+    const workDays = settings.work_days ?? [1,2,3,4,5,6];
+    if (!workDays.includes(normalizedDay)) return true;
+
+    return false;
+  }, [date, settings]);
+
   const times = useMemo(() => {
     const arr: string[] = [];
     for (let h = openHour; h <= closeHour; h++) {
@@ -66,6 +80,11 @@ function AgendaPage() {
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
+      {isDayClosed && (
+        <div className="p-3.5 bg-destructive/10 border border-destructive/20 text-destructive dark:bg-destructive/20 dark:text-red-300 rounded-xl text-xs font-semibold text-center uppercase tracking-wider animate-pulse flex items-center justify-center gap-2">
+          <span>⚠️ A barbearia está fechada/de folga nesta data (configurado em Funcionamento).</span>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-semibold">Agenda</h1>

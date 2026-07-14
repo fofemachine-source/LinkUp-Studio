@@ -93,9 +93,12 @@ function HoursTab() {
   const { data: t } = useCurrentTenant(); const tenantId = t?.id;
   const qc = useQueryClient();
   const { data: s } = useQuery({ queryKey: ["settings", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("tenant_settings").select("*").eq("tenant_id", tenantId!).maybeSingle()).data });
-  const [f, setF] = useState<any>({ open_hour: 8, close_hour: 20, lunch_start: 12, lunch_end: 13, vip_days: [1,2,3,4], work_days: [1,2,3,4,5,6], vip_mode: "strict" });
-  useEffect(()=>{if(s)setF({open_hour:s.open_hour??8,close_hour:s.close_hour??20,lunch_start:s.lunch_start??12,lunch_end:s.lunch_end??13,vip_days:s.vip_days??[1,2,3,4],work_days:s.work_days??[1,2,3,4,5,6],vip_mode:(s as any).vip_mode ?? "strict"});},[s]);
+  const [f, setF] = useState<any>({ open_hour: 8, close_hour: 20, lunch_start: 12, lunch_end: 13, vip_days: [1,2,3,4], work_days: [1,2,3,4,5,6], vip_mode: "strict", closed_dates: [] });
+  const [newClosedDate, setNewClosedDate] = useState("");
+
+  useEffect(()=>{if(s)setF({open_hour:s.open_hour??8,close_hour:s.close_hour??20,lunch_start:s.lunch_start??12,lunch_end:s.lunch_end??13,vip_days:s.vip_days??[1,2,3,4],work_days:s.work_days??[1,2,3,4,5,6],vip_mode:(s as any).vip_mode ?? "strict",closed_dates:(s as any).closed_dates ?? []});},[s]);
   const dayNames = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+
   return (<Card><CardContent className="p-6 space-y-4">
     <div className="grid grid-cols-4 gap-4">
       <div><Label>Abre</Label><Input type="number" value={f.open_hour} onChange={e=>setF({...f,open_hour:Number(e.target.value)})}/></div>
@@ -105,13 +108,13 @@ function HoursTab() {
     </div>
     <div>
       <Label>Dias de funcionamento (todos os clientes)</Label>
-      <div className="flex gap-2 mt-2">{[1,2,3,4,5,6,7].map(d=>(
+      <div className="flex flex-wrap gap-2 mt-2">{[1,2,3,4,5,6,7].map(d=>(
         <button key={d} type="button" onClick={()=>setF({...f,work_days:f.work_days.includes(d)?f.work_days.filter((x:number)=>x!==d):[...f.work_days,d]})}
           className={`h-10 px-4 rounded-lg border ${f.work_days.includes(d)?"bg-primary text-primary-foreground border-primary":"border-border"}`}>{dayNames[d%7]}</button>
       ))}</div>
     </div>
     <div><Label>Dias VIP</Label>
-      <div className="flex gap-2 mt-2">{[1,2,3,4,5,6,7].map(d=>(
+      <div className="flex flex-wrap gap-2 mt-2">{[1,2,3,4,5,6,7].map(d=>(
         <button key={d} type="button" onClick={()=>setF({...f,vip_days:f.vip_days.includes(d)?f.vip_days.filter((x:number)=>x!==d):[...f.vip_days,d]})}
           className={`h-10 px-4 rounded-lg border ${f.vip_days.includes(d)?"bg-primary text-primary-foreground border-primary":"border-border"}`}>{dayNames[d%7]}</button>
       ))}</div>
@@ -129,6 +132,49 @@ function HoursTab() {
         </button>
       </div>
     </div>
+    
+    <div className="border-t pt-4">
+      <Label className="font-semibold block mb-2">Bloquear Datas Específicas (Folgas / Feriados)</Label>
+      <div className="flex gap-2">
+        <Input 
+          type="date" 
+          value={newClosedDate} 
+          onChange={(e)=>setNewClosedDate(e.target.value)} 
+          className="max-w-[200px]"
+        />
+        <Button 
+          type="button" 
+          variant="outline"
+          onClick={() => {
+            if (!newClosedDate) return;
+            if (f.closed_dates.includes(newClosedDate)) return toast.error("Data já adicionada.");
+            setF({ ...f, closed_dates: [...f.closed_dates, newClosedDate].sort() });
+            setNewClosedDate("");
+          }}
+        >
+          Adicionar Data Fechada
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        {f.closed_dates.map((dateStr: string) => {
+          const [y, m, d] = dateStr.split("-");
+          return (
+            <div key={dateStr} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border bg-muted text-foreground">
+              <span>{`${d}/${m}/${y}`}</span>
+              <button 
+                type="button" 
+                onClick={() => setF({ ...f, closed_dates: f.closed_dates.filter((x: string) => x !== dateStr) })}
+                className="text-destructive font-bold hover:scale-110 px-1 ml-1"
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+        {f.closed_dates.length === 0 && <span className="text-xs text-muted-foreground italic">Nenhuma data bloqueada cadastrada.</span>}
+      </div>
+    </div>
+
     <Button onClick={async()=>{const{error}=await supabase.from("tenant_settings").upsert({...f,tenant_id:tenantId!});if(error)toast.error(error.message);else{toast.success("Salvo");qc.invalidateQueries({queryKey:["settings"]});}}}>Salvar</Button>
   </CardContent></Card>);
 }

@@ -351,9 +351,21 @@ function BookingPage() {
                       onSelect={setDate} 
                       disabled={(d) => {
                         if (d < new Date(new Date().setHours(0,0,0,0))) return true;
+
+                        // Check weekly day off (work_days: 1=Seg...7=Dom)
+                        const dayOfWeek = d.getDay();
+                        const normalizedDay = dayOfWeek === 0 ? 7 : dayOfWeek;
+                        const workDays = settings?.work_days ?? [1,2,3,4,5,6];
+                        if (!workDays.includes(normalizedDay)) return true;
+
+                        // Check specific date block (closed_dates: 'yyyy-MM-dd')
+                        const dateStr = format(d, "yyyy-MM-dd");
+                        const closedDates = settings?.closed_dates ?? [];
+                        if (closedDates.includes(dateStr)) return true;
+
                         if (isVip) {
-                          const day = d.getDay();
-                          if (day === 0 || day === 5 || day === 6) return true;
+                          const vipDays = settings?.vip_days ?? [1,2,3,4];
+                          if (!vipDays.includes(normalizedDay)) return true;
                         }
                         return false;
                       }}
