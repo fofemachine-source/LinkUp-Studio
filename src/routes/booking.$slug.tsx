@@ -85,12 +85,18 @@ function BookingPage() {
       }
     } catch(e){}
 
-    if (isVip && parsedPlan.services && parsedPlan.services.length > 0) {
-      if (parsedPlan.professional_id) {
-        setStep("date");
-      } else {
-        setStep("pro");
+    if (isVip) {
+      const francois = professionals.find((p: any) => {
+        const name = p.full_name.toLowerCase();
+        return name.includes("françois") || name.includes("francois") || name.includes("françoise");
+      });
+      if (francois) {
+        setProId(francois.id);
       }
+    }
+
+    if (isVip && parsedPlan.services && parsedPlan.services.length > 0) {
+      setStep("date");
     } else {
       setStep("service");
     }
@@ -119,11 +125,11 @@ function BookingPage() {
       }
     } catch(e){}
 
-    if (isVip && parsedPlan.services && parsedPlan.services.length > 0) {
-      if (parsedPlan.professional_id) {
+    if (isVip) {
+      if (parsedPlan.services && parsedPlan.services.length > 0) {
         setStep("vip");
       } else {
-        setStep("pro");
+        setStep("service");
       }
     } else {
       setStep("pro");
@@ -137,7 +143,14 @@ function BookingPage() {
   const slotMin = tenant.slot_minutes ?? 30;
 
   const chosenService = services.find((s: any) => s.id === serviceId);
-  const availableProsForService = chosenService?.vip_only && !isVip ? [] : professionals;
+  const availableProsForService = chosenService?.vip_only && !isVip 
+    ? [] 
+    : isVip 
+      ? professionals.filter((p: any) => {
+          const name = p.full_name.toLowerCase();
+          return name.includes("françois") || name.includes("francois") || name.includes("françoise");
+        })
+      : professionals;
 
   const timeSlots = date && slotsQuery.data ? buildSlots(date, settings, slotMin, chosenService?.duration_min ?? slotMin, slotsQuery.data) : [];
 
@@ -197,9 +210,17 @@ function BookingPage() {
                         }
                       } catch(e){}
                       
+                      const francois = professionals.find((p: any) => {
+                        const name = p.full_name.toLowerCase();
+                        return name.includes("françois") || name.includes("francois") || name.includes("françoise");
+                      });
+
                       if (parsedPlan.services && parsedPlan.services.length > 0) {
                         setServiceId(parsedPlan.services[0]);
-                        if (parsedPlan.professional_id) {
+                        if (francois) {
+                          setProId(francois.id);
+                          setStep("date");
+                        } else if (parsedPlan.professional_id) {
                           setProId(parsedPlan.professional_id);
                           setStep("date");
                         } else {
@@ -269,7 +290,21 @@ function BookingPage() {
             <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {services.filter((s: any) => !s.vip_only || isVip).map((s: any) => (
-                <button key={s.id} onClick={() => { setServiceId(s.id); setStep("pro"); }} className={`text-left p-4 rounded-xl border-2 transition ${serviceId === s.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
+                <button key={s.id} onClick={() => { 
+                  setServiceId(s.id); 
+                  if (isVip) {
+                    const francois = professionals.find((p: any) => {
+                      const name = p.full_name.toLowerCase();
+                      return name.includes("françois") || name.includes("francois") || name.includes("françoise");
+                    });
+                    if (francois) {
+                      setProId(francois.id);
+                      setStep("date");
+                      return;
+                    }
+                  }
+                  setStep("pro"); 
+                }} className={`text-left p-4 rounded-xl border-2 transition ${serviceId === s.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
                   <div className="flex items-center justify-between"><div className="font-medium">{s.name}</div>{s.vip_only && <Crown className="h-4 w-4 text-primary" />}</div>
                   <div className="text-xs text-muted-foreground mt-1">{s.duration_min} min</div>
                   <div className="font-semibold text-primary mt-2">{brl(s.price)}</div>
