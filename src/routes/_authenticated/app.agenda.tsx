@@ -121,12 +121,31 @@ function AgendaPage() {
       <div className="overflow-x-auto">
         <div className="min-w-[600px]" style={{ display: "grid", gridTemplateColumns: `80px repeat(${(pros?.length || 1)}, minmax(200px, 1fr))` }}>
           <div className="p-2 text-xs font-semibold text-muted-foreground border-b" />
-          {(pros ?? []).map((p: any) => (
-            <div key={p.id} className="p-3 border-b border-l flex items-center gap-2">
-              <Avatar className="h-9 w-9"><AvatarImage src={p.photo_url ?? undefined} /><AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{p.full_name.split(" ").map((w:string)=>w[0]).slice(0,2).join("")}</AvatarFallback></Avatar>
-              <div><div className="text-sm font-medium">{p.full_name}</div><div className="text-xs text-muted-foreground">{p.role_label}</div></div>
-            </div>
-          ))}
+          {(pros ?? []).map((p: any) => {
+            const dateStr = format(date, "yyyy-MM-dd");
+            const dayOfWeek = date.getDay();
+            const normalizedDay = dayOfWeek === 0 ? 7 : dayOfWeek;
+            const isProBlocked = p.blocked_dates?.includes(dateStr);
+            const isProOffDay = !(p.work_days ?? [1,2,3,4,5,6]).includes(normalizedDay);
+            const isProOff = isProBlocked || isProOffDay;
+
+            return (
+              <div key={p.id} className="p-3 border-b border-l flex items-center gap-2 relative">
+                <Avatar className="h-9 w-9"><AvatarImage src={p.photo_url ?? undefined} /><AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{p.full_name.split(" ").map((w:string)=>w[0]).slice(0,2).join("")}</AvatarFallback></Avatar>
+                <div>
+                  <div className="text-sm font-medium flex items-center gap-1.5">
+                    {p.full_name}
+                    {isProOff && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-500 dark:text-red-300 font-bold uppercase tracking-wider">
+                        {isProBlocked ? "Bloqueado" : "Folga"}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{p.role_label}</div>
+                </div>
+              </div>
+            );
+          })}
           {times.map((t) => (
             <>
               <div key={`t${t}`} className="text-xs text-muted-foreground p-2 border-b text-right">{t}</div>
@@ -142,6 +161,14 @@ function AgendaPage() {
                   new Date(x.end_at) > slotTs
                 );
                 const isStart = a && new Date(a.start_at).getTime() >= slotTs.getTime() && new Date(a.start_at).getTime() < slotEnd.getTime();
+                
+                const dateStr = format(date, "yyyy-MM-dd");
+                const dayOfWeek = date.getDay();
+                const normalizedDay = dayOfWeek === 0 ? 7 : dayOfWeek;
+                const isProBlocked = p.blocked_dates?.includes(dateStr);
+                const isProOffDay = !(p.work_days ?? [1,2,3,4,5,6]).includes(normalizedDay);
+                const isProOff = isProBlocked || isProOffDay;
+
                 return (
                   <div key={`${p.id}-${t}`} className="border-b border-l p-1 min-h-[54px]">
                     {a ? (
@@ -174,6 +201,10 @@ function AgendaPage() {
                           Ocupado
                         </div>
                       )
+                    ) : isProOff ? (
+                      <div className="h-full rounded-lg bg-red-500/5 dark:bg-red-500/10 border border-red-500/10 p-2 text-[10px] text-red-500/70 font-bold flex items-center justify-center uppercase tracking-wider select-none">
+                        {isProBlocked ? "Bloqueado" : "Folga"}
+                      </div>
                     ) : (
                       <div onClick={() => { setSelectedSlot({ proId: p.id, time: t }); setOpenNew(true); }} className="h-full rounded-lg border border-dashed border-transparent hover:border-primary/50 hover:bg-primary/5 grid place-items-center text-xs text-muted-foreground cursor-pointer opacity-0 hover:opacity-100">Livre</div>
                     )}

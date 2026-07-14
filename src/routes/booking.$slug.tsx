@@ -143,6 +143,7 @@ function BookingPage() {
   const slotMin = tenant.slot_minutes ?? 30;
 
   const chosenService = services.find((s: any) => s.id === serviceId);
+  const selectedPro = professionals.find((p: any) => p.id === proId);
   const availableProsForService = chosenService?.vip_only && !isVip 
     ? [] 
     : isVip 
@@ -348,8 +349,7 @@ function BookingPage() {
                     <CalendarUI 
                       mode="single" 
                       selected={date} 
-                      onSelect={setDate} 
-                      disabled={(d) => {
+                                         disabled={(d) => {
                         if (d < new Date(new Date().setHours(0,0,0,0))) return true;
 
                         // Check weekly day off (work_days: 1=Seg...7=Dom)
@@ -362,6 +362,15 @@ function BookingPage() {
                         const dateStr = format(d, "yyyy-MM-dd");
                         const closedDates = settings?.closed_dates ?? [];
                         if (closedDates.includes(dateStr)) return true;
+
+                        // Check specific professional work_days and blocked_dates
+                        if (selectedPro) {
+                          const proWorkDays = selectedPro.work_days ?? [1,2,3,4,5,6];
+                          if (!proWorkDays.includes(normalizedDay)) return true;
+
+                          const proBlockedDates = selectedPro.blocked_dates ?? [];
+                          if (proBlockedDates.includes(dateStr)) return true;
+                        }
 
                         if (isVip) {
                           const vipDays = settings?.vip_days ?? [1,2,3,4];

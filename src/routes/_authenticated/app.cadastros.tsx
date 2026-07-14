@@ -193,10 +193,14 @@ function ProDialog({ pro, tenantId, onDone }: any) {
     lunch_end: pro?.lunch_end ?? "13:00",
     photo_url: pro?.photo_url ?? "",
     active: pro?.active ?? true,
+    work_days: pro?.work_days ?? [1,2,3,4,5,6],
+    blocked_dates: pro?.blocked_dates ?? [],
   });
   const [file, setFile] = useState<File | null>(null);
   const [allowAccess, setAllowAccess] = useState(Boolean(pro?.auth_user_id));
   const [accessPassword, setAccessPassword] = useState("");
+  const [newBlockedDate, setNewBlockedDate] = useState("");
+  const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
   const previewUrl = file ? URL.createObjectURL(file) : f.photo_url;
   async function save() {
     if (!tenantId) return toast.error("Empresa não carregada. Recarregue a página e tente novamente.");
@@ -236,7 +240,7 @@ function ProDialog({ pro, tenantId, onDone }: any) {
     }
     toast.success("Salvo"); onDone();
   }
-  return (<DialogContent className="max-w-2xl"><DialogHeader><DialogTitle className="flex items-center gap-2 text-primary uppercase text-sm tracking-wide">✓ {pro?"Editar":"Novo"} Registro</DialogTitle></DialogHeader>
+  return (<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle className="flex items-center gap-2 text-primary uppercase text-sm tracking-wide">✓ {pro?"Editar":"Novo"} Registro</DialogTitle></DialogHeader>
     <div className="space-y-4">
       <div>
         <Label className="text-xs uppercase tracking-wide text-muted-foreground">Nome Colaborador</Label>
@@ -255,6 +259,75 @@ function ProDialog({ pro, tenantId, onDone }: any) {
         </div>
         <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Início Almoço</Label><Input type="time" value={f.lunch_start} onChange={e=>setF({...f,lunch_start:e.target.value})}/></div>
         <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Término Almoço</Label><Input type="time" value={f.lunch_end} onChange={e=>setF({...f,lunch_end:e.target.value})}/></div>
+      </div>
+      
+      <div>
+        <Label className="text-xs uppercase tracking-wide text-muted-foreground block mb-2">Dias de trabalho (Semanal)</Label>
+        <div className="flex flex-wrap gap-1.5">
+          {[1,2,3,4,5,6,7].map(d => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setF({
+                ...f,
+                work_days: f.work_days.includes(d) 
+                  ? f.work_days.filter((x: number) => x !== d) 
+                  : [...f.work_days, d].sort()
+              })}
+              className={`h-9 px-3 rounded-lg border text-xs font-semibold ${
+                f.work_days.includes(d)
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border hover:bg-muted"
+              }`}
+            >
+              {dayNames[d % 7]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="border rounded-lg p-3 space-y-2">
+        <Label className="text-xs uppercase tracking-wide text-muted-foreground block">Folgas Específicas / Bloqueio de Datas</Label>
+        <div className="flex gap-2">
+          <Input 
+            type="date" 
+            value={newBlockedDate} 
+            onChange={(e)=>setNewBlockedDate(e.target.value)} 
+            className="max-w-[180px] h-9 text-xs"
+          />
+          <Button 
+            type="button" 
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (!newBlockedDate) return;
+              if (f.blocked_dates.includes(newBlockedDate)) return toast.error("Data já adicionada.");
+              setF({ ...f, blocked_dates: [...f.blocked_dates, newBlockedDate].sort() });
+              setNewBlockedDate("");
+            }}
+            className="h-9 text-xs"
+          >
+            Adicionar Folga
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {f.blocked_dates.map((dateStr: string) => {
+            const [y, m, d] = dateStr.split("-");
+            return (
+              <div key={dateStr} className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md border bg-muted text-foreground">
+                <span>{`${d}/${m}/${y}`}</span>
+                <button 
+                  type="button" 
+                  onClick={() => setF({ ...f, blocked_dates: f.blocked_dates.filter((x: string) => x !== dateStr) })}
+                  className="text-destructive font-bold hover:scale-110 px-1"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+          {f.blocked_dates.length === 0 && <span className="text-[10px] text-muted-foreground italic">Nenhuma data bloqueada cadastrada.</span>}
+        </div>
       </div>
       <div>
         <Label className="text-xs uppercase tracking-wide text-muted-foreground">Foto do Barbeiro</Label>
