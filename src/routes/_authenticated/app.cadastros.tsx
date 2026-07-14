@@ -11,7 +11,7 @@ import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2, Users, Scissors, Sparkles, Package, UserCog } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { brl } from "@/lib/format";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -58,6 +58,59 @@ function ClientsTab() {
   const tenantId = useTenantId(); const qc = useQueryClient();
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
   const { data } = useQuery({ queryKey: ["clients", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("clients").select("*").eq("tenant_id", tenantId!).order("full_name")).data ?? [] });
+  
+  const { data: subscribers } = useQuery({
+    queryKey: ["subs-sync-cadastros", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => (await supabase.from("subscribers").select("*").eq("tenant_id", tenantId!)).data ?? []
+  });
+
+  useEffect(() => {
+    if (!data || !subscribers || subscribers.length === 0) return;
+
+    const sync = async () => {
+      let needsRefetch = false;
+      for (const sub of subscribers) {
+        const cleanSubPhone = sub.whatsapp?.replace(/\D/g, "");
+        const existingClient = data.find((c: any) => 
+          (sub.client_id && c.id === sub.client_id) || 
+          (cleanSubPhone && c.whatsapp?.replace(/\D/g, "") === cleanSubPhone)
+        );
+
+        if (existingClient) {
+          if (!existingClient.is_subscriber) {
+            await supabase.from("clients").update({ is_subscriber: true }).eq("id", existingClient.id);
+            needsRefetch = true;
+          }
+          if (!sub.client_id) {
+            await supabase.from("subscribers").update({ client_id: existingClient.id }).eq("id", sub.id);
+          }
+        } else {
+          // Insert client
+          const { data: newClient } = await supabase
+            .from("clients")
+            .insert({
+              tenant_id: tenantId!,
+              full_name: sub.full_name,
+              whatsapp: cleanSubPhone || null,
+              is_subscriber: true
+            })
+            .select("id")
+            .single();
+
+          if (newClient) {
+            await supabase.from("subscribers").update({ client_id: newClient.id }).eq("id", sub.id);
+            needsRefetch = true;
+          }
+        }
+      }
+      if (needsRefetch) {
+        qc.invalidateQueries({ queryKey: ["clients"] });
+      }
+    };
+    sync();
+  }, [data, subscribers, tenantId, qc]);
+
   return (
     <Card className="premium-card"><CardContent className="p-6 space-y-4">
       <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} clientes</h3>
