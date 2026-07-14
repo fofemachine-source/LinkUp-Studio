@@ -27,8 +27,8 @@ function getElapsedTime(createdAtStr: string) {
 
 function ComandasPage() {
   const tenantId = useCurrentTenant().data?.id; const qc = useQueryClient();
-  const { data: open } = useQuery({ queryKey: ["cmd-open", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("commandas").select("*, commanda_items(*)").eq("tenant_id", tenantId!).eq("status", "open").order("created_at")).data ?? [] });
-  const { data: closed } = useQuery({ queryKey: ["cmd-closed", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("commandas").select("*").eq("tenant_id", tenantId!).eq("status", "closed").order("closed_at", { ascending: false }).limit(20)).data ?? [] });
+  const { data: open } = useQuery({ queryKey: ["cmd-open", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("commandas").select("*, commanda_items(*), clients(is_subscriber)").eq("tenant_id", tenantId!).eq("status", "open").order("created_at")).data ?? [] });
+  const { data: closed } = useQuery({ queryKey: ["cmd-closed", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("commandas").select("*, clients(is_subscriber)").eq("tenant_id", tenantId!).eq("status", "closed").order("closed_at", { ascending: false }).limit(20)).data ?? [] });
   const [selected, setSelected] = useState<any>(null);
   const [newOpen, setNewOpen] = useState(false);
 
@@ -72,7 +72,12 @@ function ComandasPage() {
                   onClick={() => setSelected(c)}
                 >
                   <div>
-                    <div className="font-bold text-xs truncate uppercase tracking-wider">#{c.number} — {c.client_name}</div>
+                    <div className="font-bold text-xs truncate uppercase tracking-wider flex items-center gap-1.5 flex-wrap">
+                      <span>#{c.number} — {c.client_name}</span>
+                      {c.clients?.is_subscriber && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 animate-pulse">Assinante</span>
+                      )}
+                    </div>
                     <div className="text-[11px] opacity-70 mt-1.5 space-y-0.5">
                       <div>{hasItems ? `${c.commanda_items.length} itens` : "Sem itens"}</div>
                       <div className="text-[10px]">Abertura: {openTime}</div>
@@ -110,7 +115,12 @@ function ComandasPage() {
                   onClick={() => setSelected(c)}
                 >
                   <div>
-                    <div className="font-bold text-xs truncate uppercase tracking-wider">#{c.number} — {c.client_name}</div>
+                    <div className="font-bold text-xs truncate uppercase tracking-wider flex items-center gap-1.5 flex-wrap">
+                      <span>#{c.number} — {c.client_name}</span>
+                      {c.clients?.is_subscriber && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-800 dark:text-emerald-300">Assinante</span>
+                      )}
+                    </div>
                     <div className="text-[10px] opacity-70 mt-1.5 space-y-0.5">
                       <div>Aberto: {openTime}</div>
                       <div>Fechado: {closeDate} {closeTime ? `às ${closeTime}` : ""}</div>
@@ -172,6 +182,33 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
   const [discount, setDiscount] = useState<number>(cmd.discount ?? 0);
   const [addition, setAddition] = useState<number>(cmd.addition ?? 0);
   const [payment, setPayment] = useState<string>(cmd.payment_method ?? "pix");
+
+  const [editingItemId, setEditingItemId] = useState<string|null>(null);
+  const [editPrice, setEditPrice] = useState<string>("");
+
+  async function saveEditedPrice(itemId: string) {
+    const newPrice = Number(editPrice);
+    if (isNaN(newPrice) || newPrice < 0) return toast.error("Preço inválido.");
+    
+    const item = items.find(i => i.id === itemId);
+    if (!item) return;
+
+    let commission_value = item.commission_value;
+    if (item.kind === "service" && item.commission_pct > 0) {
+      commission_value = (newPrice * item.quantity * item.commission_pct) / 100;
+    }
+
+    const { error } = await supabase
+      .from("commanda_items")
+      .update({ unit_price: newPrice, commission_value })
+      .eq("id", itemId);
+
+    if (error) return toast.error(error.message);
+
+    setItems(items.map(i => i.id === itemId ? { ...i, unit_price: newPrice, commission_value } : i));
+    setEditingItemId(null);
+    toast.success("Preço atualizado!");
+  }
 
   const selectedSubtotal = ((tab === "service" ? services : products)
     ?.filter((i: any) => selectedIds.includes(i.id))
@@ -253,9 +290,46 @@ function CmdDetail({ cmd, tenantId, onDone }: any) {
             <div className="space-y-2 mb-4 border rounded-xl p-3">
               {items.map(i => (
                 <div key={i.id} className="flex justify-between items-center text-sm p-2 bg-muted/30 rounded-lg">
-                  <div>
+                  <div className="flex-1 mr-4">
                     <div className="font-medium">{i.name} {i.quantity > 1 && `(x${i.quantity})`}</div>
-                    <div className="text-xs text-muted-foreground">{brl(i.unit_price)} unid</div>
+                    {editingItemId === i.id ? (
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <Input 
+                          type="number" 
+                          step="0.01"
+                          value={editPrice} 
+                          onChange={e=>setEditPrice(e.target.value)} 
+                          className="h-7 w-20 text-xs py-0 px-2 bg-background border-primary"
+                          autoFocus
+                        />
+                        <Button 
+                          size="sm" 
+                          className="h-7 px-2.5 text-[11px] rounded" 
+                          onClick={() => saveEditedPrice(i.id)}
+                        >
+                          Salvar
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-7 px-2 text-[11px] text-muted-foreground rounded" 
+                          onClick={() => setEditingItemId(null)}
+                        >
+                          Sair
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
+                        <span>{brl(i.unit_price)} unid</span>
+                        <button 
+                          type="button"
+                          className="text-[10px] text-primary hover:underline font-semibold"
+                          onClick={() => { setEditingItemId(i.id); setEditPrice(String(i.unit_price)); }}
+                        >
+                          (Editar Preço)
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="font-semibold text-primary">{brl(i.unit_price * i.quantity)}</div>

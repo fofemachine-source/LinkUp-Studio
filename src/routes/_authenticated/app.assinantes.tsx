@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useCurrentTenant } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Crown, Copy } from "lucide-react";
+import { Plus, Crown, Copy, MessageCircle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { brl, cpfMask, dateBR } from "@/lib/format";
@@ -38,6 +38,12 @@ function SubscribersPage() {
 
   const { data } = useQuery({ queryKey: ["subs", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("subscribers").select("*").eq("tenant_id", tenantId!).order("created_at", { ascending: false })).data ?? [] });
 
+  const { data: completedAppts } = useQuery({
+    queryKey: ["completed-appts-count", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => (await supabase.from("appointments").select("client_id, client_whatsapp, status").eq("tenant_id", tenantId!).eq("status", "completed")).data ?? []
+  });
+
   async function toggleStatus(id: string, currentStatus: string) {
     const newStatus = currentStatus === "active" ? "inactive" : "active";
     const { error } = await supabase.from("subscribers").update({ status: newStatus }).eq("id", id);
@@ -62,7 +68,7 @@ function SubscribersPage() {
       </div>
 
       <Card><CardContent className="p-6">
-        <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>CPF</TableHead><TableHead>WhatsApp</TableHead><TableHead>Plano</TableHead><TableHead>Vencimento</TableHead><TableHead>Valor</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Ações</TableHead></TableRow></TableHeader>
+        <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>CPF</TableHead><TableHead>WhatsApp</TableHead><TableHead>Plano</TableHead><TableHead>Vencimento</TableHead><TableHead>Cortes</TableHead><TableHead>Valor</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Ações</TableHead></TableRow></TableHeader>
           <TableBody>{(data ?? []).map((s:any) => {
             const parsedPlanName = (() => {
               try {
@@ -77,6 +83,24 @@ function SubscribersPage() {
               const [y, m, d] = dateStr.split("-");
               return `${d}/${m}/${y}`;
             };
+            const countCompleted = () => {
+              if (!completedAppts) return 0;
+              const cleanSubWa = s.whatsapp?.replace(/\D/g, "");
+              return completedAppts.filter((a: any) => 
+                (s.client_id && a.client_id === s.client_id) || 
+                (cleanSubWa && a.client_whatsapp?.replace(/\D/g, "") === cleanSubWa)
+              ).length;
+            };
+            const daysDiff = s.next_due_at ? Math.ceil((new Date(s.next_due_at + "T12:00:00").getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+            const isNearExpiration = daysDiff !== null && daysDiff <= 5;
+            
+            const handleNotifyWhatsApp = () => {
+              const formattedDate = s.next_due_at ? s.next_due_at.split("-").reverse().join("/") : "";
+              const msg = `Olá, ${s.full_name}! Lembrança de sua assinatura VIP no plano "${parsedPlanName}". Ela vence no dia ${formattedDate}. Para continuar com o agendamento ilimitado e benefícios exclusivos, por favor, realize a renovação.`;
+              const cleanPhone = s.whatsapp?.replace(/\D/g, "");
+              window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(msg)}`, "_blank");
+            };
+
             return (
               <TableRow key={s.id}>
                 <TableCell className="font-medium">{s.full_name}</TableCell>
@@ -84,6 +108,7 @@ function SubscribersPage() {
                 <TableCell>{s.whatsapp}</TableCell>
                 <TableCell>{parsedPlanName}</TableCell>
                 <TableCell>{formatNextDueAt(s.next_due_at)}</TableCell>
+                <TableCell className="font-semibold text-center">{countCompleted()}</TableCell>
                 <TableCell>{brl(s.price)}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
@@ -93,6 +118,14 @@ function SubscribersPage() {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-2">
+                    <Button 
+                      size="sm" 
+                      variant={isNearExpiration ? "default" : "outline"} 
+                      className={isNearExpiration ? "bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" : "text-emerald-600 hover:text-emerald-700"}
+                      onClick={handleNotifyWhatsApp}
+                    >
+                      <MessageCircle className="h-4 w-4 mr-1" /> Notificar
+                    </Button>
                     <Button size="sm" variant="outline" onClick={()=>setEditingSub(s)}>Editar</Button>
                     <Button size="sm" variant="outline" onClick={()=>setPixOpen(s)}>Gerar PIX</Button>
                   </div>

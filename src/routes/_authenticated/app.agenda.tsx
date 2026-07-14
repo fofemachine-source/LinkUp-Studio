@@ -9,11 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Crown } from "lucide-react";
 import { addDays, format, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
 import { brl } from "@/lib/format";
 
 export const Route = createFileRoute("/_authenticated/app/agenda")({ component: AgendaPage });
@@ -127,11 +128,21 @@ function AgendaPage() {
                     {a ? (
                       isStart ? (
                         <div onClick={() => setEditAppt(a)} className={`h-full rounded-lg p-2 text-xs cursor-pointer transition-colors ${
-                          a.status === "completed"
-                            ? "bg-success/15 border-l-4 border-success text-success-foreground hover:bg-success/25"
-                            : "bg-primary/10 border-l-4 border-primary hover:bg-primary/20"
+                          a.is_vip
+                            ? "bg-blue-500/15 border-l-4 border-blue-500 text-blue-900 dark:text-blue-200 hover:bg-blue-500/25"
+                            : a.status === "completed"
+                              ? "bg-success/15 border-l-4 border-success text-success-foreground hover:bg-success/25"
+                              : "bg-primary/10 border-l-4 border-primary hover:bg-primary/20"
                         }`}>
+                          <div className="flex items-center justify-between text-[9px] text-muted-foreground/80 font-mono mb-0.5">
+                            <span>{format(new Date(a.start_at), "HH:mm")} - {format(new Date(a.end_at), "HH:mm")}</span>
+                          </div>
                           <div className={`font-semibold truncate ${a.status === "completed" ? "text-success" : ""}`}>{a.client_name || a.clients?.full_name}</div>
+                          {a.is_vip && (
+                            <div className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider mt-0.5">
+                              Assinante
+                            </div>
+                          )}
                           <div className="text-muted-foreground truncate">
                             {a.services?.name}
                             {a.notes?.includes("Serviços:") 
@@ -174,6 +185,7 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
   const [proId, setProId] = useState(defaultProId ?? "");
   const [dateStr, setDateStr] = useState(format(defaultDate, "yyyy-MM-dd"));
   const [time, setTime] = useState(defaultTime ?? "09:00");
+  const [isVip, setIsVip] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const [selectedSvcs, setSelectedSvcs] = useState<string[]>([]);
@@ -323,10 +335,11 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
       const finalObs = [obs, svcsText, prodsText, payText, comandaText].filter(Boolean).join(" | ");
 
       const { error } = await supabase.from("appointments").insert({
-        tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: finalClientId,
+        tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: finalClientId || null,
         client_name: finalName, client_whatsapp: finalWa.replace(/\D/g,""),
         start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
-        status: status, source: "manual", notes: finalObs
+        status: status, source: "manual", notes: finalObs,
+        is_vip: isVip
       });
       if (error) throw error;
 
@@ -355,9 +368,12 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
               if (val === "new_client") {
                 setIsRegisteringNewClient(true);
                 setClientId("");
+                setIsVip(false);
               } else {
                 setIsRegisteringNewClient(false);
                 setClientId(val);
+                const selectedClient = clients?.find((c: any) => c.id === val);
+                setIsVip(selectedClient?.is_subscriber === true);
               }
             }}><SelectTrigger><SelectValue placeholder="Busque ou selecione um cliente..." /></SelectTrigger>
             <SelectContent>
@@ -385,6 +401,12 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
             </div>
             <div><Label className="text-xs uppercase text-muted-foreground font-semibold">Dados</Label><Input type="date" value={dateStr} onChange={(e)=>setDateStr(e.target.value)} /></div>
             <div><Label className="text-xs uppercase text-muted-foreground font-semibold">Horário</Label><Input type="time" value={time} onChange={(e)=>setTime(e.target.value)} /></div>
+          </div>
+          <div className="flex items-center gap-2 pt-2">
+            <Switch id="is-vip-appt" checked={isVip} onCheckedChange={setIsVip} />
+            <Label htmlFor="is-vip-appt" className="text-xs font-semibold uppercase cursor-pointer flex items-center gap-1.5 select-none text-muted-foreground">
+              <Crown className="h-3.5 w-3.5 text-amber-500 fill-amber-500/20" /> Agendamento VIP / Assinante
+            </Label>
           </div>
         </div>
 
@@ -497,6 +519,7 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
   const [proId, setProId] = useState(appt.professional_id || "");
   const [dateStr, setDateStr] = useState(format(new Date(appt.start_at), "yyyy-MM-dd"));
   const [time, setTime] = useState(format(new Date(appt.start_at), "HH:mm"));
+  const [isVip, setIsVip] = useState(appt.is_vip || false);
   const [busy, setBusy] = useState(false);
 
   const [selectedSvcs, setSelectedSvcs] = useState<string[]>([]);
@@ -738,7 +761,8 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
         tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: finalClientId || null,
         client_name: finalName, client_whatsapp: finalWa.replace(/\D/g,""),
         start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
-        status: status, notes: finalObs
+        status: status, notes: finalObs,
+        is_vip: isVip
       });
       if (error) throw error;
 
@@ -807,6 +831,12 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
             </div>
             <div><Label className="text-xs uppercase text-muted-foreground font-semibold">Dados</Label><Input type="date" value={dateStr} onChange={(e)=>setDateStr(e.target.value)} /></div>
             <div><Label className="text-xs uppercase text-muted-foreground font-semibold">Horário</Label><Input type="time" value={time} onChange={(e)=>setTime(e.target.value)} /></div>
+          </div>
+          <div className="flex items-center gap-2 pt-2">
+            <Switch id="is-vip-edit-appt" checked={isVip} onCheckedChange={setIsVip} />
+            <Label htmlFor="is-vip-edit-appt" className="text-xs font-semibold uppercase cursor-pointer flex items-center gap-1.5 select-none text-muted-foreground">
+              <Crown className="h-3.5 w-3.5 text-amber-500 fill-amber-500/20" /> Agendamento VIP / Assinante
+            </Label>
           </div>
         </div>
 
