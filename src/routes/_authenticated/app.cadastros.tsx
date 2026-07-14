@@ -67,7 +67,7 @@ function ClientsTab() {
         <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>WhatsApp</TableHead><TableHead>Email</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
           <TableBody>{(data ?? []).map((c: any) => (
             <TableRow key={c.id}><TableCell className="font-medium whitespace-nowrap">{c.full_name}</TableCell><TableCell className="whitespace-nowrap">{c.whatsapp}</TableCell><TableCell className="text-muted-foreground whitespace-nowrap">{c.email}</TableCell>
-            <TableCell className="whitespace-nowrap">{c.is_subscriber && <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">VIP</span>}</TableCell>
+            <TableCell className="whitespace-nowrap">{c.is_subscriber && <span className="text-xs px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 font-bold">Assinante</span>}</TableCell>
             <TableCell className="text-right whitespace-nowrap"><Button size="icon" variant="ghost" onClick={()=>{setEdit(c);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
             <Button size="icon" variant="ghost" onClick={async()=>{if(confirm("Excluir?")){await supabase.from("clients").delete().eq("id",c.id);qc.invalidateQueries({queryKey:["clients"]});}}}><Trash2 className="h-4 w-4"/></Button></TableCell></TableRow>
           ))}</TableBody></Table>
@@ -77,7 +77,14 @@ function ClientsTab() {
 }
 
 function ClientDialog({ client, tenantId, onDone }: any) {
-  const [f, setF] = useState({ full_name: client?.full_name ?? "", whatsapp: client?.whatsapp ?? "", email: client?.email ?? "", address: client?.address ?? "", notes: client?.notes ?? "" });
+  const [f, setF] = useState({ 
+    full_name: client?.full_name ?? "", 
+    whatsapp: client?.whatsapp ?? "", 
+    email: client?.email ?? "", 
+    address: client?.address ?? "", 
+    notes: client?.notes ?? "",
+    is_subscriber: client?.is_subscriber ?? false
+  });
   async function save() {
     const payload = { ...f, tenant_id: tenantId };
     const { error } = client ? await supabase.from("clients").update(f).eq("id", client.id) : await supabase.from("clients").insert(payload);
@@ -91,6 +98,10 @@ function ClientDialog({ client, tenantId, onDone }: any) {
       <div><Label>Email</Label><Input value={f.email} onChange={e=>setF({...f,email:e.target.value})}/></div></div>
       <div><Label>Endereço</Label><Input value={f.address} onChange={e=>setF({...f,address:e.target.value})}/></div>
       <div><Label>Observações</Label><Input value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></div>
+      <div className="flex items-center gap-2 pt-2">
+        <Switch id="client-is-subscriber" checked={f.is_subscriber} onCheckedChange={(v)=>setF({...f,is_subscriber:v})}/>
+        <Label htmlFor="client-is-subscriber" className="cursor-pointer select-none">Cliente Assinante / VIP</Label>
+      </div>
     </div><DialogFooter><Button onClick={save}>Salvar</Button></DialogFooter></DialogContent>);
 }
 

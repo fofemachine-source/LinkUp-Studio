@@ -196,11 +196,44 @@ function SubDialog({ tenantId, onDone, subscriber }: { tenantId?: string; onDone
         professional_id: proId
       });
       
+      const cleanPhone = whatsapp.replace(/\D/g, "");
+
+      // 1. Find or create client in clients table and mark as subscriber
+      let finalClientId = subscriber?.client_id;
+      if (!finalClientId && cleanPhone) {
+        const { data: existingClient } = await supabase
+          .from("clients")
+          .select("id")
+          .eq("tenant_id", tenantId!)
+          .eq("whatsapp", cleanPhone)
+          .maybeSingle();
+
+        if (existingClient) {
+          finalClientId = existingClient.id;
+          await supabase.from("clients").update({ is_subscriber: true }).eq("id", finalClientId);
+        } else {
+          const { data: newClient } = await supabase
+            .from("clients")
+            .insert({
+              tenant_id: tenantId!,
+              full_name: fullName,
+              whatsapp: cleanPhone,
+              is_subscriber: true
+            })
+            .select("id")
+            .single();
+          if (newClient) finalClientId = newClient.id;
+        }
+      } else if (finalClientId) {
+        await supabase.from("clients").update({ is_subscriber: true }).eq("id", finalClientId);
+      }
+      
       const payload = {
         tenant_id: tenantId!,
+        client_id: finalClientId || null,
         full_name: fullName,
         cpf: cleanCpf,
-        whatsapp: whatsapp.replace(/\D/g, ""),
+        whatsapp: cleanPhone,
         plan: planPayload,
         price,
         status: subscriber?.status ?? "active",
