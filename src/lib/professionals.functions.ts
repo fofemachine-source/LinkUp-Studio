@@ -7,8 +7,16 @@ const accessSchema = z.object({
   professionalId: z.string().uuid(),
   fullName: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(6).optional().nullable(),
+  password: z.string().min(8).optional().nullable(),
 });
+
+function professionalAccessAuthError(error: { code?: string; message?: string }) {
+  const message = error.message ?? "";
+  if (error.code === "weak_password" || /weak password|weak and easy to guess|known to be weak/i.test(message)) {
+    return new Error("A proteção contra senhas vazadas está ativa no Auth. Desative a opção Password HIBP Check para aceitar esta senha.");
+  }
+  return new Error(message || "Não foi possível criar o acesso do profissional.");
+}
 
 export const createProfessionalAccess = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -42,23 +50,26 @@ export const createProfessionalAccess = createServerFn({ method: "POST" })
     let authUser = users.users.find((user) => user.email?.toLowerCase() === email);
 
     if (!authUser) {
+      if (!data.password) {
+        throw new Error("Informe uma senha com pelo menos 8 caracteres para criar o acesso do profissional.");
+      }
       const created = await supabaseAdmin.auth.admin.createUser({
         email,
-        password: data.password || "123456",
+        password: data.password,
         email_confirm: true,
         user_metadata: { full_name: data.fullName },
       });
-      if (created.error) throw new Error(created.error.message);
+      if (created.error) throw professionalAccessAuthError(created.error);
       authUser = created.data.user;
     } else {
       const updateParams: any = {
         user_metadata: { ...authUser.user_metadata, full_name: data.fullName },
       };
-      if (data.password && data.password.trim().length >= 6) {
+      if (data.password) {
         updateParams.password = data.password;
       }
       const updated = await supabaseAdmin.auth.admin.updateUserById(authUser.id, updateParams);
-      if (updated.error) throw new Error(updated.error.message);
+      if (updated.error) throw professionalAccessAuthError(updated.error);
       authUser = updated.data.user;
     }
 

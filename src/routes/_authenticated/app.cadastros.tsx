@@ -180,6 +180,19 @@ function ProsTab() {
   );
 }
 
+function validateAccessPassword(password: string) {
+  if (password.length < 8) return "A senha precisa ter pelo menos 8 caracteres.";
+  return null;
+}
+
+function friendlyAccessError(error: any) {
+  const message = String(error?.message ?? "");
+  if (/weak password|weak and easy to guess|known to be weak|password.*guess/i.test(message)) {
+    return "A proteção contra senhas vazadas está ativa no Auth. Desative a opção Password HIBP Check para aceitar esta senha.";
+  }
+  return message || "Não foi possível criar o acesso ao sistema.";
+}
+
 function ProDialog({ pro, tenantId, onDone }: any) {
   const createAccess = useServerFn(createProfessionalAccess);
   const [f, setF] = useState({
@@ -199,22 +212,34 @@ function ProDialog({ pro, tenantId, onDone }: any) {
   const [file, setFile] = useState<File | null>(null);
   const [allowAccess, setAllowAccess] = useState(Boolean(pro?.auth_user_id));
   const [accessPassword, setAccessPassword] = useState("");
+  const [saving, setSaving] = useState(false);
   const [newBlockedDate, setNewBlockedDate] = useState("");
   const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
   const previewUrl = file ? URL.createObjectURL(file) : f.photo_url;
   async function save() {
+    if (saving) return;
     if (!tenantId) return toast.error("Empresa não carregada. Recarregue a página e tente novamente.");
     if (!f.full_name.trim()) return toast.error("Informe o nome do colaborador");
     if (allowAccess && !f.email.trim()) return toast.error("Informe o e-mail para liberar acesso ao sistema");
-    if (allowAccess && !pro?.auth_user_id && accessPassword.length < 6) return toast.error("A senha de acesso precisa ter no mínimo 6 caracteres");
+    if (allowAccess && (!pro?.auth_user_id || accessPassword)) {
+      const passwordError = validateAccessPassword(accessPassword);
+      if (passwordError) return toast.error(passwordError);
+    }
+    setSaving(true);
     let photo_url = f.photo_url;
     if (file) {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `${tenantId}/pros/${Date.now()}-${safeName}`;
       const { error } = await supabase.storage.from("assets").upload(path, file, { upsert: true, contentType: file.type || "image/jpeg" });
-      if (error) return toast.error("Erro no upload: " + error.message);
+      if (error) {
+        setSaving(false);
+        return toast.error("Erro no upload: " + error.message);
+      }
       const { data: signed, error: signedError } = await supabase.storage.from("assets").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
-      if (signedError || !signed?.signedUrl) return toast.error("Foto enviada, mas não foi possível gerar o link de exibição.");
+      if (signedError || !signed?.signedUrl) {
+        setSaving(false);
+        return toast.error("Foto enviada, mas não foi possível gerar o link de exibição.");
+      }
       photo_url = signed.signedUrl;
     }
     const payload: any = { ...f, photo_url, tenant_id: tenantId };
@@ -222,7 +247,10 @@ function ProDialog({ pro, tenantId, onDone }: any) {
       ? await supabase.from("professionals").update({ ...f, photo_url }).eq("id", pro.id).select("id").single()
       : await supabase.from("professionals").insert(payload).select("id").single();
     const { data: savedPro, error } = saved;
-    if (error) return toast.error(error.message);
+    if (error) {
+      setSaving(false);
+      return toast.error(error.message);
+    }
     if (allowAccess) {
       try {
         await createAccess({
@@ -235,10 +263,15 @@ function ProDialog({ pro, tenantId, onDone }: any) {
           },
         });
       } catch (err: any) {
-        return toast.error(err.message ?? "Profissional salvo, mas o acesso não foi criado.");
+        toast.warning(`Profissional salvo, mas o acesso não foi criado. ${friendlyAccessError(err)}`);
+        setSaving(false);
+        onDone();
+        return;
       }
     }
-    toast.success("Salvo"); onDone();
+    toast.success("Salvo");
+    setSaving(false);
+    onDone();
   }
   return (<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle className="flex items-center gap-2 text-primary uppercase text-sm tracking-wide">✓ {pro?"Editar":"Novo"} Registro</DialogTitle></DialogHeader>
     <div className="space-y-4">
@@ -352,12 +385,16 @@ function ProDialog({ pro, tenantId, onDone }: any) {
         {allowAccess && (
           <div className="grid grid-cols-2 gap-3">
             <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Login / E-mail</Label><Input type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})} placeholder="email@exemplo.com"/></div>
-            <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Senha de acesso</Label><Input type="text" value={accessPassword} onChange={e=>setAccessPassword(e.target.value)} placeholder={pro?.auth_user_id ? "Nova senha opcional" : "Mínimo 6 caracteres"}/></div>
+            <div>
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground">Senha de acesso</Label>
+              <Input type="password" autoComplete="new-password" value={accessPassword} onChange={e=>setAccessPassword(e.target.value)} placeholder={pro?.auth_user_id ? "Nova senha opcional" : "Mínimo de 8 caracteres"}/>
+              <p className="mt-1 text-[10px] text-muted-foreground">A única exigência é ter no mínimo 8 caracteres.</p>
+            </div>
           </div>
         )}
       </div>
     </div>
-    <DialogFooter className="gap-2"><Button variant="outline" onClick={onDone}>Fechar</Button><Button onClick={save}>SALVAR MUDANÇAS</Button></DialogFooter></DialogContent>);
+    <DialogFooter className="gap-2"><Button variant="outline" onClick={onDone} disabled={saving}>Fechar</Button><Button onClick={save} disabled={saving}>{saving ? "SALVANDO..." : "SALVAR MUDANÇAS"}</Button></DialogFooter></DialogContent>);
 }
 
 function ServicesTab() {
