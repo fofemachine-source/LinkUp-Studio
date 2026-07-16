@@ -394,10 +394,10 @@ on public.subscription_plans;
 create policy "subscription managers manage plans"
 on public.subscription_plans for all to authenticated
 using (
-  private.can_manage_subscription_payments((select auth.uid()), tenant_id)
+  private.can_manage_tenant_operations(tenant_id)
 )
 with check (
-  private.can_manage_subscription_payments((select auth.uid()), tenant_id)
+  private.can_manage_tenant_operations(tenant_id)
 );
 
 drop policy if exists "tenant members manage subscription benefits"
@@ -407,10 +407,10 @@ on public.subscription_plan_benefits;
 create policy "subscription managers manage benefits"
 on public.subscription_plan_benefits for all to authenticated
 using (
-  private.can_manage_subscription_payments((select auth.uid()), tenant_id)
+  private.can_manage_tenant_operations(tenant_id)
 )
 with check (
-  private.can_manage_subscription_payments((select auth.uid()), tenant_id)
+  private.can_manage_tenant_operations(tenant_id)
 );
 
 drop policy if exists "tenant members manage subscription settings"
@@ -420,10 +420,10 @@ on public.subscription_module_settings;
 create policy "subscription managers manage settings"
 on public.subscription_module_settings for all to authenticated
 using (
-  private.can_manage_subscription_payments((select auth.uid()), tenant_id)
+  private.can_manage_tenant_operations(tenant_id)
 )
 with check (
-  private.can_manage_subscription_payments((select auth.uid()), tenant_id)
+  private.can_manage_tenant_operations(tenant_id)
 );
 
 commit;
