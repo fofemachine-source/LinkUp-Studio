@@ -1,8 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
-import { getPublicTenant, validateVip, getBookedSlots, createBooking } from "@/lib/booking.functions";
+import { useState, type CSSProperties } from "react";
+import {
+  cancelBooking,
+  createBooking,
+  getBookedSlots,
+  getPublicTenant,
+  prepareSubscriptionProofUpload,
+  submitSubscriptionProof,
+  validateVip,
+} from "@/lib/booking.functions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,13 +19,39 @@ import { Switch } from "@/components/ui/switch";
 import { brl, cpfMask, phoneMask } from "@/lib/format";
 import { Calendar as CalendarUI } from "@/components/ui/calendar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, Scissors, Crown, ArrowLeft, ArrowRight, Calendar as CalendarIcon, Loader2, MapPin, MessageCircle, Share2, Download, Plus, Copy } from "lucide-react";
+import {
+  Check,
+  Scissors,
+  Crown,
+  ArrowLeft,
+  ArrowRight,
+  Calendar as CalendarIcon,
+  Loader2,
+  MapPin,
+  MessageCircle,
+  Share2,
+  Download,
+  Plus,
+  Copy,
+  XCircle,
+  FileCheck2,
+  UploadCloud,
+} from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import bookingHero from "@/assets/barber-hero.png.asset.json";
+import { supabase } from "@/integrations/supabase/client";
+import { ImmersiveBackground } from "@/components/branding/immersive-background";
+import {
+  normalizeBookingBranding,
+  type BookingBranding,
+} from "@/lib/booking-branding";
 
 export const Route = createFileRoute("/booking/$slug")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    cancel: typeof search.cancel === "string" ? search.cancel : undefined,
+  }),
   head: ({ params }) => ({ meta: [{ title: `Agende seu horário — ${params.slug}` }, { name: "description", content: "Agendamento online rápido e prático." }] }),
   component: BookingPage,
 });
@@ -29,10 +63,14 @@ import { QrCode } from "@/lib/qr";
 
 function BookingPage() {
   const { slug } = Route.useParams();
+  const { cancel: cancellationTokenFromUrl } = Route.useSearch();
   const getTenant = useServerFn(getPublicTenant);
   const validate = useServerFn(validateVip);
   const getSlots = useServerFn(getBookedSlots);
   const create = useServerFn(createBooking);
+  const cancel = useServerFn(cancelBooking);
+  const prepareProofUpload = useServerFn(prepareSubscriptionProofUpload);
+  const submitProof = useServerFn(submitSubscriptionProof);
 
   const { data, isLoading } = useQuery({ queryKey: ["public-tenant", slug], queryFn: () => getTenant({ data: { slug } }) });
   const [step, setStep] = useState<Step>("vip");
@@ -45,11 +83,20 @@ function BookingPage() {
   const [time, setTime] = useState<string>("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [bookingCancelled, setBookingCancelled] = useState(false);
 
   const slotsQuery = useQuery({
-    queryKey: ["booked", proId, date ? format(date, "yyyy-MM-dd") : ""],
-    enabled: !!proId && !!date,
-    queryFn: () => getSlots({ data: { professionalId: proId, date: format(date!, "yyyy-MM-dd") } }),
+    queryKey: ["booked", (data as any)?.tenant?.id, proId, date ? format(date, "yyyy-MM-dd") : ""],
+    enabled: !!(data as any)?.tenant?.id && !!proId && !!date,
+    queryFn: () =>
+      getSlots({
+        data: {
+          tenantId: (data as any).tenant.id,
+          professionalId: proId,
+          date: format(date!, "yyyy-MM-dd"),
+        },
+      }),
   });
 
   const bookMut = useMutation({
@@ -63,14 +110,133 @@ function BookingPage() {
     onError: (e: any) => toast.error(e.message ?? "Erro"),
   });
 
+  const activeCancellationToken = cancellationTokenFromUrl ?? bookMut.data?.cancellationToken;
+  const cancelMut = useMutation({
+    mutationFn: () => {
+      if (!activeCancellationToken) throw new Error("Link de cancelamento indisponivel.");
+      return cancel({ data: { token: activeCancellationToken } });
+    },
+    onSuccess: () => {
+      setBookingCancelled(true);
+      toast.success("Agendamento cancelado.");
+      slotsQuery.refetch();
+    },
+    onError: (error: any) => toast.error(error.message ?? "Nao foi possivel cancelar."),
+  });
+
+  const validateVipMut = useMutation({
+    mutationFn: async () => {
+      const tenantId = (data as any)?.tenant?.id;
+      if (!tenantId) throw new Error("Salão indisponível no momento.");
+      return validate({ data: { tenantId, cpf, whatsapp: phone } });
+    },
+    onSuccess: (result) => {
+      if (!result) {
+        setVipInfo(null);
+        toast.error("CPF e WhatsApp não correspondem a uma assinatura.");
+        return;
+      }
+      setVipInfo(result);
+      setProofFile(null);
+      setName((result as any).full_name);
+      if ((result as any).status === "active") {
+        toast.success(`Bem-vindo, ${(result as any).full_name}!`);
+      } else {
+        toast.info("Assinatura localizada. Confira a renovação abaixo.");
+      }
+    },
+    onError: (error: any) => {
+      setVipInfo(null);
+      toast.error(error.message ?? "Não foi possível validar a assinatura.");
+    },
+  });
+
+  const proofMut = useMutation({
+    mutationFn: async () => {
+      const renewal = (vipInfo as any)?.renewal;
+      if (!renewal?.payment_token) {
+        throw new Error("Cobrança de renovação não encontrada. Valide seus dados novamente.");
+      }
+      if (!proofFile) throw new Error("Escolha uma imagem ou PDF do comprovante.");
+      const allowedTypes = new Set([
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "application/pdf",
+      ]);
+      if (!allowedTypes.has(proofFile.type)) {
+        throw new Error("Envie um arquivo JPG, PNG, WEBP ou PDF.");
+      }
+      if (proofFile.size > 5 * 1024 * 1024) {
+        throw new Error("O comprovante deve ter no máximo 5 MB.");
+      }
+
+      const prepared = await prepareProofUpload({
+        data: {
+          paymentToken: renewal.payment_token,
+          fileName: proofFile.name,
+          contentType: proofFile.type as
+            | "image/jpeg"
+            | "image/png"
+            | "image/webp"
+            | "application/pdf",
+          sizeBytes: proofFile.size,
+        },
+      });
+      const submitCurrentProof = () =>
+        submitProof({
+          data: {
+            paymentToken: renewal.payment_token,
+            chargeId: prepared.chargeId,
+            storagePath: prepared.path,
+            fileName: proofFile.name,
+            contentType: proofFile.type as
+              | "image/jpeg"
+              | "image/png"
+              | "image/webp"
+              | "application/pdf",
+            sizeBytes: proofFile.size,
+          },
+        });
+      const { error: uploadError } = await supabase.storage
+        .from("subscription-payment-proofs")
+        .uploadToSignedUrl(prepared.path, prepared.token, proofFile, {
+          contentType: proofFile.type,
+          cacheControl: "3600",
+        });
+      if (uploadError) {
+        // A tentativa anterior pode ter concluído o upload antes de perder a resposta.
+        // O servidor valida o objeto existente e mantém o envio idempotente.
+        return submitCurrentProof();
+      }
+
+      return submitCurrentProof();
+    },
+    onSuccess: (result) => {
+      setVipInfo((current: any) => ({
+        ...current,
+        renewal: {
+          ...current?.renewal,
+          proof_status: result.proofStatus,
+          proof_submitted_at: result.submittedAt,
+          proof_file_name: proofFile?.name,
+        },
+      }));
+      setProofFile(null);
+      toast.success("Comprovante enviado. Agora o salão fará a confirmação do pagamento.");
+    },
+    onError: (error: any) =>
+      toast.error(error.message ?? "Não foi possível enviar o comprovante."),
+  });
+
   let inactivePixPayload = "";
-  if (vipInfo && (vipInfo as any).status !== "active" && (data as any)?.tenant) {
-    const tenant = (data as any).tenant;
-    const key = String(tenant.pix_key || "").trim();
-    const holder = String(tenant.pix_holder || "BARBEARIA").substring(0, 25);
-    const cityStr = String(tenant.city || "SAO PAULO").substring(0, 15);
-    const txidStr = String((vipInfo as any).id || "TXID").replace(/[^a-zA-Z0-9]/g, "").substring(0, 25);
-    const amountNum = Number((vipInfo as any).price || 0);
+  if ((vipInfo as any)?.renewal && (vipInfo as any)?.payment) {
+    const payment = (vipInfo as any).payment;
+    const key = String(payment.pix_key || "").trim();
+    const holder = String(payment.pix_holder || "BARBEARIA").substring(0, 25);
+    const cityStr = String(payment.city || "SAO PAULO").substring(0, 15);
+    const txidStr = String((vipInfo as any).renewal.charge_id || "TXID").replace(/[^a-zA-Z0-9]/g, "").substring(0, 25);
+    const amountNum = Number((vipInfo as any).renewal.amount ?? 0);
 
     if (key && amountNum > 0) {
       try { inactivePixPayload = buildPixPayload({ key, merchant: holder, amount: amountNum, city: cityStr, txid: txidStr }); } catch (err) { console.error(err); }
@@ -78,210 +244,363 @@ function BookingPage() {
   }
 
   const handleVipContinue = () => {
-    let parsedPlan = { name: "", services: [] as string[], professional_id: "" };
-    try {
-      if (vipInfo?.plan?.startsWith("{") || vipInfo?.plan?.startsWith("[")) {
-        parsedPlan = JSON.parse(vipInfo.plan);
-      }
-    } catch(e){}
-
-    if (isVip) {
-      const francois = professionals.find((p: any) => {
-        const name = p.full_name.toLowerCase();
-        return name.includes("françois") || name.includes("francois") || name.includes("françoise");
-      });
-      if (francois) {
-        setProId(francois.id);
-      }
-    }
-
-    if (isVip && parsedPlan.services && parsedPlan.services.length > 0) {
-      setStep("date");
-    } else {
-      setStep("service");
-    }
+    if (isVip && (!vipInfo || vipInfo.status !== "active")) return;
+    setStep("service");
   };
 
   const handleProBack = () => {
-    let parsedPlan = { name: "", services: [] as string[], professional_id: "" };
-    try {
-      if (vipInfo?.plan?.startsWith("{") || vipInfo?.plan?.startsWith("[")) {
-        parsedPlan = JSON.parse(vipInfo.plan);
-      }
-    } catch(e){}
-
-    if (isVip && parsedPlan.services && parsedPlan.services.length > 0) {
-      setStep("vip");
-    } else {
-      setStep("service");
-    }
+    setStep("service");
   };
 
   const handleDateBack = () => {
-    let parsedPlan = { name: "", services: [] as string[], professional_id: "" };
-    try {
-      if (vipInfo?.plan?.startsWith("{") || vipInfo?.plan?.startsWith("[")) {
-        parsedPlan = JSON.parse(vipInfo.plan);
-      }
-    } catch(e){}
-
-    if (isVip) {
-      if (parsedPlan.services && parsedPlan.services.length > 0) {
-        setStep("vip");
-      } else {
-        setStep("service");
-      }
-    } else {
-      setStep("pro");
-    }
+    setStep("pro");
   };
 
   if (isLoading) return <div className="min-h-screen grid place-items-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   if (!data) return <div className="min-h-screen grid place-items-center p-6 text-center"><div><h1 className="text-2xl font-semibold">Barbearia não encontrada</h1><p className="text-muted-foreground mt-2">Verifique o link de agendamento.</p></div></div>;
 
-  const { tenant, professionals, services, settings } = data as any;
+  const {
+    tenant,
+    professionals,
+    services,
+    settings,
+    branding: brandingRow,
+  } = data as any;
+  const bookingBranding = normalizeBookingBranding(brandingRow);
+  const bookingFallback = tenant.banner_url || bookingHero.url;
+  const tenantThemeStyle = tenant.primary_color
+    ? ({
+        "--primary": tenant.primary_color,
+        "--ring": tenant.primary_color,
+      } as CSSProperties)
+    : undefined;
   const slotMin = tenant.slot_minutes ?? 30;
 
   const chosenService = services.find((s: any) => s.id === serviceId);
   const selectedPro = professionals.find((p: any) => p.id === proId);
+  let parsedVipPlan = { name: "", services: [] as string[], professional_id: "", benefits: [] as any[] };
+  try {
+    if (vipInfo?.plan?.startsWith("{") || vipInfo?.plan?.startsWith("[")) {
+      parsedVipPlan = JSON.parse(vipInfo.plan);
+    }
+  } catch(e){}
+  const coveredServiceIds = new Set(parsedVipPlan.services ?? []);
   const availableProsForService = chosenService?.vip_only && !isVip 
     ? [] 
-    : isVip 
-      ? professionals.filter((p: any) => {
-          const name = p.full_name.toLowerCase();
-          return name.includes("françois") || name.includes("francois") || name.includes("françoise");
-        })
-      : professionals;
+    : professionals;
 
   const timeSlots = date && slotsQuery.data ? buildSlots(date, settings, slotMin, chosenService?.duration_min ?? slotMin, slotsQuery.data) : [];
+  const cancellationUrl = activeCancellationToken && typeof window !== "undefined"
+    ? `${window.location.origin}/booking/${slug}?cancel=${activeCancellationToken}`
+    : "";
+
+  if (cancellationTokenFromUrl) {
+    return (
+      <ImmersiveBackground
+        branding={bookingBranding}
+        fallbackUrl={bookingFallback}
+        className="min-h-screen text-foreground"
+        contentClassName="min-h-screen"
+      >
+        <div
+          className="mx-auto flex min-h-screen max-w-xl flex-col justify-center p-4 md:p-8"
+          style={tenantThemeStyle}
+        >
+          <BookingIdentityHeader
+            tenant={tenant}
+            branding={bookingBranding}
+            contextLabel="Cancelamento de agendamento"
+          />
+
+          <Card className="overflow-hidden rounded-3xl border-none bg-white text-black shadow-2xl">
+            <CardContent className="space-y-6 p-6 text-center md:p-8">
+              <div className={`mx-auto grid h-16 w-16 place-items-center rounded-full border-2 ${bookingCancelled ? "border-rose-500 bg-rose-50" : "border-amber-500 bg-amber-50"}`}>
+                {bookingCancelled ? (
+                  <XCircle className="h-8 w-8 text-rose-500" />
+                ) : (
+                  <CalendarIcon className="h-8 w-8 text-amber-600" />
+                )}
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold uppercase tracking-wide">
+                  {bookingCancelled ? "Agendamento cancelado" : "Cancelar agendamento"}
+                </h2>
+                <p className="mt-2 text-sm text-gray-500">
+                  {bookingCancelled
+                    ? "O horario foi liberado e a comanda prevista foi cancelada automaticamente."
+                    : "Ao confirmar, o horario sera liberado e deixara de contar como faturamento previsto."}
+                </p>
+              </div>
+
+              {!bookingCancelled && (
+                <Button
+                  className="w-full bg-rose-600 py-6 font-bold text-white hover:bg-rose-700"
+                  disabled={cancelMut.isPending}
+                  onClick={() => cancelMut.mutate()}
+                >
+                  {cancelMut.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                  CONFIRMAR CANCELAMENTO
+                </Button>
+              )}
+
+              <Button variant="outline" className="w-full" onClick={() => window.location.assign(`/booking/${slug}`)}>
+                VOLTAR AO AGENDAMENTO
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </ImmersiveBackground>
+    );
+  }
 
 
   return (
-    <div className="min-h-screen bg-black text-foreground relative">
+    <ImmersiveBackground
+      branding={bookingBranding}
+      fallbackUrl={bookingFallback}
+      className="min-h-screen text-foreground"
+      contentClassName="min-h-screen"
+    >
       <div
-        className="fixed inset-0 pointer-events-none"
-        style={{
-          backgroundImage: `url(${bookingHero.url})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
-          backgroundColor: "#000",
-        }}
-      />
-      <div className="fixed inset-0 bg-black/50 pointer-events-none" />
-      <div className="relative z-10 max-w-xl mx-auto p-4 md:p-8 min-h-screen flex flex-col justify-center">
-        <div className="flex items-center gap-4 mb-6">
-          <div className="h-14 w-14 rounded-2xl bg-primary text-primary-foreground grid place-items-center shadow-md shrink-0">
-            {tenant.logo_url ? <img src={tenant.logo_url} className="h-full w-full object-cover rounded-2xl" alt="" /> : <Scissors className="h-6 w-6" />}
-          </div>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-semibold text-white">{tenant.name}</h1>
-            <p className="text-sm text-white/60">{tenant.subtitle}</p>
-          </div>
-        </div>
+        className="mx-auto flex min-h-screen max-w-xl flex-col justify-center p-4 md:p-8"
+        style={tenantThemeStyle}
+      >
+        <BookingIdentityHeader tenant={tenant} branding={bookingBranding} />
 
         {step === "vip" && (
           <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl">
             <CardContent className="p-6 md:p-8 space-y-6">
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10">
-                <Crown className="h-6 w-6 text-primary" />
-                <div className="flex-1"><div className="font-semibold">Sou assinante VIP</div><div className="text-xs text-white/60">Assinantes têm acesso exclusive de segunda a quinta.</div></div>
-                <Switch checked={isVip} onCheckedChange={(v) => { setIsVip(v); setVipInfo(null); }} />
-              </div>
+              {bookingBranding.show_subscriber_badge ? (
+                <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
+                  <Crown className="h-6 w-6 text-primary" />
+                  <div className="flex-1">
+                    <div className="font-semibold">Sou assinante VIP</div>
+                    <div className="text-xs text-white/60">
+                      Valide CPF e WhatsApp para consultar benefícios, saldo e renovação.
+                    </div>
+                  </div>
+                  <Switch
+                    checked={isVip}
+                    onCheckedChange={(value) => {
+                      setIsVip(value);
+                      setVipInfo(null);
+                      setProofFile(null);
+                    }}
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="mx-auto flex items-center gap-2 text-sm text-white/65 transition hover:text-white"
+                  onClick={() => {
+                    setIsVip((current) => !current);
+                    setVipInfo(null);
+                    setProofFile(null);
+                  }}
+                >
+                  <Crown className="h-4 w-4 text-primary" />
+                  {isVip ? "Continuar sem assinatura" : "Já sou assinante VIP"}
+                </button>
+              )}
               {isVip && (
                 <div className="space-y-3">
                   <Label>Informe seu CPF</Label>
-                  <Input value={cpfMask(cpf)} onChange={(e) => setCpf(e.target.value)} placeholder="000.000.000-00" />
-                  <Button className="w-full" disabled={!cpf || cpf.replace(/\D/g,"").length !== 11} onClick={async () => {
-                    const v = await validate({ data: { tenantId: tenant.id, cpf } });
-                    if (!v) { toast.error("CPF não encontrado. Verifique ou desmarque VIP."); return; }
-                    setVipInfo(v); 
-                    if ((v as any).status === "active") {
-                      setName((v as any).full_name); 
-                      if ((v as any).whatsapp) {
-                        setPhone((v as any).whatsapp);
-                      }
-                      toast.success(`Bem-vindo, ${(v as any).full_name}!`);
-
-                      // Auto prefill plan service and barber and advance steps immediately
-                      let parsedPlan = { name: "", services: [] as string[], professional_id: "" };
-                      try {
-                        if ((v as any).plan?.startsWith("{") || (v as any).plan?.startsWith("[")) {
-                          parsedPlan = JSON.parse((v as any).plan);
-                        }
-                      } catch(e){}
-                      
-                      const francois = professionals.find((p: any) => {
-                        const name = p.full_name.toLowerCase();
-                        return name.includes("françois") || name.includes("francois") || name.includes("françoise");
-                      });
-
-                      if (parsedPlan.services && parsedPlan.services.length > 0) {
-                        setServiceId(parsedPlan.services[0]);
-                        if (francois) {
-                          setProId(francois.id);
-                          setStep("date");
-                        } else if (parsedPlan.professional_id) {
-                          setProId(parsedPlan.professional_id);
-                          setStep("date");
-                        } else {
-                          setStep("pro");
-                        }
-                      } else {
-                        setStep("service");
-                      }
+                  <Input
+                    value={cpfMask(cpf)}
+                    onChange={(e) => {
+                      setCpf(e.target.value);
+                      setVipInfo(null);
+                    }}
+                    placeholder="000.000.000-00"
+                  />
+                  <Label>WhatsApp cadastrado</Label>
+                  <Input
+                    value={phoneMask(phone)}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      setVipInfo(null);
+                    }}
+                    inputMode="tel"
+                    placeholder="(00) 00000-0000"
+                  />
+                  <Button
+                    className="w-full"
+                    disabled={
+                      cpf.replace(/\D/g, "").length !== 11 ||
+                      phone.replace(/\D/g, "").length < 10 ||
+                      validateVipMut.isPending
                     }
-                  }}>VALIDAR CPF</Button>
-                  {vipInfo && (vipInfo as any).status === "active" && (
-                    <div className="p-3 rounded-lg bg-success/10 text-sm flex items-center gap-2">
-                      <Check className="h-4 w-4 text-success" /> 
-                      Assinatura ativa — {(() => {
+                    onClick={() => validateVipMut.mutate()}
+                  >
+                    {validateVipMut.isPending && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    {validateVipMut.isPending ? "VALIDANDO..." : "VALIDAR DADOS"}
+                  </Button>
+                  {bookingBranding.show_subscription_summary &&
+                    vipInfo &&
+                    (vipInfo as any).status === "active" && (
+                    <div className="p-4 rounded-lg bg-success/10 text-sm">
+                      <div className="flex items-center gap-2 font-medium">
+                        <Check className="h-4 w-4 text-success" />
+                        Assinatura ativa — {(() => {
                         try {
                           if ((vipInfo as any).plan?.startsWith("{") || (vipInfo as any).plan?.startsWith("[")) {
                             return JSON.parse((vipInfo as any).plan).name;
                           }
                         } catch(e){}
                         return (vipInfo as any).plan;
-                      })()}
+                        })()}
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-white/70">
+                        <span>Saldo: <strong className="text-white">{(vipInfo as any).sessions_remaining ?? "Ilimitado"}</strong></span>
+                        <span>Validade: <strong className="text-white">{(vipInfo as any).ends_at ? format(new Date(`${(vipInfo as any).ends_at}T12:00:00`), "dd/MM/yyyy") : "Sem prazo"}</strong></span>
+                      </div>
                     </div>
                   )}
-                  {vipInfo && (vipInfo as any).status !== "active" && (
+                  {vipInfo && (vipInfo as any).renewal && (
                     <div className="p-5 rounded-xl bg-black/40 border border-white/10 text-sm flex flex-col gap-5 text-center mt-4">
                       <div className="flex flex-col items-center gap-1">
-                        <div className="text-red-500 font-semibold text-base">Assinatura Inativa ou Pendente</div>
-                        <div className="text-white/70">Realize o pagamento da mensalidade de <strong className="text-primary">{brl(Number((vipInfo as any).price))}</strong> para reativar seu plano {(() => {
+                        <div className={`font-semibold text-base ${(vipInfo as any).status === "active" ? "text-amber-400" : "text-red-500"}`}>
+                          {(vipInfo as any).status === "active" ? "Renovação da assinatura" : "Assinatura aguardando renovação"}
+                        </div>
+                        <div className="text-white/70">
+                          Valor <strong className="text-primary">{brl(Number((vipInfo as any).renewal.amount))}</strong>
+                          {" · "}vencimento {format(new Date(`${(vipInfo as any).renewal.due_date}T12:00:00`), "dd/MM/yyyy")}
+                          {" · "}plano {(() => {
                           try {
                             if ((vipInfo as any).plan?.startsWith("{") || (vipInfo as any).plan?.startsWith("[")) {
                               return JSON.parse((vipInfo as any).plan).name;
                             }
                           } catch(e){}
                           return (vipInfo as any).plan;
-                        })()}.</div>
-                      </div>
-                      
-                      {inactivePixPayload && (
-                        <div className="bg-white p-3 rounded-xl mx-auto inline-flex shadow-lg">
-                          <QrCode value={inactivePixPayload} size={180} />
+                        })()}.
                         </div>
-                      )}
+                      </div>
 
-                      {inactivePixPayload && (
-                        <Button variant="outline" className="w-full bg-white/5 border-white/10 text-white hover:bg-white/10 py-5" onClick={()=>{navigator.clipboard.writeText(inactivePixPayload);toast.success("Código PIX copiado!");}}>
-                          <Copy className="h-4 w-4 mr-2" /> Copiar Código PIX Copia-e-Cola
-                        </Button>
-                      )}
+                      {(vipInfo as any).renewal.proof_status === "approved" ? (
+                        <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-5 text-left">
+                          <div className="flex items-start gap-3">
+                            <FileCheck2 className="mt-0.5 h-6 w-6 shrink-0 text-emerald-400" />
+                            <div>
+                              <div className="font-semibold text-emerald-300">
+                                Pagamento confirmado
+                              </div>
+                              <p className="mt-1 text-xs leading-relaxed text-white/65">
+                                O salão já aprovou este comprovante. Valide seus dados novamente
+                                para atualizar o saldo e o próximo vencimento.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (vipInfo as any).renewal.proof_status === "pending_review" ? (
+                        <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-5 text-left">
+                          <div className="flex items-start gap-3">
+                            <FileCheck2 className="mt-0.5 h-6 w-6 shrink-0 text-amber-400" />
+                            <div>
+                              <div className="font-semibold text-amber-300">Comprovante recebido</div>
+                              <p className="mt-1 text-xs leading-relaxed text-white/65">
+                                O salão está conferindo o pagamento. Assim que ele for declarado como
+                                pago, sua assinatura ficará ativa e suas sessões serão renovadas.
+                              </p>
+                              {(vipInfo as any).renewal.proof_file_name && (
+                                <p className="mt-2 truncate text-xs text-white/45">
+                                  Arquivo: {(vipInfo as any).renewal.proof_file_name}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {(vipInfo as any).renewal.proof_status === "rejected" && (
+                            <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-left text-xs text-red-200">
+                              O comprovante anterior não foi aceito.
+                              {(vipInfo as any).renewal.proof_rejection_reason
+                                ? ` Motivo: ${(vipInfo as any).renewal.proof_rejection_reason}`
+                                : " Confira o arquivo e envie novamente."}
+                            </div>
+                          )}
 
-                      <a href={`https://wa.me/55${tenant?.whatsapp?.replace(/\D/g, '')}?text=${encodeURIComponent('Olá, acabei de realizar o pagamento do meu plano VIP via PIX. Segue o comprovante:')}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#128C7E] text-white py-3 px-4 rounded-xl font-medium transition w-full shadow-[0_0_15px_rgba(37,211,102,0.15)]">
-                        <MessageCircle className="h-5 w-5" /> Enviar Comprovante no WhatsApp
-                      </a>
+                          {inactivePixPayload ? (
+                            <>
+                              <div className="bg-white p-3 rounded-xl mx-auto inline-flex shadow-lg">
+                                <QrCode value={inactivePixPayload} size={180} />
+                              </div>
+
+                              <Button variant="outline" className="w-full bg-white/5 border-white/10 text-white hover:bg-white/10 py-5" onClick={()=>{navigator.clipboard.writeText(inactivePixPayload);toast.success("Código PIX copiado!");}}>
+                                <Copy className="h-4 w-4 mr-2" /> Copiar Código PIX Copia-e-Cola
+                              </Button>
+
+                              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-white/20 bg-white/[0.03] p-4 text-center transition hover:border-amber-400/60 hover:bg-amber-400/5">
+                                <UploadCloud className="h-6 w-6 text-amber-400" />
+                                <span className="font-medium">
+                                  {proofFile ? proofFile.name : "Escolher comprovante"}
+                                </span>
+                                <span className="text-xs text-white/45">
+                                  JPG, PNG, WEBP ou PDF · máximo 5 MB
+                                </span>
+                                <input
+                                  type="file"
+                                  className="sr-only"
+                                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                                  onChange={(event) => setProofFile(event.target.files?.[0] ?? null)}
+                                />
+                              </label>
+
+                              <Button
+                                className="w-full py-5"
+                                disabled={!proofFile || proofMut.isPending}
+                                onClick={() => proofMut.mutate()}
+                              >
+                                {proofMut.isPending ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <FileCheck2 className="mr-2 h-4 w-4" />
+                                )}
+                                {proofMut.isPending ? "Enviando..." : "Enviar comprovante para análise"}
+                              </Button>
+                            </>
+                          ) : (
+                            <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-left text-xs text-white/65">
+                              O pagamento online não está habilitado para este plano. Entre em
+                              contato com o salão para receber as instruções de renovação.
+                            </div>
+                          )}
+
+                          <a href={`https://wa.me/55${tenant?.whatsapp?.replace(/\D/g, '')}?text=${encodeURIComponent('Olá, preciso de ajuda com a renovação da minha assinatura.')}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 text-xs text-white/55 transition hover:text-white">
+                            <MessageCircle className="h-4 w-4" /> Preciso de ajuda pelo WhatsApp
+                          </a>
+                        </>
+                      )}
                     </div>
                   )}
+                  {vipInfo &&
+                    (vipInfo as any).status !== "active" &&
+                    !(vipInfo as any).renewal && (
+                      <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">
+                        Esta assinatura não possui uma cobrança disponível para renovação no
+                        momento. Fale com o salão para regularizar o cadastro.
+                      </div>
+                    )}
                 </div>
               )}
-              <Button className="w-full py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" size="lg" disabled={isVip && (!vipInfo || (vipInfo as any).status !== "active")} onClick={handleVipContinue}>
-                <span>CONTINUAR</span>
-                <ArrowRight className="h-5 w-5" />
-              </Button>
+              {bookingBranding.show_primary_button ? (
+                <Button className="flex w-full justify-between rounded-xl bg-primary px-6 py-6 font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90" size="lg" disabled={isVip && (!vipInfo || (vipInfo as any).status !== "active")} onClick={handleVipContinue}>
+                  <span>CONTINUAR</span>
+                  <ArrowRight className="h-5 w-5" />
+                </Button>
+              ) : (
+                <button
+                  type="button"
+                  className="mx-auto flex items-center gap-2 text-sm font-medium text-white/70 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={isVip && (!vipInfo || (vipInfo as any).status !== "active")}
+                  onClick={handleVipContinue}
+                >
+                  Iniciar agendamento
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              )}
             </CardContent>
           </Card>
         )}
@@ -291,24 +610,11 @@ function BookingPage() {
             <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {services.filter((s: any) => !s.vip_only || isVip).map((s: any) => (
-                <button key={s.id} onClick={() => { 
-                  setServiceId(s.id); 
-                  if (isVip) {
-                    const francois = professionals.find((p: any) => {
-                      const name = p.full_name.toLowerCase();
-                      return name.includes("françois") || name.includes("francois") || name.includes("françoise");
-                    });
-                    if (francois) {
-                      setProId(francois.id);
-                      setStep("date");
-                      return;
-                    }
-                  }
-                  setStep("pro"); 
-                }} className={`text-left p-4 rounded-xl border-2 transition ${serviceId === s.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
-                  <div className="flex items-center justify-between"><div className="font-medium">{s.name}</div>{s.vip_only && <Crown className="h-4 w-4 text-primary" />}</div>
+                <button key={s.id} onClick={() => { setServiceId(s.id); setStep("pro"); }} className={`text-left p-4 rounded-xl border-2 transition ${serviceId === s.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
+                  <div className="flex items-center justify-between gap-2"><div className="font-medium">{s.name}</div>{isVip && coveredServiceIds.has(s.id) ? <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-400">INCLUSO</span> : s.vip_only ? <Crown className="h-4 w-4 text-primary" /> : null}</div>
                   <div className="text-xs text-muted-foreground mt-1">{s.duration_min} min</div>
-                  <div className="font-semibold text-primary mt-2">{brl(s.price)}</div>
+                  <div className="font-semibold text-primary mt-2">{isVip && coveredServiceIds.has(s.id) ? "Coberto pela assinatura" : brl(s.price)}</div>
+                  {isVip && !coveredServiceIds.has(s.id) && <div className="mt-1 text-[11px] text-amber-400">Serviço extra: haverá cobrança adicional.</div>}
                   </button>
               ))}
             </div>
@@ -434,9 +740,10 @@ function BookingPage() {
               <div className="space-y-2"><Label className="text-white/70">WhatsApp</Label><Input className="bg-neutral-900/50 border-white/10 text-white focus-visible:ring-amber-500" value={phoneMask(phone)} onChange={(e) => setPhone(e.target.value)} placeholder="(11) 99999-9999" /></div>
             </div>
             <div className="p-5 rounded-xl bg-neutral-900/80 border border-white/5 text-sm space-y-3">
-              <div className="flex items-center text-white/70"><span className="w-24">Serviço:</span> <strong className="text-white font-medium">{chosenService?.name}</strong> <span className="ml-2 text-amber-500 font-medium">— {brl(chosenService?.price)}</span></div>
+              <div className="flex items-center text-white/70"><span className="w-24">Serviço:</span> <strong className="text-white font-medium">{chosenService?.name}</strong> <span className="ml-2 text-amber-500 font-medium">— {isVip && coveredServiceIds.has(chosenService?.id) ? "Incluso no plano" : brl(chosenService?.price)}</span></div>
               <div className="flex items-center text-white/70"><span className="w-24">Profissional:</span> <span className="text-white">{professionals.find((p:any)=>p.id===proId)?.full_name}</span></div>
               <div className="flex items-center text-white/70"><span className="w-24">Data:</span> <span className="text-white">{date && format(date, "dd/MM/yyyy")} às {time}</span></div>
+              {isVip && !coveredServiceIds.has(chosenService?.id) && <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-300">Este serviço não faz parte da assinatura e será cobrado normalmente no atendimento.</div>}
             </div>
             <Button size="lg" className="w-full mt-auto py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" disabled={!name || phone.replace(/\D/g,"").length < 10 || bookMut.isPending} onClick={() => bookMut.mutate()}>
               <span className="flex items-center">{bookMut.isPending ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null} CONFIRMAR AGENDAMENTO</span>
@@ -449,11 +756,19 @@ function BookingPage() {
           <Card className="bg-white border-none text-black shadow-2xl overflow-hidden rounded-3xl mx-auto w-full max-w-lg">
             <div className="bg-white p-6 md:p-8">
               <div className="text-center mb-6 mt-4">
-                <div className="h-16 w-16 rounded-full border-2 border-amber-500 mx-auto flex items-center justify-center mb-4">
-                  <Check className="h-8 w-8 text-amber-500" />
+                <div className={`h-16 w-16 rounded-full border-2 mx-auto flex items-center justify-center mb-4 ${bookingCancelled ? "border-rose-500 bg-rose-50" : "border-amber-500"}`}>
+                  {bookingCancelled ? (
+                    <XCircle className="h-8 w-8 text-rose-500" />
+                  ) : (
+                    <Check className="h-8 w-8 text-amber-500" />
+                  )}
                 </div>
-                <h3 className="text-2xl font-bold uppercase tracking-wide text-black">RESERVA CONFIRMADA</h3>
-                <p className="text-sm text-amber-600 font-semibold uppercase tracking-wider mt-1">O SEU HORÁRIO FOI GARANTIDO!</p>
+                <h3 className="text-2xl font-bold uppercase tracking-wide text-black">
+                  {bookingCancelled ? "RESERVA CANCELADA" : "RESERVA CONFIRMADA"}
+                </h3>
+                <p className={`text-sm font-semibold uppercase tracking-wider mt-1 ${bookingCancelled ? "text-rose-600" : "text-amber-600"}`}>
+                  {bookingCancelled ? "O HORARIO FOI LIBERADO" : "O SEU HORARIO FOI GARANTIDO!"}
+                </p>
               </div>
 
               <div className="border border-amber-500/20 rounded-2xl p-5 bg-[#faf8f5] space-y-5">
@@ -506,6 +821,38 @@ function BookingPage() {
                 </div>
               </div>
 
+              {bookingCancelled ? (
+                <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-center text-sm font-medium text-rose-700">
+                  O cancelamento ja aparece na agenda do salao e nao conta mais como faturamento previsto.
+                </div>
+              ) : (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <Button
+                    variant="outline"
+                    className="border-rose-200 text-xs font-bold text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                    disabled={cancelMut.isPending}
+                    onClick={() => {
+                      if (window.confirm("Deseja realmente cancelar este agendamento?")) cancelMut.mutate();
+                    }}
+                  >
+                    {cancelMut.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                    CANCELAR RESERVA
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="border-amber-500/20 text-xs font-bold hover:bg-amber-50"
+                    disabled={!cancellationUrl}
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(cancellationUrl);
+                      toast.success("Link de cancelamento copiado.");
+                    }}
+                  >
+                    <Copy className="mr-2 h-4 w-4" />
+                    GUARDAR LINK
+                  </Button>
+                </div>
+              )}
+
               <div className="border border-amber-500/20 rounded-2xl p-5 mt-4 bg-[#faf8f5] cursor-pointer hover:bg-amber-50 transition-colors" onClick={() => window.open(`https://maps.google.com/?q=${tenant.name}`, "_blank")}>
                  <div className="flex items-start gap-3">
                     <div className="h-8 w-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 shrink-0"><MapPin className="h-4 w-4" /></div>
@@ -519,7 +866,16 @@ function BookingPage() {
 
               <div className="mt-6 grid grid-cols-2 gap-3">
                 <Button variant="outline" className="border-amber-500/20 hover:bg-amber-50 text-xs font-bold" onClick={() => window.open(`https://maps.google.com/?q=${tenant.name}`, "_blank")}><MapPin className="h-4 w-4 mr-2" /> GOOGLE MAPS</Button>
-                <Button variant="outline" className="bg-black hover:bg-neutral-800 text-amber-500 border-none text-xs font-bold" onClick={() => window.open(`https://wa.me/?text=Olá! Fiz um agendamento na ${tenant.name} para o dia ${format(date!, "dd/MM/yyyy")} às ${time}.`, "_blank")}><MessageCircle className="h-4 w-4 mr-2" /> WHATSAPP</Button>
+                <Button
+                  variant="outline"
+                  className="bg-black hover:bg-neutral-800 text-amber-500 border-none text-xs font-bold"
+                  onClick={() => {
+                    const message = `Olá! Fiz um agendamento na ${tenant.name} para o dia ${format(date!, "dd/MM/yyyy")} às ${time}. Link para cancelar: ${cancellationUrl}`;
+                    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
+                  }}
+                >
+                  <MessageCircle className="h-4 w-4 mr-2" /> WHATSAPP
+                </Button>
               </div>
 
               <div className="mt-4">
@@ -530,6 +886,65 @@ function BookingPage() {
           </Card>
         )}
       </div>
+    </ImmersiveBackground>
+  );
+}
+
+function BookingIdentityHeader({
+  tenant,
+  branding,
+  contextLabel,
+}: {
+  tenant: any;
+  branding: BookingBranding;
+  contextLabel?: string;
+}) {
+  const hasText =
+    branding.show_name ||
+    Boolean(contextLabel) ||
+    (branding.show_subtitle && tenant.subtitle) ||
+    (branding.show_slogan && branding.hero_slogan);
+
+  if (!branding.show_logo && !hasText) return null;
+
+  return (
+    <div className="mb-6 flex items-center gap-4">
+      {branding.show_logo && (
+        <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-primary text-primary-foreground shadow-md">
+          {tenant.logo_url ? (
+            <img
+              src={tenant.logo_url}
+              className="h-full w-full object-cover"
+              alt={`Logo de ${tenant.name}`}
+            />
+          ) : (
+            <Scissors className="h-6 w-6" />
+          )}
+        </div>
+      )}
+      {hasText && (
+        <div className="min-w-0">
+          {branding.show_name && (
+            <h1 className="text-2xl font-semibold text-white drop-shadow md:text-3xl">
+              {tenant.name}
+            </h1>
+          )}
+          {contextLabel ? (
+            <p className="text-sm text-white/70">{contextLabel}</p>
+          ) : (
+            <>
+              {branding.show_subtitle && tenant.subtitle && (
+                <p className="text-sm text-white/65">{tenant.subtitle}</p>
+              )}
+              {branding.show_slogan && branding.hero_slogan && (
+                <p className="mt-1 text-sm font-medium text-white/90">
+                  {branding.hero_slogan}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

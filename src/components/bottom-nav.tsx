@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { useSidebar } from "@/components/ui/sidebar";
-import { Calendar, ShoppingBag, DollarSign, LayoutDashboard, Wallet, Menu } from "lucide-react";
+import { Calendar, ShoppingBag, DollarSign, LayoutDashboard, Landmark } from "lucide-react";
 
 export function BottomNav() {
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
@@ -27,7 +27,7 @@ export function BottomNav() {
         { title: "Painel", path: "/app", icon: LayoutDashboard },
         { title: "Agenda", path: "/app/agenda", icon: Calendar },
         { title: "Comandas", path: "/app/comandas", icon: ShoppingBag },
-        { title: "Caixa", path: "/app/caixa", icon: Wallet },
+        { title: "Financeiro", path: "/app/financeiro", icon: Landmark },
       ];
 
   return (

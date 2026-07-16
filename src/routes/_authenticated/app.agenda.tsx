@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useCurrentTenant } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,8 +6,21 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Plus, ChevronLeft, ChevronRight, Crown } from "lucide-react";
 import { addDays, format, startOfDay, endOfDay } from "date-fns";
@@ -16,6 +29,12 @@ import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { brl } from "@/lib/format";
+import { syncAppointmentComanda } from "@/lib/commandas";
+import {
+  AgendaPremium,
+  type AgendaAppointment,
+  type AgendaViewMode,
+} from "@/components/agenda/agenda-premium";
 
 export const Route = createFileRoute("/_authenticated/app/agenda")({ component: AgendaPage });
 
@@ -23,10 +42,17 @@ function AgendaPage() {
   const { data: tenant } = useCurrentTenant();
   const qc = useQueryClient();
   const [date, setDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState<AgendaViewMode>("day");
   const [openNew, setOpenNew] = useState(false);
   const [editAppt, setEditAppt] = useState<any>(null);
-  const [selectedSlot, setSelectedSlot] = useState<{ proId: string, time: string } | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<{ proId: string; time: string } | null>(null);
+  const [movingAppointmentId, setMovingAppointmentId] = useState<string | null>(null);
+  const [premiumAgendaEnabled] = useState(true);
   const tenantId = tenant?.id;
+
+  const rangeDays =
+    viewMode === "week" ? 7 : viewMode === "threeDays" ? 3 : viewMode === "agenda" ? 14 : 1;
+  const rangeEnd = endOfDay(addDays(date, rangeDays - 1));
 
   const { data: pros } = useQuery({
     queryKey: ["pros", tenantId], enabled: !!tenantId,
@@ -34,8 +60,79 @@ function AgendaPage() {
   });
 
   const { data: appts } = useQuery({
-    queryKey: ["appts", tenantId, format(date, "yyyy-MM-dd")], enabled: !!tenantId,
-    queryFn: async () => (await supabase.from("appointments").select("*, services(name,duration_min), clients(full_name)").eq("tenant_id", tenantId!).gte("start_at", startOfDay(date).toISOString()).lte("start_at", endOfDay(date).toISOString()).order("start_at")).data ?? [],
+    queryKey: ["appts", tenantId, format(date, "yyyy-MM-dd"), viewMode],
+    enabled: !!tenantId,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+    queryFn: async () =>
+      (
+        await supabase
+          .from("appointments")
+          .select("*, services(name,duration_min,price), clients(full_name,whatsapp,notes)")
+          .eq("tenant_id", tenantId!)
+          .gte("start_at", startOfDay(date).toISOString())
+          .lte("start_at", rangeEnd.toISOString())
+          .order("start_at")
+      ).data ?? [],
+  });
+
+  const { data: servicesCatalog } = useQuery({
+    queryKey: ["services-min", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () =>
+      (
+        await supabase
+          .from("services")
+          .select("id,name,price,duration_min")
+          .eq("tenant_id", tenantId!)
+          .eq("active", true)
+          .order("name")
+      ).data ?? [],
+  });
+
+  const { data: productsCatalog } = useQuery({
+    queryKey: ["products-min", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () =>
+      (
+        await supabase
+          .from("products")
+          .select("id,name,price,cost_price")
+          .eq("tenant_id", tenantId!)
+          .eq("active", true)
+          .order("name")
+      ).data ?? [],
+  });
+
+  const { data: appointmentCommandas } = useQuery({
+    queryKey: ["agenda-commandas", tenantId, format(date, "yyyy-MM-dd"), viewMode],
+    enabled: !!tenantId,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+    queryFn: async () =>
+      (
+        await supabase
+          .from("commandas")
+          .select("id,appointment_id,total,status,payment_method")
+          .eq("tenant_id", tenantId!)
+          .gte("scheduled_at", startOfDay(date).toISOString())
+          .lte("scheduled_at", rangeEnd.toISOString())
+      ).data ?? [],
+  });
+
+  const { data: clientHistory } = useQuery({
+    queryKey: ["agenda-client-history", tenantId, format(date, "yyyy-MM-dd")],
+    enabled: !!tenantId,
+    queryFn: async () =>
+      (
+        await supabase
+          .from("appointments")
+          .select("id,client_id,client_name,start_at,end_at,status")
+          .eq("tenant_id", tenantId!)
+          .lte("start_at", rangeEnd.toISOString())
+          .order("start_at", { ascending: false })
+          .limit(750)
+      ).data ?? [],
   });
 
   const { data: settings } = useQuery({
@@ -78,6 +175,220 @@ function AgendaPage() {
     ? `${window.location.origin}/booking/${bookingSlug}`
     : `https://barber-pro-plus.lovable.app/booking/${bookingSlug}`;
 
+
+  async function syncOperationalAppointment(appointment: AgendaAppointment) {
+    if (!tenantId) throw new Error("Salão não identificado.");
+
+    const serviceNames = parseAgendaNoteList(appointment.notes, "Serviços");
+    const productNames = parseAgendaNoteList(appointment.notes, "Produtos");
+    const serviceIds = [
+      appointment.service_id,
+      ...(servicesCatalog ?? [])
+        .filter((service) => serviceNames.includes(service.name.trim().toLocaleLowerCase("pt-BR")))
+        .map((service) => service.id),
+    ].filter((id): id is string => Boolean(id));
+    const productIds = (productsCatalog ?? [])
+      .filter((product) => productNames.includes(product.name.trim().toLocaleLowerCase("pt-BR")))
+      .map((product) => product.id);
+    const paymentLabel = parseAgendaNoteValue(appointment.notes, "Pagamento");
+    const paymentMap: Record<string, string> = {
+      Pix: "pix",
+      Dinheiro: "cash",
+      "Cartão de Crédito": "credit",
+      "Cartão de Débito": "debit",
+      "Assinatura / VIP": "vip",
+    };
+
+    await syncAppointmentComanda(supabase, {
+      appointmentId: appointment.id,
+      tenantId,
+      clientId: appointment.client_id ?? null,
+      clientName: appointment.client_name || appointment.clients?.full_name || "Cliente",
+      professionalId: appointment.professional_id,
+      serviceIds: [...new Set(serviceIds)],
+      productIds,
+      services: servicesCatalog ?? [],
+      products: productsCatalog ?? [],
+      professionals: pros ?? [],
+      scheduledAt: appointment.start_at,
+      status: appointment.status,
+      source: appointment.source === "online" ? "online" : "manual",
+      paymentMethod: paymentMap[paymentLabel] ?? null,
+    });
+  }
+
+  async function moveAppointment(
+    appointment: AgendaAppointment,
+    professionalId: string,
+    time: string,
+  ) {
+    if (!tenantId) return;
+
+    const targetProfessional = (pros ?? []).find(
+      (professional) => professional.id === professionalId,
+    );
+    if (!targetProfessional || isAgendaProfessionalOff(targetProfessional, date)) {
+      toast.error("Este profissional não está disponível nesta data.");
+      return;
+    }
+
+    const [hour, minute] = time.split(":").map(Number);
+    const start = new Date(date);
+    start.setHours(hour, minute, 0, 0);
+    const duration = Math.max(
+      1,
+      Math.round(
+        (new Date(appointment.end_at).getTime() - new Date(appointment.start_at).getTime()) /
+          60_000,
+      ),
+    );
+    const end = new Date(start.getTime() + duration * 60_000);
+    const hasConflict = (appts ?? []).some(
+      (item) =>
+        item.id !== appointment.id &&
+        item.professional_id === professionalId &&
+        item.status !== "cancelled" &&
+        item.status !== "no_show" &&
+        new Date(item.start_at) < end &&
+        new Date(item.end_at) > start,
+    );
+
+    if (hasConflict) {
+      toast.error("Este horário já está ocupado para o profissional selecionado.");
+      return;
+    }
+
+    setMovingAppointmentId(appointment.id);
+    try {
+      const movedAppointment: AgendaAppointment = {
+        ...appointment,
+        professional_id: professionalId,
+        start_at: start.toISOString(),
+        end_at: end.toISOString(),
+      };
+      const { error } = await supabase
+        .from("appointments")
+        .update({
+          professional_id: professionalId,
+          start_at: movedAppointment.start_at,
+          end_at: movedAppointment.end_at,
+        })
+        .eq("id", appointment.id)
+        .eq("tenant_id", tenantId);
+      if (error) throw error;
+
+      await syncOperationalAppointment(movedAppointment);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["appts"] }),
+        qc.invalidateQueries({ queryKey: ["agenda-commandas"] }),
+      ]);
+      toast.success(`Agendamento movido para ${format(start, "HH:mm")}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível mover o agendamento.");
+    } finally {
+      setMovingAppointmentId(null);
+    }
+  }
+
+  async function changeAppointmentStatus(appointment: AgendaAppointment, status: string) {
+    if (!tenantId) return;
+    setMovingAppointmentId(appointment.id);
+    try {
+      const { error } = await supabase
+        .from("appointments")
+        .update({ status })
+        .eq("id", appointment.id)
+        .eq("tenant_id", tenantId);
+      if (error) throw error;
+      await syncOperationalAppointment({ ...appointment, status });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["appts"] }),
+        qc.invalidateQueries({ queryKey: ["agenda-commandas"] }),
+      ]);
+      toast.success(status === "confirmed" ? "Agendamento confirmado." : "Agendamento cancelado.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Não foi possível atualizar o agendamento.",
+      );
+    } finally {
+      setMovingAppointmentId(null);
+    }
+  }
+
+  if (premiumAgendaEnabled) {
+    return (
+      <>
+        <AgendaPremium
+          date={date}
+          viewMode={viewMode}
+          professionals={pros ?? []}
+          appointments={(appts ?? []) as AgendaAppointment[]}
+          services={servicesCatalog ?? []}
+          commandas={appointmentCommandas ?? []}
+          clientHistory={clientHistory ?? []}
+          openHour={openHour}
+          closeHour={closeHour}
+          slotMinutes={slotMin}
+          isDayClosed={isDayClosed}
+          bookingLink={bookingLink}
+          movingAppointmentId={movingAppointmentId}
+          onDateChange={setDate}
+          onViewModeChange={setViewMode}
+          onNewAppointment={(slot) => {
+            setSelectedSlot(slot ? { proId: slot.professionalId, time: slot.time } : null);
+            setOpenNew(true);
+          }}
+          onEditAppointment={(appointment) => setEditAppt(appointment)}
+          onMoveAppointment={moveAppointment}
+          onStatusChange={changeAppointmentStatus}
+        />
+
+        <Dialog
+          open={openNew}
+          onOpenChange={(open) => {
+            setOpenNew(open);
+            if (!open) setSelectedSlot(null);
+          }}
+        >
+          <NewAppointmentDialog
+            key={selectedSlot ? `${selectedSlot.proId}-${selectedSlot.time}` : "new-premium"}
+            tenantId={tenantId}
+            pros={pros ?? []}
+            onDone={() => {
+              setOpenNew(false);
+              setSelectedSlot(null);
+              qc.invalidateQueries({ queryKey: ["appts"] });
+              qc.invalidateQueries({ queryKey: ["agenda-commandas"] });
+            }}
+            defaultDate={date}
+            defaultProId={selectedSlot?.proId}
+            defaultTime={selectedSlot?.time}
+          />
+        </Dialog>
+
+        {editAppt && (
+          <Dialog open={Boolean(editAppt)} onOpenChange={(open) => !open && setEditAppt(null)}>
+            <EditAppointmentDialog
+              appt={editAppt}
+              tenantId={tenantId}
+              pros={pros ?? []}
+              onDone={() => {
+                setEditAppt(null);
+                qc.invalidateQueries({ queryKey: ["appts"] });
+                qc.invalidateQueries({ queryKey: ["agenda-commandas"] });
+              }}
+              onDelete={() => {
+                setEditAppt(null);
+                qc.invalidateQueries({ queryKey: ["appts"] });
+                qc.invalidateQueries({ queryKey: ["agenda-commandas"] });
+              }}
+              appts={(appts ?? []) as any[]}
+            />
+          </Dialog>
+        )}
+      </>
+    );
+  }
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
       {isDayClosed && (
@@ -224,9 +535,7 @@ function AgendaPage() {
     </div>
   );
 }
-
 function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProId, defaultTime }: { tenantId?: string; pros: any[]; onDone: () => void; defaultDate: Date; defaultProId?: string; defaultTime?: string }) {
-  const navigate = useNavigate();
   const [clientId, setClientId] = useState<string>("");
   const [isRegisteringNewClient, setIsRegisteringNewClient] = useState(false);
   const [newClientName, setNewClientName] = useState("");
@@ -326,78 +635,56 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
       const prodsText = prodNames ? `Produtos: ${prodNames}` : "";
       const payText = paymentMethod ? `Pagamento: ${paymentMethod}` : "";
 
-      // 1. Auto Comanda Creation
       const paymentMapped: Record<string, string> = {
         "Pix": "pix",
         "Dinheiro": "cash",
         "Cartão de Crédito": "credit",
-        "Cartão de Débito": "debit"
+        "Cartão de Débito": "debit",
+        "Assinatura / VIP": "vip",
       };
-      const mappedMethod = paymentMapped[paymentMethod] || "pix";
+      const mappedMethod = paymentMapped[paymentMethod] ?? null;
+      const finalObs = [obs, svcsText, prodsText, payText].filter(Boolean).join(" | ");
 
-      const { data: countRes } = await supabase.from("commandas").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId!);
-      const cmdNumber = (countRes as any)?.count ? (countRes as any).count + 1 : Math.floor(Math.random() * 10000);
-
-      const { data: cmd, error: cmdErr } = await supabase.from("commandas").insert({
+      const { data: appt, error } = await supabase.from("appointments").insert({
         tenant_id: tenantId!,
+        professional_id: proId,
+        service_id: firstSvcId,
+        client_id: finalClientId || null,
         client_name: finalName,
-        number: cmdNumber,
-        status: status === "completed" ? "closed" : "open",
-        closed_at: status === "completed" ? new Date().toISOString() : null,
-        subtotal: totalValue,
-        total: totalValue,
-        payment_method: status === "completed" ? mappedMethod : null
-      }).select("*").single();
-
-      if (cmdErr) throw cmdErr;
-
-      const pro = pros.find((p: any) => p.id === proId);
-      const commission_pct = pro?.commission_pct ?? 0;
-
-      for (const sId of selectedSvcs) {
-        const svc = services?.find(s => s.id === sId);
-        if (!svc) continue;
-        const commission_value = (Number(svc.price) * commission_pct) / 100;
-        await supabase.from("commanda_items").insert({
-          commanda_id: cmd.id, tenant_id: tenantId!, kind: "service", ref_id: sId,
-          name: svc.name, quantity: 1, unit_price: svc.price, professional_id: proId || null,
-          commission_pct, commission_value, commission_status: "pending"
-        });
-      }
-
-      for (const pId of selectedProds) {
-        const prod = products?.find(p => p.id === pId);
-        if (!prod) continue;
-        await supabase.from("commanda_items").insert({
-          commanda_id: cmd.id, tenant_id: tenantId!, kind: "product", ref_id: pId,
-          name: prod.name, quantity: 1, unit_price: prod.price, professional_id: null,
-          commission_pct: 0, commission_value: 0, commission_status: "pending"
-        });
-      }
-
-      if (status === "completed") {
-        await supabase.from("cash_movements").insert({
-          tenant_id: tenantId!, kind: "in", amount: totalValue, description: `Agendamento #${cmdNumber} — ${finalName}`
-        });
-      }
-
-      const comandaText = `Comanda ID: ${cmd.id}`;
-      const finalObs = [obs, svcsText, prodsText, payText, comandaText].filter(Boolean).join(" | ");
-
-      const { error } = await supabase.from("appointments").insert({
-        tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: finalClientId || null,
-        client_name: finalName, client_whatsapp: finalWa.replace(/\D/g,""),
-        start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
-        status: status, source: "manual", notes: finalObs,
-        is_vip: isVip
-      });
+        client_whatsapp: finalWa.replace(/\D/g, ""),
+        start_at: currentStart.toISOString(),
+        end_at: currentEnd.toISOString(),
+        status,
+        source: "manual",
+        notes: finalObs,
+        is_vip: isVip,
+      }).select("id").single();
       if (error) throw error;
 
-      toast.success("Agendamento criado!");
-      onDone();
-      if (status === "completed") {
-        navigate({ to: "/app/comandas" });
+      try {
+        await syncAppointmentComanda(supabase, {
+          appointmentId: appt.id,
+          tenantId: tenantId!,
+          clientId: finalClientId || null,
+          clientName: finalName,
+          professionalId: proId,
+          serviceIds: selectedSvcs,
+          productIds: selectedProds,
+          services: services ?? [],
+          products: products ?? [],
+          professionals: pros,
+          scheduledAt: currentStart.toISOString(),
+          status,
+          source: "manual",
+          paymentMethod: mappedMethod,
+        });
+      } catch (cmdError) {
+        await supabase.from("appointments").delete().eq("id", appt.id);
+        throw cmdError;
       }
+
+      toast.success("Agendamento criado e comanda aberta!");
+      onDone();
     } catch (e:any) { toast.error(e.message); } finally { setBusy(false); }
   }
 
@@ -540,6 +827,7 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
               <SelectItem value="Dinheiro">Dinheiro</SelectItem>
               <SelectItem value="Cartão de Crédito">Cartão de Crédito</SelectItem>
               <SelectItem value="Cartão de Débito">Cartão de Débito</SelectItem>
+              <SelectItem value="Assinatura / VIP">Assinatura / VIP</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -559,7 +847,6 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
 }
 
 function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }: { appt: any; tenantId?: string; pros: any[]; onDone: () => void; onDelete: () => void; appts: any[] }) {
-  const navigate = useNavigate();
   const qc = useQueryClient();
   const [clientId, setClientId] = useState<string>(appt.client_id || "");
   const [isRegisteringNewClient, setIsRegisteringNewClient] = useState(false);
@@ -633,7 +920,7 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
   useEffect(() => {
     if (appt.notes !== undefined) {
       const raw = appt.notes || "";
-      const parts = raw.split(" | ").filter((p: string) => !p.startsWith("Serviços:") && !p.startsWith("Produtos:") && !p.startsWith("Pagamento:"));
+      const parts = raw.split(" | ").filter((p: string) => !p.startsWith("Serviços:") && !p.startsWith("Produtos:") && !p.startsWith("Pagamento:") && !p.startsWith("Comanda ID:"));
       setObs(parts.join(" | ").trim());
     }
   }, [appt.notes]);
@@ -713,114 +1000,59 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
       const svcsText = additionalSvcs.length > 0 ? `Serviços: ${additionalSvcs.join(", ")}` : "";
       const payText = paymentMethod ? `Pagamento: ${paymentMethod}` : "";
 
-      // Extract existing comanda ID if present
-      let cmdId = "";
-      if (appt.notes && appt.notes.includes("Comanda ID: ")) {
-        cmdId = appt.notes.split("Comanda ID: ")[1].split(" | ")[0].trim();
-      }
-
       const paymentMapped: Record<string, string> = {
         "Pix": "pix",
         "Dinheiro": "cash",
         "Cartão de Crédito": "credit",
-        "Cartão de Débito": "debit"
+        "Cartão de Débito": "debit",
+        "Assinatura / VIP": "vip",
       };
-      const mappedMethod = paymentMapped[paymentMethod] || "pix";
+      const mappedMethod = paymentMapped[paymentMethod] ?? null;
 
-      // 1. Sync or Create Comanda
-      let cmd: any = null;
-      if (cmdId) {
-        // Fetch existing comanda to check status
-        const { data: existingCmd } = await supabase.from("commandas").select("*").eq("id", cmdId).maybeSingle();
-        if (existingCmd) {
-          cmd = existingCmd;
-          // Update comanda details
-          await supabase.from("commandas").update({
-            client_name: finalName,
-            status: status === "completed" ? "closed" : "open",
-            closed_at: status === "completed" ? new Date().toISOString() : null,
-            subtotal: totalValue,
-            total: totalValue,
-            payment_method: status === "completed" ? mappedMethod : null
-          }).eq("id", cmdId);
-          // Delete old items so we can re-insert updated ones
-          await supabase.from("commanda_items").delete().eq("commanda_id", cmdId);
-        }
+      const finalObs = [obs, svcsText, prodsText, payText].filter(Boolean).join(" | ");
+
+      const extraIdsToDelete = chain.map(x => x.id).filter((id) => id !== appt.id);
+      if (extraIdsToDelete.length > 0) {
+        await supabase.from("commandas").update({ status: "canceled" }).in("appointment_id", extraIdsToDelete).neq("status", "closed");
+        const { error: delError } = await supabase.from("appointments").delete().in("id", extraIdsToDelete);
+        if (delError) throw delError;
       }
 
-      if (!cmd) {
-        // Create a new comanda
-        const { data: countRes } = await supabase.from("commandas").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId!);
-        const cmdNumber = (countRes as any)?.count ? (countRes as any).count + 1 : Math.floor(Math.random() * 10000);
-
-        const { data: newCmd, error: cmdErr } = await supabase.from("commandas").insert({
-          tenant_id: tenantId!, client_name: finalName, number: cmdNumber,
-          status: status === "completed" ? "closed" : "open",
-          closed_at: status === "completed" ? new Date().toISOString() : null,
-          subtotal: totalValue, total: totalValue,
-          payment_method: status === "completed" ? mappedMethod : null
-        }).select("*").single();
-
-        if (cmdErr) throw cmdErr;
-        cmd = newCmd;
-        cmdId = newCmd.id;
-      }
-
-      // Re-insert commanda items
-      const pro = pros.find((p: any) => p.id === proId);
-      const commission_pct = pro?.commission_pct ?? 0;
-
-      for (const sId of selectedSvcs) {
-        const svc = services?.find(s => s.id === sId);
-        if (!svc) continue;
-        const commission_value = (Number(svc.price) * commission_pct) / 100;
-        await supabase.from("commanda_items").insert({
-          commanda_id: cmdId, tenant_id: tenantId!, kind: "service", ref_id: sId,
-          name: svc.name, quantity: 1, unit_price: svc.price, professional_id: proId || null,
-          commission_pct, commission_value, commission_status: "pending"
-        });
-      }
-
-      for (const pId of selectedProds) {
-        const prod = products?.find(p => p.id === pId);
-        if (!prod) continue;
-        await supabase.from("commanda_items").insert({
-          commanda_id: cmdId, tenant_id: tenantId!, kind: "product", ref_id: pId,
-          name: prod.name, quantity: 1, unit_price: prod.price, professional_id: null,
-          commission_pct: 0, commission_value: 0, commission_status: "pending"
-        });
-      }
-
-      // Cash movement registry if transitioning to completed
-      if (status === "completed" && appt.status !== "completed") {
-        await supabase.from("cash_movements").insert({
-          tenant_id: tenantId!, kind: "in", amount: totalValue, description: `Agendamento #${cmd.number} — ${finalName}`
-        });
-      }
-
-      const comandaText = `Comanda ID: ${cmdId}`;
-      const finalObs = [obs, svcsText, prodsText, payText, comandaText].filter(Boolean).join(" | ");
-
-      // Delete all old appointments in the contiguous chain
-      const idsToDelete = chain.map(x => x.id);
-      const { error: delError } = await supabase.from("appointments").delete().in("id", idsToDelete);
-      if (delError) throw delError;
-
-      // Insert ONE single consolidated row
-      const { error } = await supabase.from("appointments").insert({
-        tenant_id: tenantId!, professional_id: proId, service_id: firstSvcId, client_id: finalClientId || null,
-        client_name: finalName, client_whatsapp: finalWa.replace(/\D/g,""),
-        start_at: currentStart.toISOString(), end_at: currentEnd.toISOString(),
-        status: status, notes: finalObs,
-        is_vip: isVip
-      });
+      const { error } = await supabase.from("appointments").update({
+        tenant_id: tenantId!,
+        professional_id: proId,
+        service_id: firstSvcId,
+        client_id: finalClientId || null,
+        client_name: finalName,
+        client_whatsapp: finalWa.replace(/\D/g, ""),
+        start_at: currentStart.toISOString(),
+        end_at: currentEnd.toISOString(),
+        status,
+        notes: finalObs,
+        source: appt.source ?? "manual",
+        is_vip: isVip,
+      }).eq("id", appt.id);
       if (error) throw error;
 
-      toast.success("Agendamento atualizado!");
+      await syncAppointmentComanda(supabase, {
+        appointmentId: appt.id,
+        tenantId: tenantId!,
+        clientId: finalClientId || null,
+        clientName: finalName,
+        professionalId: proId,
+        serviceIds: selectedSvcs,
+        productIds: selectedProds,
+        services: services ?? [],
+        products: products ?? [],
+        professionals: pros,
+        scheduledAt: currentStart.toISOString(),
+        status,
+        source: appt.source === "online" ? "online" : "manual",
+        paymentMethod: mappedMethod,
+      });
+
+      toast.success("Agendamento atualizado e comanda sincronizada!");
       onDone();
-      if (status === "completed" && appt.status !== "completed") {
-        navigate({ to: "/app/comandas" });
-      }
     } catch (e:any) { toast.error(e.message); } finally { setBusy(false); }
   }
 
@@ -828,6 +1060,7 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
      if(!confirm("Deseja realmente excluir este agendamento (incluindo todos os serviços associados)?")) return;
      setBusy(true);
      const idsToDelete = chain.map(x => x.id);
+     await supabase.from("commandas").update({ status: "canceled" }).in("appointment_id", idsToDelete).eq("status", "open");
      const { error } = await supabase.from("appointments").delete().in("id", idsToDelete);
      setBusy(false);
      if (error) toast.error(error.message);
@@ -970,6 +1203,7 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
               <SelectItem value="Dinheiro">Dinheiro</SelectItem>
               <SelectItem value="Cartão de Crédito">Cartão de Crédito</SelectItem>
               <SelectItem value="Cartão de Débito">Cartão de Débito</SelectItem>
+              <SelectItem value="Assinatura / VIP">Assinatura / VIP</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -1015,4 +1249,29 @@ function getContiguousChain(appt: any, allAppts: any[]) {
     }
   }
   return chain.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+}
+
+function parseAgendaNoteValue(notes: string | null | undefined, label: string) {
+  if (!notes) return "";
+  const item = notes.split(" | ").find((part) => part.trim().startsWith(`${label}:`));
+  return item?.slice(item.indexOf(":") + 1).trim() ?? "";
+}
+
+function parseAgendaNoteList(notes: string | null | undefined, label: string) {
+  return parseAgendaNoteValue(notes, label)
+    .split(",")
+    .map((item) => item.trim().toLocaleLowerCase("pt-BR"))
+    .filter(Boolean);
+}
+
+function isAgendaProfessionalOff(
+  professional: { blocked_dates?: string[] | null; work_days?: number[] | null },
+  date: Date,
+) {
+  const dateString = format(date, "yyyy-MM-dd");
+  const normalizedDay = date.getDay() === 0 ? 7 : date.getDay();
+  return (
+    Boolean(professional.blocked_dates?.includes(dateString)) ||
+    !(professional.work_days ?? [1, 2, 3, 4, 5, 6]).includes(normalizedDay)
+  );
 }

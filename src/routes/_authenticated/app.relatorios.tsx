@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, TrendingUp, Scissors, Award, Calendar, DollarSign, UserCheck, ShieldAlert, Sparkles, Clock } from "lucide-react";
+import { BarChart3, TrendingUp, Scissors, Award, Calendar, DollarSign, UserCheck, ShieldAlert, Sparkles, Clock, Users } from "lucide-react";
 import { brl } from "@/lib/format";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip } from "recharts";
 import { format, subDays, startOfDay, endOfDay, startOfMonth } from "date-fns";
@@ -69,7 +69,7 @@ function RelPage() {
         { data: services },
         { data: subscribers }
       ] = await Promise.all([
-        supabase.from("appointments").select("*, services(name,price,duration_min), clients(id,full_name,is_subscriber)").eq("tenant_id", tenantId!).eq("status", "completed"),
+        supabase.from("appointments").select("*, services(id,name,price,duration_min), clients(id,full_name,is_subscriber)").eq("tenant_id", tenantId!).eq("status", "completed"),
         supabase.from("commandas").select("*, commanda_items(*)").eq("tenant_id", tenantId!).eq("status", "closed").gte("closed_at", startDateStr).lte("closed_at", endDateStr),
         supabase.from("professionals").select("*").eq("tenant_id", tenantId!),
         supabase.from("services").select("*").eq("tenant_id", tenantId!),
@@ -98,6 +98,7 @@ function RelPage() {
     const endRange = new Date(endDateStr);
 
     let periodAppts = allAppts.filter(a => new Date(a.start_at) >= startRange && new Date(a.start_at) <= endRange);
+    const linkedAppointmentIds = new Set(commandas.map((cmd: any) => cmd.appointment_id).filter(Boolean));
 
     // Apply professional filter
     if (proFilter !== "all") {
@@ -119,7 +120,10 @@ function RelPage() {
       // Filter appointments on this day (that don't have associated commandas, to avoid double counting)
       let dayAppts = periodAppts.filter(a => {
         const apptDate = new Date(a.start_at);
-        return apptDate >= dayS && apptDate <= dayE && !(a.notes && a.notes.includes("Comanda ID:"));
+        return apptDate >= dayS
+          && apptDate <= dayE
+          && !linkedAppointmentIds.has(a.id)
+          && !(a.notes && a.notes.includes("Comanda ID:"));
       });
 
       // Apply pro filter to commandas (by checking items)
@@ -168,7 +172,7 @@ function RelPage() {
         (c.commanda_items ?? []).filter((item: any) => item.professional_id === pro.id)
       );
 
-      const apptTotalValue = proAppts.filter(a => !(a.notes && a.notes.includes("Comanda ID:"))).reduce((acc, appt) => {
+      const apptTotalValue = proAppts.filter(a => !linkedAppointmentIds.has(a.id) && !(a.notes && a.notes.includes("Comanda ID:"))).reduce((acc, appt) => {
         let val = Number(appt.services?.price || 0);
         if (appt.notes && appt.notes.includes("Serviços: ")) {
           const svcPart = appt.notes.split("Serviços: ")[1];
@@ -183,7 +187,7 @@ function RelPage() {
         return acc + val;
       }, 0);
 
-      const cmdTotalValue = proCmdsItems.reduce((acc, item) => acc + (Number(item.unit_price) * item.quantity), 0);
+      const cmdTotalValue = proCmdsItems.reduce((acc, item) => acc + (Number(item.unit_price) * Number(item.quantity ?? 1)), 0);
       const totalGenerated = apptTotalValue + cmdTotalValue;
 
       // Calculate commissions

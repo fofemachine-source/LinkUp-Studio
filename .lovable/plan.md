@@ -25,7 +25,7 @@ Vou replicar o sistema completo que você enviou, com backend real (Lovable Clou
 - Agendamento aparece automaticamente na Agenda sob o profissional escolhido.
 
 ### Painel SaaS (`/saas` — separado)
-- Login exclusivo do super-admin (você): `william.pinnheiro.g1@gmail.com` / senha `WpG@8858` (será criada via seed no Auth).
+- Login do super-admin: conta administrada pelo Supabase Auth, sem credenciais gravadas no código.
 - Cadastrar barbearias (tenant): nome, slug, dono, contato, plano (mensal/anual), status.
 - Validação de assinatura mensal/anual, bloqueio automático quando vence.
 - Métricas: total de barbearias, ativas, MRR.

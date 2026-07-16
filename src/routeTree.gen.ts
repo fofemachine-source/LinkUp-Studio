@@ -18,6 +18,7 @@ import { Route as BookingSlugRouteImport } from './routes/booking.$slug'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
 import { Route as AuthenticatedAppRelatoriosRouteImport } from './routes/_authenticated/app.relatorios'
+import { Route as AuthenticatedAppFinanceiroRouteImport } from './routes/_authenticated/app.financeiro'
 import { Route as AuthenticatedAppEstoqueRouteImport } from './routes/_authenticated/app.estoque'
 import { Route as AuthenticatedAppConfiguracoesRouteImport } from './routes/_authenticated/app.configuracoes'
 import { Route as AuthenticatedAppComissoesRouteImport } from './routes/_authenticated/app.comissoes'
@@ -71,6 +72,12 @@ const AuthenticatedAppRelatoriosRoute =
   AuthenticatedAppRelatoriosRouteImport.update({
     id: '/relatorios',
     path: '/relatorios',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppFinanceiroRoute =
+  AuthenticatedAppFinanceiroRouteImport.update({
+    id: '/financeiro',
+    path: '/financeiro',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
 const AuthenticatedAppEstoqueRoute = AuthenticatedAppEstoqueRouteImport.update({
@@ -141,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/app/comissoes': typeof AuthenticatedAppComissoesRoute
   '/app/configuracoes': typeof AuthenticatedAppConfiguracoesRoute
   '/app/estoque': typeof AuthenticatedAppEstoqueRoute
+  '/app/financeiro': typeof AuthenticatedAppFinanceiroRoute
   '/app/relatorios': typeof AuthenticatedAppRelatoriosRoute
   '/app/': typeof AuthenticatedAppIndexRoute
 }
@@ -159,6 +167,7 @@ export interface FileRoutesByTo {
   '/app/comissoes': typeof AuthenticatedAppComissoesRoute
   '/app/configuracoes': typeof AuthenticatedAppConfiguracoesRoute
   '/app/estoque': typeof AuthenticatedAppEstoqueRoute
+  '/app/financeiro': typeof AuthenticatedAppFinanceiroRoute
   '/app/relatorios': typeof AuthenticatedAppRelatoriosRoute
   '/app': typeof AuthenticatedAppIndexRoute
 }
@@ -180,6 +189,7 @@ export interface FileRoutesById {
   '/_authenticated/app/comissoes': typeof AuthenticatedAppComissoesRoute
   '/_authenticated/app/configuracoes': typeof AuthenticatedAppConfiguracoesRoute
   '/_authenticated/app/estoque': typeof AuthenticatedAppEstoqueRoute
+  '/_authenticated/app/financeiro': typeof AuthenticatedAppFinanceiroRoute
   '/_authenticated/app/relatorios': typeof AuthenticatedAppRelatoriosRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
 }
@@ -201,6 +211,7 @@ export interface FileRouteTypes {
     | '/app/comissoes'
     | '/app/configuracoes'
     | '/app/estoque'
+    | '/app/financeiro'
     | '/app/relatorios'
     | '/app/'
   fileRoutesByTo: FileRoutesByTo
@@ -219,6 +230,7 @@ export interface FileRouteTypes {
     | '/app/comissoes'
     | '/app/configuracoes'
     | '/app/estoque'
+    | '/app/financeiro'
     | '/app/relatorios'
     | '/app'
   id:
@@ -239,6 +251,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/comissoes'
     | '/_authenticated/app/configuracoes'
     | '/_authenticated/app/estoque'
+    | '/_authenticated/app/financeiro'
     | '/_authenticated/app/relatorios'
     | '/_authenticated/app/'
   fileRoutesById: FileRoutesById
@@ -317,6 +330,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppRelatoriosRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/financeiro': {
+      id: '/_authenticated/app/financeiro'
+      path: '/financeiro'
+      fullPath: '/app/financeiro'
+      preLoaderRoute: typeof AuthenticatedAppFinanceiroRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/app/estoque': {
       id: '/_authenticated/app/estoque'
       path: '/estoque'
@@ -393,6 +413,7 @@ interface AuthenticatedAppRouteChildren {
   AuthenticatedAppComissoesRoute: typeof AuthenticatedAppComissoesRoute
   AuthenticatedAppConfiguracoesRoute: typeof AuthenticatedAppConfiguracoesRoute
   AuthenticatedAppEstoqueRoute: typeof AuthenticatedAppEstoqueRoute
+  AuthenticatedAppFinanceiroRoute: typeof AuthenticatedAppFinanceiroRoute
   AuthenticatedAppRelatoriosRoute: typeof AuthenticatedAppRelatoriosRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
 }
@@ -407,6 +428,7 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppComissoesRoute: AuthenticatedAppComissoesRoute,
   AuthenticatedAppConfiguracoesRoute: AuthenticatedAppConfiguracoesRoute,
   AuthenticatedAppEstoqueRoute: AuthenticatedAppEstoqueRoute,
+  AuthenticatedAppFinanceiroRoute: AuthenticatedAppFinanceiroRoute,
   AuthenticatedAppRelatoriosRoute: AuthenticatedAppRelatoriosRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
 }

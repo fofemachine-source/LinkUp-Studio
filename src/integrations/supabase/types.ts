@@ -16,6 +16,9 @@ export type Database = {
     Tables: {
       appointments: {
         Row: {
+          cancellation_token: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
           client_id: string | null
           client_name: string | null
           client_whatsapp: string | null
@@ -32,6 +35,9 @@ export type Database = {
           tenant_id: string
         }
         Insert: {
+          cancellation_token?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
           client_id?: string | null
           client_name?: string | null
           client_whatsapp?: string | null
@@ -48,6 +54,9 @@ export type Database = {
           tenant_id: string
         }
         Update: {
+          cancellation_token?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
           client_id?: string | null
           client_name?: string | null
           client_whatsapp?: string | null
@@ -96,35 +105,170 @@ export type Database = {
       }
       cash_movements: {
         Row: {
+          account_id: string | null
           amount: number
           category: string | null
+          category_id: string | null
+          competence_date: string
           created_at: string
           description: string | null
+          due_date: string | null
           id: string
           kind: string
+          movement_date: string
+          notes: string | null
+          paid_at: string | null
+          payment_method: string | null
+          reference_id: string | null
+          reference_type: string | null
+          source: string
+          status: string
           tenant_id: string
+          updated_at: string
         }
         Insert: {
+          account_id?: string | null
           amount: number
           category?: string | null
+          category_id?: string | null
+          competence_date?: string
           created_at?: string
           description?: string | null
+          due_date?: string | null
           id?: string
           kind: string
+          movement_date?: string
+          notes?: string | null
+          paid_at?: string | null
+          payment_method?: string | null
+          reference_id?: string | null
+          reference_type?: string | null
+          source?: string
+          status?: string
           tenant_id: string
+          updated_at?: string
         }
         Update: {
+          account_id?: string | null
           amount?: number
           category?: string | null
+          category_id?: string | null
+          competence_date?: string
           created_at?: string
           description?: string | null
+          due_date?: string | null
           id?: string
           kind?: string
+          movement_date?: string
+          notes?: string | null
+          paid_at?: string | null
+          payment_method?: string | null
+          reference_id?: string | null
+          reference_type?: string | null
+          source?: string
+          status?: string
           tenant_id?: string
+          updated_at?: string
         }
         Relationships: [
           {
+            foreignKeyName: "cash_movements_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "financial_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_movements_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "financial_categories"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "cash_movements_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_accounts: {
+        Row: {
+          account_type: string
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          opening_balance: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_type?: string
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          opening_balance?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_type?: string
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          opening_balance?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_accounts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_categories: {
+        Row: {
+          active: boolean
+          created_at: string
+          dre_group: string
+          id: string
+          movement_kind: string
+          name: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          dre_group: string
+          id?: string
+          movement_kind: string
+          name: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          dre_group?: string
+          id?: string
+          movement_kind?: string
+          name?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_categories_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -190,6 +334,7 @@ export type Database = {
           quantity: number | null
           ref_id: string | null
           tenant_id: string
+          unit_cost: number
           unit_price: number
         }
         Insert: {
@@ -205,6 +350,7 @@ export type Database = {
           quantity?: number | null
           ref_id?: string | null
           tenant_id: string
+          unit_cost?: number
           unit_price?: number
         }
         Update: {
@@ -220,6 +366,7 @@ export type Database = {
           quantity?: number | null
           ref_id?: string | null
           tenant_id?: string
+          unit_cost?: number
           unit_price?: number
         }
         Relationships: [
@@ -246,8 +393,58 @@ export type Database = {
           },
         ]
       }
+      commanda_payments: {
+        Row: {
+          amount: number
+          commanda_id: string
+          created_at: string
+          id: string
+          method: string
+          received_amount: number
+          tenant_id: string
+        }
+        Insert: {
+          amount: number
+          commanda_id: string
+          created_at?: string
+          id?: string
+          method: string
+          received_amount?: number
+          tenant_id: string
+        }
+        Update: {
+          amount?: number
+          commanda_id?: string
+          created_at?: string
+          id?: string
+          method?: string
+          received_amount?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commanda_payments_commanda_id_fkey"
+            columns: ["commanda_id"]
+            isOneToOne: false
+            referencedRelation: "commandas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commanda_payments_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commandas: {
         Row: {
+          addition: number
+          amount_received: number
+          appointment_id: string | null
+          cancellation_reason: string | null
+          change_amount: number
           client_id: string | null
           client_name: string | null
           closed_at: string | null
@@ -255,13 +452,22 @@ export type Database = {
           discount: number | null
           id: string
           number: number
+          notes: string | null
           payment_method: string | null
+          scheduled_at: string | null
+          source: string | null
           status: string | null
           subtotal: number | null
           tenant_id: string
           total: number | null
+          updated_at: string
         }
         Insert: {
+          addition?: number
+          amount_received?: number
+          appointment_id?: string | null
+          cancellation_reason?: string | null
+          change_amount?: number
           client_id?: string | null
           client_name?: string | null
           closed_at?: string | null
@@ -269,13 +475,22 @@ export type Database = {
           discount?: number | null
           id?: string
           number: number
+          notes?: string | null
           payment_method?: string | null
+          scheduled_at?: string | null
+          source?: string | null
           status?: string | null
           subtotal?: number | null
           tenant_id: string
           total?: number | null
+          updated_at?: string
         }
         Update: {
+          addition?: number
+          amount_received?: number
+          appointment_id?: string | null
+          cancellation_reason?: string | null
+          change_amount?: number
           client_id?: string | null
           client_name?: string | null
           closed_at?: string | null
@@ -283,13 +498,24 @@ export type Database = {
           discount?: number | null
           id?: string
           number?: number
+          notes?: string | null
           payment_method?: string | null
+          scheduled_at?: string | null
+          source?: string | null
           status?: string | null
           subtotal?: number | null
           tenant_id?: string
           total?: number | null
+          updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "commandas_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "commandas_client_id_fkey"
             columns: ["client_id"]
@@ -309,6 +535,7 @@ export type Database = {
       products: {
         Row: {
           active: boolean | null
+          cost_price: number
           created_at: string
           id: string
           name: string
@@ -318,6 +545,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean | null
+          cost_price?: number
           created_at?: string
           id?: string
           name: string
@@ -327,6 +555,7 @@ export type Database = {
         }
         Update: {
           active?: boolean | null
+          cost_price?: number
           created_at?: string
           id?: string
           name?: string
@@ -348,6 +577,7 @@ export type Database = {
         Row: {
           active: boolean | null
           auth_user_id: string | null
+          blocked_dates: string[] | null
           commission_pct: number | null
           created_at: string
           email: string | null
@@ -360,10 +590,12 @@ export type Database = {
           specialty: string | null
           tenant_id: string
           whatsapp: string | null
+          work_days: number[] | null
         }
         Insert: {
           active?: boolean | null
           auth_user_id?: string | null
+          blocked_dates?: string[] | null
           commission_pct?: number | null
           created_at?: string
           email?: string | null
@@ -376,10 +608,12 @@ export type Database = {
           specialty?: string | null
           tenant_id: string
           whatsapp?: string | null
+          work_days?: number[] | null
         }
         Update: {
           active?: boolean | null
           auth_user_id?: string | null
+          blocked_dates?: string[] | null
           commission_pct?: number | null
           created_at?: string
           email?: string | null
@@ -392,6 +626,7 @@ export type Database = {
           specialty?: string | null
           tenant_id?: string
           whatsapp?: string | null
+          work_days?: number[] | null
         }
         Relationships: [
           {
@@ -695,7 +930,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      finalize_commanda: {
+        Args: {
+          p_addition: number
+          p_amount_received: number
+          p_change_amount: number
+          p_commanda_id: string
+          p_discount: number
+          p_notes: string
+          p_payments: Json
+          p_subtotal: number
+          p_tenant_id: string
+          p_total: number
+        }
+        Returns: Json
+      }
     }
     Enums: {
       app_role: "super_admin" | "owner" | "staff" | "barber"
@@ -714,12 +963,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -741,13 +990,12 @@ export type Tables<
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+    keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -766,13 +1014,12 @@ export type TablesInsert<
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+    keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -791,13 +1038,12 @@ export type TablesUpdate<
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    keyof DefaultSchema["Enums"] | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -810,11 +1056,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

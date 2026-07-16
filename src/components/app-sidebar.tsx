@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar } from "@/components/ui/sidebar";
-import { LayoutDashboard, Calendar, ShoppingCart, Users, Crown, Wallet, Package, Award, BarChart3, Settings, CreditCard, Scissors } from "lucide-react";
+import { LayoutDashboard, Calendar, ShoppingCart, Users, Crown, Landmark, Package, Award, Settings, CreditCard, Scissors } from "lucide-react";
 import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 
 const items = [
@@ -8,11 +8,10 @@ const items = [
   { title: "Agenda", url: "/app/agenda", icon: Calendar },
   { title: "Comandas / Venda", url: "/app/comandas", icon: ShoppingCart },
   { title: "Cadastros", url: "/app/cadastros", icon: Users },
-  { title: "Assinantes", url: "/app/assinantes", icon: Crown },
-  { title: "Fluxo de Caixa", url: "/app/caixa", icon: Wallet },
+  { title: "Assinaturas", url: "/app/assinantes", icon: Crown },
+  { title: "Financeiro", url: "/app/financeiro", icon: Landmark },
   { title: "Estoque", url: "/app/estoque", icon: Package },
   { title: "Comissões", url: "/app/comissoes", icon: Award },
-  { title: "Relatórios", url: "/app/relatorios", icon: BarChart3 },
   { title: "Configurações", url: "/app/configuracoes", icon: Settings },
   { title: "Minha Assinatura", url: "/app/assinatura", icon: CreditCard },
 ];

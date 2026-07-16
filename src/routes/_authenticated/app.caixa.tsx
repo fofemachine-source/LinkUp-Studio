@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,12 @@ import { useState } from "react";
 import { brl, dateBR } from "@/lib/format";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/_authenticated/app/caixa")({ component: CaixaPage });
+export const Route = createFileRoute("/_authenticated/app/caixa")({
+  beforeLoad: () => {
+    throw redirect({ to: "/app/financeiro" });
+  },
+  component: CaixaPage,
+});
 
 function CaixaPage() {
   const tenantId = useCurrentTenant().data?.id; const qc = useQueryClient();

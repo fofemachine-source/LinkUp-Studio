@@ -11,7 +11,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Building2, MapPin, Clock, MessageCircle } from "lucide-react";
+import { Building2, MapPin, Clock, MessageCircle, Loader2 } from "lucide-react";
+import { ImmersiveBackgroundEditor } from "@/components/branding/immersive-background-editor";
+import {
+  DEFAULT_BOOKING_BRANDING,
+  normalizeBookingBranding,
+  type BookingBranding,
+} from "@/lib/booking-branding";
+import bookingHero from "@/assets/barber-hero.png.asset.json";
 
 export const Route = createFileRoute("/_authenticated/app/configuracoes")({ component: ConfigPage });
 
@@ -38,6 +45,48 @@ function IdentityTab() {
   const { data: t } = useCurrentTenant(); const qc = useQueryClient();
   const [f, setF] = useState({ name: "", subtitle: "", primary_color: "#2563eb", slot_minutes: 30, pix_key: "", pix_holder: "" });
   const [logo, setLogo] = useState<File | null>(null);
+  const brandingQueryKey = ["tenant-booking-branding", t?.id];
+  const {
+    data: brandingRow,
+    isLoading: brandingLoading,
+    error: brandingError,
+  } = useQuery({
+    queryKey: brandingQueryKey,
+    enabled: !!t?.id,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("tenant_booking_branding")
+        .select("*")
+        .eq("tenant_id", t!.id)
+        .maybeSingle();
+      if (error) throw error;
+      return normalizeBookingBranding({
+        ...DEFAULT_BOOKING_BRANDING,
+        ...(data ?? {}),
+        tenant_id: t!.id,
+      });
+    },
+  });
+  const branding = normalizeBookingBranding({
+    ...DEFAULT_BOOKING_BRANDING,
+    ...(brandingRow ?? {}),
+    tenant_id: t?.id ?? null,
+  });
+  const { data: sourcePreviewUrl = null } = useQuery({
+    queryKey: [
+      "tenant-booking-branding-source-preview",
+      t?.id,
+      branding.background_source_path,
+    ],
+    enabled: !!t?.id && !!branding.background_source_path,
+    queryFn: async () => {
+      const { data, error } = await supabase.storage
+        .from("booking-branding-source")
+        .createSignedUrl(branding.background_source_path!, 60 * 60);
+      if (error) throw error;
+      return data.signedUrl;
+    },
+  });
   useEffect(() => { if (t) setF({ name: t.name, subtitle: t.subtitle ?? "", primary_color: t.primary_color ?? "#2563eb", slot_minutes: t.slot_minutes ?? 30, pix_key: t.pix_key ?? "", pix_holder: t.pix_holder ?? "" }); }, [t]);
   async function save() {
     if (!t?.id) return toast.error("Empresa não carregada. Recarregue a página e tente novamente.");
@@ -55,25 +104,67 @@ function IdentityTab() {
     if (error) return toast.error(error.message);
     toast.success("Salvo"); qc.invalidateQueries({ queryKey: ["current-tenant"] });
   }
-  return (<Card><CardContent className="p-6 space-y-4">
-    <div className="grid md:grid-cols-2 gap-4">
-      <div><Label>Nome</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></div>
-      <div><Label>Subtítulo</Label><Input value={f.subtitle} onChange={e=>setF({...f,subtitle:e.target.value})}/></div>
-      <div><Label>Cor primária</Label><Input type="color" value={f.primary_color} onChange={e=>setF({...f,primary_color:e.target.value})}/></div>
-      <div><Label>Intervalo padrão (min)</Label><Input type="number" value={f.slot_minutes} onChange={e=>setF({...f,slot_minutes:Number(e.target.value)})}/></div>
-      <div><Label>Chave PIX</Label><Input value={f.pix_key} onChange={e=>setF({...f,pix_key:e.target.value})}/></div>
-      <div><Label>Favorecido PIX</Label><Input value={f.pix_holder} onChange={e=>setF({...f,pix_holder:e.target.value})}/></div>
+  return (
+    <div className="space-y-6">
+      <Card><CardContent className="p-6 space-y-4">
+        <div className="grid md:grid-cols-2 gap-4">
+          <div><Label>Nome</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></div>
+          <div><Label>Subtítulo</Label><Input value={f.subtitle} onChange={e=>setF({...f,subtitle:e.target.value})}/></div>
+          <div><Label>Cor primária</Label><Input type="color" value={f.primary_color} onChange={e=>setF({...f,primary_color:e.target.value})}/></div>
+          <div><Label>Intervalo padrão (min)</Label><Input type="number" value={f.slot_minutes} onChange={e=>setF({...f,slot_minutes:Number(e.target.value)})}/></div>
+          <div><Label>Chave PIX</Label><Input value={f.pix_key} onChange={e=>setF({...f,pix_key:e.target.value})}/></div>
+          <div><Label>Favorecido PIX</Label><Input value={f.pix_holder} onChange={e=>setF({...f,pix_holder:e.target.value})}/></div>
+        </div>
+        <div>
+          <Label>Logo</Label>
+          <div className="flex items-center gap-4 mt-1">
+            {t?.logo_url && <img src={t.logo_url} className="h-16 w-16 rounded-lg object-cover border" alt="Logo atual"/>}
+            <Input type="file" accept="image/*" onChange={(e)=>setLogo(e.target.files?.[0]??null)}/>
+          </div>
+          {logo && <p className="text-xs text-muted-foreground mt-1">Novo arquivo selecionado: {logo.name}. Clique em Salvar para aplicar.</p>}
+        </div>
+        <Button onClick={save}>Salvar identidade</Button>
+      </CardContent></Card>
+
+      {t && brandingLoading && (
+        <Card>
+          <CardContent className="flex items-center gap-3 p-6 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Carregando o Background Imersivo...
+          </CardContent>
+        </Card>
+      )}
+
+      {t && brandingError && (
+        <Card>
+          <CardContent className="p-6">
+            <p className="font-medium">Não foi possível carregar o Background Imersivo.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Confirme se a migração de identidade visual já foi executada no banco de dados.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {t && !brandingLoading && !brandingError && (
+        <ImmersiveBackgroundEditor
+          tenant={{
+            id: t.id,
+            name: t.name,
+            subtitle: t.subtitle ?? null,
+            logo_url: t.logo_url ?? null,
+            banner_url: t.banner_url ?? bookingHero.url,
+          }}
+          branding={branding}
+          sourcePreviewUrl={sourcePreviewUrl}
+          onSaved={async (saved: BookingBranding) => {
+            qc.setQueryData(brandingQueryKey, saved);
+            await qc.invalidateQueries({ queryKey: ["public-tenant", t.slug] });
+          }}
+        />
+      )}
     </div>
-    <div>
-      <Label>Logo</Label>
-      <div className="flex items-center gap-4 mt-1">
-        {t?.logo_url && <img src={t.logo_url} className="h-16 w-16 rounded-lg object-cover border" alt="Logo atual"/>}
-        <Input type="file" accept="image/*" onChange={(e)=>setLogo(e.target.files?.[0]??null)}/>
-      </div>
-      {logo && <p className="text-xs text-muted-foreground mt-1">Novo arquivo selecionado: {logo.name}. Clique em Salvar para aplicar.</p>}
-    </div>
-    <Button onClick={save}>Salvar identidade</Button>
-  </CardContent></Card>);
+  );
 }
 
 

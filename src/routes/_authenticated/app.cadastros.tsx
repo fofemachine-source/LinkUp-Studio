@@ -416,8 +416,8 @@ function ProductsTab() {
       <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />Novo</Button></DialogTrigger>
         <ProductDialog key={edit?.id ?? "new"} product={edit} tenantId={tenantId} onDone={()=>{setOpen(false); setEdit(null); qc.invalidateQueries({queryKey:["products-all"]});}}/></Dialog></div>
     <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
-      <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Preço</TableHead><TableHead>Estoque</TableHead><TableHead></TableHead></TableRow></TableHeader>
-        <TableBody>{(data ?? []).map((p:any)=>(<TableRow key={p.id}><TableCell className="font-medium whitespace-nowrap">{p.name}</TableCell><TableCell className="whitespace-nowrap">{brl(p.price)}</TableCell><TableCell className="whitespace-nowrap">{p.stock}</TableCell>
+      <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Custo</TableHead><TableHead>Preço</TableHead><TableHead>Estoque</TableHead><TableHead></TableHead></TableRow></TableHeader>
+        <TableBody>{(data ?? []).map((p:any)=>(<TableRow key={p.id}><TableCell className="font-medium whitespace-nowrap">{p.name}</TableCell><TableCell className="whitespace-nowrap text-muted-foreground">{brl(p.cost_price)}</TableCell><TableCell className="whitespace-nowrap">{brl(p.price)}</TableCell><TableCell className="whitespace-nowrap">{p.stock}</TableCell>
           <TableCell className="text-right whitespace-nowrap">
             <Button size="icon" variant="ghost" onClick={()=>{setEdit(p);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
             <Button size="icon" variant="ghost" onClick={async()=>{if(confirm("Excluir?")){await supabase.from("products").delete().eq("id",p.id);qc.invalidateQueries({queryKey:["products-all"]});}}}><Trash2 className="h-4 w-4"/></Button>
@@ -427,7 +427,7 @@ function ProductsTab() {
 }
 
 function ProductDialog({ product, tenantId, onDone }: any) {
-  const [f, setF] = useState({ name: product?.name ?? "", price: product?.price ?? 0, stock: product?.stock ?? 0 });
+  const [f, setF] = useState({ name: product?.name ?? "", cost_price: product?.cost_price ?? 0, price: product?.price ?? 0, stock: product?.stock ?? 0 });
   async function save() {
     const payload = { ...f, tenant_id: tenantId };
     const { error } = product 
@@ -439,7 +439,8 @@ function ProductDialog({ product, tenantId, onDone }: any) {
   return (<DialogContent><DialogHeader><DialogTitle>{product ? "Editar" : "Novo"} produto</DialogTitle></DialogHeader>
     <div className="space-y-3">
       <div><Label>Nome</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
+        <div><Label>Custo</Label><Input type="number" step="0.01" value={f.cost_price} onChange={e=>setF({...f,cost_price:Number(e.target.value)})}/></div>
         <div><Label>Preço</Label><Input type="number" step="0.01" value={f.price} onChange={e=>setF({...f,price:Number(e.target.value)})}/></div>
         <div><Label>Estoque</Label><Input type="number" value={f.stock} onChange={e=>setF({...f,stock:Number(e.target.value)})}/></div>
       </div>
