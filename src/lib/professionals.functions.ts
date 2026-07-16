@@ -1,21 +1,27 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import {
+  PROJECT_PASSWORD_MIN_LENGTH,
+  PROJECT_PASSWORD_REQUIREMENT,
+  projectPasswordAuthErrorMessage,
+} from "@/lib/password-policy";
 
 const accessSchema = z.object({
   tenantId: z.string().uuid(),
   professionalId: z.string().uuid(),
   fullName: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(8).optional().nullable(),
+  password: z.string().min(PROJECT_PASSWORD_MIN_LENGTH, PROJECT_PASSWORD_REQUIREMENT).optional().nullable(),
+});
+
+const deleteProfessionalSchema = z.object({
+  tenantId: z.string().uuid(),
+  professionalId: z.string().uuid(),
 });
 
 function professionalAccessAuthError(error: { code?: string; message?: string }) {
-  const message = error.message ?? "";
-  if (error.code === "weak_password" || /weak password|weak and easy to guess|known to be weak/i.test(message)) {
-    return new Error("A proteção contra senhas vazadas está ativa no Auth. Desative a opção Password HIBP Check para aceitar esta senha.");
-  }
-  return new Error(message || "Não foi possível criar o acesso do profissional.");
+  return new Error(projectPasswordAuthErrorMessage(error, "Não foi possível criar o acesso do profissional."));
 }
 
 export const createProfessionalAccess = createServerFn({ method: "POST" })
@@ -51,7 +57,7 @@ export const createProfessionalAccess = createServerFn({ method: "POST" })
 
     if (!authUser) {
       if (!data.password) {
-        throw new Error("Informe uma senha com pelo menos 8 caracteres para criar o acesso do profissional.");
+        throw new Error(PROJECT_PASSWORD_REQUIREMENT);
       }
       const created = await supabaseAdmin.auth.admin.createUser({
         email,
@@ -98,4 +104,95 @@ export const createProfessionalAccess = createServerFn({ method: "POST" })
     if (updateError) throw new Error(updateError.message);
 
     return { ok: true, userId: authUser.id };
+  });
+
+export const deleteProfessional = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => deleteProfessionalSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const db = supabaseAdmin as any;
+
+    const { data: callerRoles, error: roleError } = await context.supabase
+      .from("user_roles")
+      .select("role, tenant_id")
+      .eq("user_id", context.userId);
+    if (roleError) throw new Error(roleError.message);
+
+    const canManage = (callerRoles ?? []).some((role) =>
+      role.role === "super_admin" ||
+      (role.tenant_id === data.tenantId && role.role === "owner"),
+    );
+    if (!canManage) throw new Error("Você não tem permissão para excluir este profissional.");
+
+    const { data: professional, error: professionalError } = await db
+      .from("professionals")
+      .select("id, tenant_id, auth_user_id")
+      .eq("id", data.professionalId)
+      .eq("tenant_id", data.tenantId)
+      .maybeSingle();
+    if (professionalError) throw new Error(professionalError.message);
+    if (!professional) throw new Error("Profissional não encontrado.");
+
+    const historyTables = [
+      "appointments",
+      "commanda_items",
+      "cash_movements",
+      "commission_settlements",
+      "commission_entries",
+      "commission_adjustments",
+      "commission_rules",
+      "subscription_usages",
+    ];
+    const historyCounts = await Promise.all(
+      historyTables.map(async (table) => {
+        const { count, error } = await db
+          .from(table)
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", data.tenantId)
+          .eq("professional_id", data.professionalId);
+        // Na dúvida, arquiva em vez de arriscar apagar um histórico relacionado.
+        if (error) return 1;
+        return count ?? 0;
+      }),
+    );
+    const hasHistory = historyCounts.some((count) => count > 0);
+
+    if (professional.auth_user_id) {
+      const { count: otherProfessionalCount, error: otherProfessionalError } = await db
+        .from("professionals")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", data.tenantId)
+        .eq("auth_user_id", professional.auth_user_id)
+        .neq("id", data.professionalId);
+      if (otherProfessionalError) throw new Error(otherProfessionalError.message);
+
+      if ((otherProfessionalCount ?? 0) === 0) {
+        const { error: accessError } = await db
+          .from("user_roles")
+          .delete()
+          .eq("user_id", professional.auth_user_id)
+          .eq("tenant_id", data.tenantId)
+          .eq("role", "barber");
+        if (accessError) throw new Error(`Não foi possível revogar o acesso do profissional: ${accessError.message}`);
+      }
+    }
+
+    if (hasHistory) {
+      const { error } = await db
+        .from("professionals")
+        .update({ active: false, auth_user_id: null })
+        .eq("id", data.professionalId)
+        .eq("tenant_id", data.tenantId);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await db
+        .from("professionals")
+        .delete()
+        .eq("id", data.professionalId)
+        .eq("tenant_id", data.tenantId);
+      if (error) throw new Error(error.message);
+    }
+
+    return { ok: true, archived: hasHistory };
   });

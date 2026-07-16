@@ -1,5 +1,23 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import {
+  PROJECT_PASSWORD_MIN_LENGTH,
+  PROJECT_PASSWORD_REQUIREMENT,
+  projectPasswordAuthErrorMessage,
+} from "@/lib/password-policy";
+
+const ownerPasswordSchema = z
+  .string()
+  .min(PROJECT_PASSWORD_MIN_LENGTH, PROJECT_PASSWORD_REQUIREMENT);
+
+function tenantAuthError(error: { code?: string; message?: string }) {
+  return new Error(projectPasswordAuthErrorMessage(error, "Não foi possível criar ou atualizar o acesso da loja."));
+}
+
+function requiredOwnerPassword(password: string | undefined) {
+  if (!password) throw new Error(PROJECT_PASSWORD_REQUIREMENT);
+  return password;
+}
 
 // Create a new tenant (barbershop) from the SaaS panel. Requires super_admin caller.
 export const createTenant = createServerFn({ method: "POST" })
@@ -10,7 +28,7 @@ export const createTenant = createServerFn({ method: "POST" })
       whatsapp: z.string().optional(),
       plan: z.enum(["monthly", "yearly"]).default("monthly"),
       owner_email: z.string().email().optional(),
-      owner_password: z.string().min(6).optional(),
+      owner_password: ownerPasswordSchema.optional(),
     }).parse(d),
   )
   .handler(async ({ data }) => {
@@ -42,6 +60,7 @@ export const createTenant = createServerFn({ method: "POST" })
         password: data.owner_password,
         email_confirm: true,
       });
+      if (created.error) throw tenantAuthError(created.error);
       if (created.data.user) {
         await supabaseAdmin.from("user_roles").insert({ user_id: created.data.user.id, tenant_id: t.id, role: "owner" });
         await supabaseAdmin.from("profiles").update({ active_tenant_id: t.id }).eq("id", created.data.user.id);
@@ -82,7 +101,7 @@ export const updateTenant = createServerFn({ method: "POST" })
       whatsapp: z.string().optional(),
       plan: z.enum(["monthly", "yearly"]),
       owner_email: z.string().email().optional(),
-      owner_password: z.string().optional(),
+      owner_password: ownerPasswordSchema.optional(),
     }).parse(d),
   )
   .handler(async ({ data }) => {
@@ -129,18 +148,18 @@ export const updateTenant = createServerFn({ method: "POST" })
           if (!targetUser) {
             const created = await supabaseAdmin.auth.admin.createUser({
               email: emailLower,
-              password: data.owner_password || "123456",
+              password: requiredOwnerPassword(data.owner_password),
               email_confirm: true,
             });
-            if (created.error) throw new Error(created.error.message);
+            if (created.error) throw tenantAuthError(created.error);
             targetUser = created.data.user!;
           } else {
             const updateParams: any = { email_confirm: true };
-            if (data.owner_password && data.owner_password.trim().length >= 6) {
+            if (data.owner_password) {
               updateParams.password = data.owner_password;
             }
             const { error: pwdErr } = await supabaseAdmin.auth.admin.updateUserById(targetUser.id, updateParams);
-            if (pwdErr) throw new Error(pwdErr.message);
+            if (pwdErr) throw tenantAuthError(pwdErr);
           }
 
           await supabaseAdmin.from("user_roles").insert({ user_id: targetUser.id, tenant_id: data.id, role: "owner" });
@@ -149,11 +168,11 @@ export const updateTenant = createServerFn({ method: "POST" })
           const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(role.user_id);
           if (userRes.user) {
             const updateParams: any = { email: emailLower, email_confirm: true };
-            if (data.owner_password && data.owner_password.trim().length >= 6) {
+            if (data.owner_password) {
               updateParams.password = data.owner_password;
             }
             const { error: uErr } = await supabaseAdmin.auth.admin.updateUserById(role.user_id, updateParams);
-            if (uErr) throw new Error(uErr.message);
+            if (uErr) throw tenantAuthError(uErr);
           }
         }
       } else {
@@ -163,18 +182,18 @@ export const updateTenant = createServerFn({ method: "POST" })
         if (!targetUser) {
           const created = await supabaseAdmin.auth.admin.createUser({
             email: emailLower,
-            password: data.owner_password || "123456",
+            password: requiredOwnerPassword(data.owner_password),
             email_confirm: true,
           });
-          if (created.error) throw new Error(created.error.message);
+          if (created.error) throw tenantAuthError(created.error);
           targetUser = created.data.user!;
         } else {
           const updateParams: any = { email_confirm: true };
-          if (data.owner_password && data.owner_password.trim().length >= 6) {
+          if (data.owner_password) {
             updateParams.password = data.owner_password;
           }
           const { error: pwdErr } = await supabaseAdmin.auth.admin.updateUserById(targetUser.id, updateParams);
-          if (pwdErr) throw new Error(pwdErr.message);
+          if (pwdErr) throw tenantAuthError(pwdErr);
         }
 
         await supabaseAdmin.from("user_roles").insert({ user_id: targetUser.id, tenant_id: data.id, role: "owner" });

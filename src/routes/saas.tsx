@@ -14,6 +14,7 @@ import { ShieldCheck, Plus, Search, TrendingUp, Building2, DollarSign, Database,
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { dateBR, brl } from "@/lib/format";
+import { validateProjectPassword } from "@/lib/password-policy";
 
 export const Route = createFileRoute("/saas")({
   ssr: false,
@@ -206,6 +207,10 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
 
   async function save() {
     try {
+      if (f.owner_password) {
+        const passwordError = validateProjectPassword(f.owner_password);
+        if (passwordError) return toast.error(passwordError);
+      }
       await update({
         data: {
           id: tenant.id,
@@ -259,7 +264,8 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
           </div>
           <div>
             <Label>Nova senha (deixe vazio se não mudar)</Label>
-            <Input type="text" placeholder="Senha de acesso" value={f.owner_password} onChange={e=>setF({...f,owner_password:e.target.value})}/>
+            <Input type="password" autoComplete="new-password" placeholder="Mínimo de 8 caracteres" value={f.owner_password} onChange={e=>setF({...f,owner_password:e.target.value})}/>
+            <p className="mt-1 text-[10px] text-slate-500">A única exigência é ter no mínimo 8 caracteres.</p>
           </div>
         </div>
       </div>
@@ -272,6 +278,18 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
 
 function NewTenantDialog({ create, onDone }: any) {
   const [f, setF] = useState({ name: "", slug: "", whatsapp: "", plan: "monthly", owner_email: "", owner_password: "" });
+  async function save() {
+    if (!f.owner_email.trim()) return toast.error("Informe o e-mail do proprietário.");
+    const passwordError = validateProjectPassword(f.owner_password);
+    if (passwordError) return toast.error(passwordError);
+    try {
+      await create({ data: { ...f, owner_email: f.owner_email.trim() } as any });
+      toast.success("Empresa cadastrada");
+      onDone();
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao cadastrar empresa");
+    }
+  }
   return (<DialogContent><DialogHeader><DialogTitle>Cadastrar nova empresa</DialogTitle></DialogHeader>
     <div className="space-y-3">
       <div><Label>Nome da barbearia</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value,slug:e.target.value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"")})}/></div>
@@ -280,9 +298,13 @@ function NewTenantDialog({ create, onDone }: any) {
         <div><Label>WhatsApp</Label><Input value={f.whatsapp} onChange={e=>setF({...f,whatsapp:e.target.value})}/></div>
         <div><Label>Plano</Label><Select value={f.plan} onValueChange={v=>setF({...f,plan:v})}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="monthly">Mensal</SelectItem><SelectItem value="yearly">Anual</SelectItem></SelectContent></Select></div>
         <div><Label>Email do dono</Label><Input type="email" value={f.owner_email} onChange={e=>setF({...f,owner_email:e.target.value})}/></div>
-        <div><Label>Senha inicial</Label><Input type="text" value={f.owner_password} onChange={e=>setF({...f,owner_password:e.target.value})}/></div>
+        <div>
+          <Label>Senha inicial</Label>
+          <Input type="password" autoComplete="new-password" placeholder="Mínimo de 8 caracteres" value={f.owner_password} onChange={e=>setF({...f,owner_password:e.target.value})}/>
+          <p className="mt-1 text-[10px] text-slate-500">A única exigência é ter no mínimo 8 caracteres.</p>
+        </div>
       </div>
     </div>
-    <DialogFooter><Button className="bg-indigo-600 hover:bg-indigo-700" onClick={async()=>{try{await create({data:f as any});toast.success("Empresa cadastrada");onDone();}catch(e:any){toast.error(e.message);}}}>Cadastrar Empresa</Button></DialogFooter>
+    <DialogFooter><Button className="bg-indigo-600 hover:bg-indigo-700" onClick={save}>Cadastrar Empresa</Button></DialogFooter>
   </DialogContent>);
 }

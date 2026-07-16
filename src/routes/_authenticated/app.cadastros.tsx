@@ -15,8 +15,12 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { brl } from "@/lib/format";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { createProfessionalAccess } from "@/lib/professionals.functions";
+import { createProfessionalAccess, deleteProfessional } from "@/lib/professionals.functions";
 import { useServerFn } from "@tanstack/react-start";
+import {
+  projectPasswordAuthErrorMessage,
+  validateProjectPassword,
+} from "@/lib/password-policy";
 
 export const Route = createFileRoute("/_authenticated/app/cadastros")({ component: CadastrosPage });
 
@@ -160,8 +164,36 @@ function ClientDialog({ client, tenantId, onDone }: any) {
 
 function ProsTab() {
   const tenantId = useTenantId(); const qc = useQueryClient();
+  const removeProfessional = useServerFn(deleteProfessional);
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
-  const { data } = useQuery({ queryKey: ["pros-all", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("professionals").select("*").eq("tenant_id", tenantId!).order("full_name")).data ?? [] });
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { data } = useQuery({ queryKey: ["pros-all", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("professionals").select("*").eq("tenant_id", tenantId!).eq("active", true).order("full_name")).data ?? [] });
+  async function remove(p: any) {
+    if (!tenantId || deletingId) return;
+    const confirmed = window.confirm(
+      `Excluir o cadastro de ${p.full_name}?\n\nSe houver agenda, vendas ou comissões vinculadas, o cadastro será arquivado para preservar o histórico.`,
+    );
+    if (!confirmed) return;
+    setDeletingId(p.id);
+    try {
+      const result = await removeProfessional({
+        data: { tenantId, professionalId: p.id },
+      });
+      toast.success(result.archived
+        ? "Profissional arquivado. O histórico foi preservado."
+        : "Cadastro do profissional excluído.");
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["pros-all"] }),
+        qc.invalidateQueries({ queryKey: ["pros"] }),
+        qc.invalidateQueries({ queryKey: ["pos-professionals"] }),
+        qc.invalidateQueries({ queryKey: ["commission-professionals"] }),
+      ]);
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível excluir o profissional.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
   return (
     <Card className="premium-card"><CardContent className="p-6 space-y-4">
       <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} profissionais</h3>
@@ -172,7 +204,19 @@ function ProsTab() {
           <div key={p.id} className="p-4 rounded-xl border flex items-center gap-3 bg-card premium-card">
             <Avatar className="h-14 w-14"><AvatarImage src={p.photo_url ?? undefined}/><AvatarFallback className="bg-primary/10 text-primary font-semibold">{p.full_name.split(" ").map((w:string)=>w[0]).slice(0,2).join("")}</AvatarFallback></Avatar>
             <div className="flex-1 min-w-0"><div className="font-medium truncate">{p.full_name}</div><div className="text-xs text-muted-foreground">{p.role_label} • {p.commission_pct}% comissão</div></div>
-            <Button size="icon" variant="ghost" onClick={()=>{setEdit(p);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
+            <div className="flex items-center">
+              <Button size="icon" variant="ghost" aria-label={`Editar ${p.full_name}`} onClick={()=>{setEdit(p);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="text-destructive hover:text-destructive"
+                aria-label={`Excluir ${p.full_name}`}
+                disabled={deletingId === p.id}
+                onClick={() => remove(p)}
+              >
+                <Trash2 className="h-4 w-4"/>
+              </Button>
+            </div>
           </div>
         ))}
       </div>
@@ -180,17 +224,8 @@ function ProsTab() {
   );
 }
 
-function validateAccessPassword(password: string) {
-  if (password.length < 8) return "A senha precisa ter pelo menos 8 caracteres.";
-  return null;
-}
-
 function friendlyAccessError(error: any) {
-  const message = String(error?.message ?? "");
-  if (/weak password|weak and easy to guess|known to be weak|password.*guess/i.test(message)) {
-    return "A proteção contra senhas vazadas está ativa no Auth. Desative a opção Password HIBP Check para aceitar esta senha.";
-  }
-  return message || "Não foi possível criar o acesso ao sistema.";
+  return projectPasswordAuthErrorMessage(error, "Não foi possível criar o acesso ao sistema.");
 }
 
 function ProDialog({ pro, tenantId, onDone }: any) {
@@ -222,7 +257,7 @@ function ProDialog({ pro, tenantId, onDone }: any) {
     if (!f.full_name.trim()) return toast.error("Informe o nome do colaborador");
     if (allowAccess && !f.email.trim()) return toast.error("Informe o e-mail para liberar acesso ao sistema");
     if (allowAccess && (!pro?.auth_user_id || accessPassword)) {
-      const passwordError = validateAccessPassword(accessPassword);
+      const passwordError = validateProjectPassword(accessPassword);
       if (passwordError) return toast.error(passwordError);
     }
     setSaving(true);
