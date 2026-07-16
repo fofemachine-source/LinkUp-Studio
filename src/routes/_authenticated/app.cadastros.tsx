@@ -15,7 +15,7 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { brl } from "@/lib/format";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { createProfessionalAccess, deleteProfessional } from "@/lib/professionals.functions";
+import { deleteProfessional } from "@/lib/professionals.functions";
 import { useServerFn } from "@tanstack/react-start";
 import {
   projectPasswordAuthErrorMessage,
@@ -168,6 +168,25 @@ function ProsTab() {
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const { data } = useQuery({ queryKey: ["pros-all", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("professionals").select("*").eq("tenant_id", tenantId!).eq("active", true).order("full_name")).data ?? [] });
+  async function openProfessional(p: any) {
+    let currentProfessional = p;
+    if (tenantId) {
+      const { data: freshProfessional } = await supabase
+        .from("professionals")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("id", p.id)
+        .maybeSingle();
+      if (freshProfessional) {
+        currentProfessional = freshProfessional;
+        qc.setQueryData<any[]>(["pros-all", tenantId], (current) =>
+          current?.map((item) => item.id === freshProfessional.id ? freshProfessional : item),
+        );
+      }
+    }
+    setEdit(currentProfessional);
+    setOpen(true);
+  }
   async function remove(p: any) {
     if (!tenantId || deletingId) return;
     const confirmed = window.confirm(
@@ -198,14 +217,21 @@ function ProsTab() {
     <Card className="premium-card"><CardContent className="p-6 space-y-4">
       <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} profissionais</h3>
         <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />Novo</Button></DialogTrigger>
-          <ProDialog key={edit?.id ?? "new"} pro={edit} tenantId={tenantId} onDone={()=>{setOpen(false);setEdit(null);qc.invalidateQueries({queryKey:["pros-all"]});qc.invalidateQueries({queryKey:["pros"]});}}/></Dialog></div>
+          <ProDialog key={edit?.id ?? "new"} pro={edit} tenantId={tenantId} onDone={async()=>{
+            setOpen(false);
+            setEdit(null);
+            await Promise.all([
+              qc.invalidateQueries({queryKey:["pros-all", tenantId]}),
+              qc.invalidateQueries({queryKey:["pros"]}),
+            ]);
+          }}/></Dialog></div>
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         {(data ?? []).map((p:any) => (
           <div key={p.id} className="p-4 rounded-xl border flex items-center gap-3 bg-card premium-card">
             <Avatar className="h-14 w-14"><AvatarImage src={p.photo_url ?? undefined}/><AvatarFallback className="bg-primary/10 text-primary font-semibold">{p.full_name.split(" ").map((w:string)=>w[0]).slice(0,2).join("")}</AvatarFallback></Avatar>
             <div className="flex-1 min-w-0"><div className="font-medium truncate">{p.full_name}</div><div className="text-xs text-muted-foreground">{p.role_label} • {p.commission_pct}% comissão</div></div>
             <div className="flex items-center">
-              <Button size="icon" variant="ghost" aria-label={`Editar ${p.full_name}`} onClick={()=>{setEdit(p);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
+              <Button size="icon" variant="ghost" aria-label={`Editar ${p.full_name}`} onClick={()=>openProfessional(p)}><Pencil className="h-4 w-4"/></Button>
               <Button
                 size="icon"
                 variant="ghost"
@@ -228,8 +254,40 @@ function friendlyAccessError(error: any) {
   return projectPasswordAuthErrorMessage(error, "Não foi possível criar o acesso ao sistema.");
 }
 
+async function updateProfessionalSystemAccess(input: {
+  tenantId: string;
+  professionalId: string;
+  fullName: string;
+  email: string;
+  password?: string;
+  enabled: boolean;
+}) {
+  const { data, error } = await supabase.functions.invoke("manage-professional-access", {
+    body: input,
+  });
+
+  if (error) {
+    let message = error.message;
+    const response = (error as any).context;
+    if (typeof Response !== "undefined" && response instanceof Response) {
+      try {
+        const payload = await response.clone().json();
+        message = payload?.error || message;
+      } catch {
+        // Mantém a mensagem original quando a resposta não é JSON.
+      }
+    }
+    throw new Error(message);
+  }
+  if (!data?.ok) {
+    throw new Error(data?.error || "Não foi possível atualizar o acesso ao sistema.");
+  }
+
+  return data as { ok: true; enabled: boolean; userId: string | null };
+}
+
 function ProDialog({ pro, tenantId, onDone }: any) {
-  const createAccess = useServerFn(createProfessionalAccess);
+  const qc = useQueryClient();
   const [f, setF] = useState({
     full_name: pro?.full_name ?? "",
     role_label: pro?.role_label ?? "Barbeiro",
@@ -245,18 +303,32 @@ function ProDialog({ pro, tenantId, onDone }: any) {
     blocked_dates: pro?.blocked_dates ?? [],
   });
   const [file, setFile] = useState<File | null>(null);
+  const [professionalId, setProfessionalId] = useState<string | null>(pro?.id ?? null);
+  const [persistedAuthUserId, setPersistedAuthUserId] = useState<string | null>(pro?.auth_user_id ?? null);
   const [allowAccess, setAllowAccess] = useState(Boolean(pro?.auth_user_id));
   const [accessPassword, setAccessPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [newBlockedDate, setNewBlockedDate] = useState("");
   const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
   const previewUrl = file ? URL.createObjectURL(file) : f.photo_url;
+  const hasSystemAccess = Boolean(persistedAuthUserId);
+  const systemAccessEnabled = allowAccess;
+  function updateProfessionalCache(savedProfessional: any) {
+    qc.setQueryData<any[]>(["pros-all", tenantId], (current) => {
+      if (!current) return [savedProfessional];
+      const exists = current.some((item) => item.id === savedProfessional.id);
+      const next = exists
+        ? current.map((item) => item.id === savedProfessional.id ? { ...item, ...savedProfessional } : item)
+        : [...current, savedProfessional];
+      return next.sort((a, b) => String(a.full_name).localeCompare(String(b.full_name)));
+    });
+  }
   async function save() {
     if (saving) return;
     if (!tenantId) return toast.error("Empresa não carregada. Recarregue a página e tente novamente.");
     if (!f.full_name.trim()) return toast.error("Informe o nome do colaborador");
-    if (allowAccess && !f.email.trim()) return toast.error("Informe o e-mail para liberar acesso ao sistema");
-    if (allowAccess && (!pro?.auth_user_id || accessPassword)) {
+    if (systemAccessEnabled && !f.email.trim()) return toast.error("Informe o e-mail para liberar acesso ao sistema");
+    if (systemAccessEnabled && (!persistedAuthUserId || accessPassword)) {
       const passwordError = validateProjectPassword(accessPassword);
       if (passwordError) return toast.error(passwordError);
     }
@@ -278,35 +350,72 @@ function ProDialog({ pro, tenantId, onDone }: any) {
       photo_url = signed.signedUrl;
     }
     const payload: any = { ...f, photo_url, tenant_id: tenantId };
-    const saved = pro
-      ? await supabase.from("professionals").update({ ...f, photo_url }).eq("id", pro.id).select("id").single()
+    const saved = professionalId
+      ? await supabase.from("professionals").update({ ...f, photo_url }).eq("id", professionalId).select("id").single()
       : await supabase.from("professionals").insert(payload).select("id").single();
     const { data: savedPro, error } = saved;
     if (error) {
       setSaving(false);
       return toast.error(error.message);
     }
-    if (allowAccess) {
+    setProfessionalId(savedPro.id);
+    let authUserId = persistedAuthUserId;
+    updateProfessionalCache({
+      ...(pro ?? {}),
+      ...f,
+      id: savedPro.id,
+      tenant_id: tenantId,
+      photo_url,
+      auth_user_id: authUserId,
+    });
+    if (systemAccessEnabled || hasSystemAccess) {
       try {
-        await createAccess({
-          data: {
-            tenantId,
-            professionalId: savedPro.id,
-            fullName: f.full_name,
-            email: f.email,
-            password: accessPassword || undefined,
-          },
+        const access = await updateProfessionalSystemAccess({
+          tenantId,
+          professionalId: savedPro.id,
+          fullName: f.full_name,
+          email: f.email,
+          password: accessPassword || undefined,
+          enabled: systemAccessEnabled,
+        });
+        authUserId = access.userId;
+        setPersistedAuthUserId(access.userId);
+        setAllowAccess(access.enabled);
+        updateProfessionalCache({
+          ...(pro ?? {}),
+          ...f,
+          id: savedPro.id,
+          tenant_id: tenantId,
+          photo_url,
+          auth_user_id: access.enabled ? access.userId : null,
         });
       } catch (err: any) {
-        toast.warning(`Profissional salvo, mas o acesso não foi criado. ${friendlyAccessError(err)}`);
+        toast.warning(`Profissional salvo, mas o acesso não foi atualizado. ${friendlyAccessError(err)} Corrija e salve novamente.`);
         setSaving(false);
-        onDone();
         return;
       }
     }
+    const { data: persistedProfessional } = await supabase
+      .from("professionals")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .eq("id", savedPro.id)
+      .maybeSingle();
+    updateProfessionalCache(
+      persistedProfessional
+        ? { ...persistedProfessional, auth_user_id: persistedProfessional.auth_user_id ?? authUserId }
+        : {
+            ...(pro ?? {}),
+            ...f,
+            id: savedPro.id,
+            tenant_id: tenantId,
+            photo_url,
+            auth_user_id: authUserId,
+          },
+    );
     toast.success("Salvo");
     setSaving(false);
-    onDone();
+    await onDone();
   }
   return (<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle className="flex items-center gap-2 text-primary uppercase text-sm tracking-wide">✓ {pro?"Editar":"Novo"} Registro</DialogTitle></DialogHeader>
     <div className="space-y-4">
@@ -416,13 +525,19 @@ function ProDialog({ pro, tenantId, onDone }: any) {
         </div>
       </div>
       <div className="rounded-md border p-3 space-y-3">
-        <div className="flex items-center gap-2"><Switch checked={allowAccess} onCheckedChange={setAllowAccess}/><Label>Acessa o sistema também</Label></div>
-        {allowAccess && (
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={systemAccessEnabled}
+            onCheckedChange={setAllowAccess}
+          />
+          <Label>Acessa o sistema também</Label>
+        </div>
+        {systemAccessEnabled && (
           <div className="grid grid-cols-2 gap-3">
             <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Login / E-mail</Label><Input type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})} placeholder="email@exemplo.com"/></div>
             <div>
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">Senha de acesso</Label>
-              <Input type="password" autoComplete="new-password" value={accessPassword} onChange={e=>setAccessPassword(e.target.value)} placeholder={pro?.auth_user_id ? "Nova senha opcional" : "Mínimo de 8 caracteres"}/>
+              <Input type="password" autoComplete="new-password" value={accessPassword} onChange={e=>setAccessPassword(e.target.value)} placeholder={hasSystemAccess ? "Nova senha opcional" : "Mínimo de 8 caracteres"}/>
               <p className="mt-1 text-[10px] text-muted-foreground">A única exigência é ter no mínimo 8 caracteres.</p>
             </div>
           </div>
