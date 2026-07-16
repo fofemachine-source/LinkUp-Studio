@@ -10,15 +10,7 @@ export const bootstrapSuperAdmin = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // If any super admin already exists, do nothing.
-    const { data: existing } = await supabaseAdmin
-      .from("user_roles")
-      .select("id")
-      .eq("role", "super_admin")
-      .limit(1);
-    if (existing && existing.length > 0) return { ok: true, created: false };
-
-    // Try to find the user by email; if missing, create it.
+    // Try to find the user by email; if missing, create it. Otherwise, force update password to sync it.
     const { data: list } = await supabaseAdmin.auth.admin.listUsers();
     let user = list.users.find((u) => u.email?.toLowerCase() === data.email.toLowerCase());
     if (!user) {
@@ -30,15 +22,40 @@ export const bootstrapSuperAdmin = createServerFn({ method: "POST" })
       });
       if (created.error) throw new Error(created.error.message);
       user = created.data.user!;
+    } else {
+      const updated = await supabaseAdmin.auth.admin.updateUserById(user.id, {
+        password: data.password,
+        email_confirm: true
+      });
+      if (updated.error) throw new Error(updated.error.message);
     }
 
     // Grant super admin role (global — no tenant).
-    await supabaseAdmin.from("user_roles").insert({ user_id: user.id, role: "super_admin" });
+    const { data: existingRole } = await supabaseAdmin
+      .from("user_roles")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("role", "super_admin")
+      .maybeSingle();
+
+    if (!existingRole) {
+      await supabaseAdmin.from("user_roles").insert({ user_id: user.id, role: "super_admin" });
+    }
 
     // Attach as owner of Ernesth tenant (if it exists) so he can also use the barbershop app.
     const { data: t } = await supabaseAdmin.from("tenants").select("id").eq("slug", "ernesth").maybeSingle();
     if (t?.id) {
-      await supabaseAdmin.from("user_roles").insert({ user_id: user.id, tenant_id: t.id, role: "owner" });
+      const { data: existingOwner } = await supabaseAdmin
+        .from("user_roles")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("tenant_id", t.id)
+        .eq("role", "owner")
+        .maybeSingle();
+
+      if (!existingOwner) {
+        await supabaseAdmin.from("user_roles").insert({ user_id: user.id, tenant_id: t.id, role: "owner" });
+      }
       await supabaseAdmin.from("profiles").update({ active_tenant_id: t.id }).eq("id", user.id);
     }
     return { ok: true, created: true };
