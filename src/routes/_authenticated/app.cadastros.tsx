@@ -330,7 +330,7 @@ function ProDialog({ pro, tenantId, onDone }: any) {
         </div>
       </div>
       <div>
-        <Label className="text-xs uppercase tracking-wide text-muted-foreground">Foto do Barbeiro</Label>
+        <Label className="text-xs uppercase tracking-wide text-muted-foreground">Foto do profissional</Label>
         <div className="flex items-center gap-3 p-3 rounded-md border">
           {previewUrl ? (
             <div className="relative">
