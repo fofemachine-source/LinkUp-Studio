@@ -143,14 +143,13 @@ export const getPublicTenant = createServerFn({ method: "GET" })
     };
   });
 
-// Public: identify a subscriber using CPF + WhatsApp and return only booking/renewal data.
+// Public: identify a subscriber using CPF and return only booking/renewal data.
 export const validateVip = createServerFn({ method: "POST" })
-  .inputValidator((d: { tenantId: string; cpf: string; whatsapp: string }) =>
+  .inputValidator((d: { tenantId: string; cpf: string }) =>
     z
       .object({
         tenantId: z.string().uuid(),
         cpf: z.string(),
-        whatsapp: z.string().min(10),
       })
       .parse(d),
   )
@@ -158,8 +157,7 @@ export const validateVip = createServerFn({ method: "POST" })
     const supabase = await pub();
     const db = supabase as any;
     const cpf = cleanCpf(data.cpf);
-    const whatsapp = cleanBrazilianPhone(data.whatsapp);
-    if (cpf.length !== 11 || whatsapp.length < 10) return null;
+    if (cpf.length !== 11) return null;
 
     const { data: contracts, error } = await db
       .from("client_subscriptions")
@@ -169,11 +167,8 @@ export const validateVip = createServerFn({ method: "POST" })
       .order("created_at", { ascending: false })
       .limit(10);
 
-    const matchingContracts = !error
-      ? (contracts ?? []).filter(
-          (item: any) => cleanBrazilianPhone(String(item.whatsapp ?? "")) === whatsapp,
-        )
-      : [];
+    if (error || !contracts || contracts.length === 0) return null;
+    const matchingContracts = contracts;
     const today = saoPauloToday();
     const contract =
       matchingContracts.find(

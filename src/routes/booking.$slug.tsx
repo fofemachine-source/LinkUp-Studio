@@ -157,17 +157,20 @@ function BookingPage() {
     mutationFn: async () => {
       const tenantId = (data as any)?.tenant?.id;
       if (!tenantId) throw new Error("Salão indisponível no momento.");
-      return validate({ data: { tenantId, cpf, whatsapp: phone } });
+      return validate({ data: { tenantId, cpf } });
     },
     onSuccess: (result) => {
       if (!result) {
         setVipInfo(null);
-        toast.error("CPF e WhatsApp não correspondem a uma assinatura.");
+        toast.error("CPF não corresponde a uma assinatura.");
         return;
       }
       setVipInfo(result);
       setProofFile(null);
       setName((result as any).full_name);
+      if ((result as any).whatsapp) {
+        setPhone((result as any).whatsapp);
+      }
       if ((result as any).status === "active") {
         toast.success(`Bem-vindo, ${(result as any).full_name}!`);
       } else {
@@ -431,12 +434,12 @@ function BookingPage() {
               {bookingBranding.show_subscriber_badge ? (
                 <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
                   <Crown className="h-6 w-6 text-primary" />
-                  <div className="flex-1">
-                    <div className="font-semibold">Sou assinante VIP</div>
-                    <div className="text-xs text-white/60">
-                      Valide CPF e WhatsApp para consultar benefícios, saldo e renovação.
+                    <div className="flex-1">
+                      <div className="font-semibold">Sou assinante VIP</div>
+                      <div className="text-xs text-white/60">
+                        Valide seu CPF para consultar benefícios, saldo e renovação.
+                      </div>
                     </div>
-                  </div>
                   <Switch
                     checked={isVip}
                     onCheckedChange={(value) => {
@@ -471,21 +474,10 @@ function BookingPage() {
                     }}
                     placeholder="000.000.000-00"
                   />
-                  <Label>WhatsApp cadastrado</Label>
-                  <Input
-                    value={phoneMask(phone)}
-                    onChange={(e) => {
-                      setPhone(e.target.value);
-                      setVipInfo(null);
-                    }}
-                    inputMode="tel"
-                    placeholder="(00) 00000-0000"
-                  />
                   <Button
                     className="w-full"
                     disabled={
                       cpf.replace(/\D/g, "").length !== 11 ||
-                      phone.replace(/\D/g, "").length < 10 ||
                       validateVipMut.isPending
                     }
                     onClick={() => validateVipMut.mutate()}
