@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.create_customer_booking_activation_code(uuid, uuid) FROM authenticated, anon, PUBLIC;
