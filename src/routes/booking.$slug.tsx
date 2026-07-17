@@ -130,7 +130,8 @@ function BookingPage() {
   const bookMut = useMutation({
     mutationFn: async () => {
       const [h, m] = time.split(":").map(Number);
-      const start = new Date(date!); start.setHours(h, m, 0, 0);
+      const [year, month, day] = format(date!, "yyyy-MM-dd").split("-").map(Number);
+      const start = new Date(year, month - 1, day, h, m, 0, 0);
       const tenantId = (data as any)?.tenant?.id;
       return create({ data: { tenantId, professionalId: proId, serviceId, clientName: name, clientWhatsapp: phone, startAt: start.toISOString(), isVip, vipCpf: cpf || undefined } });
     },
@@ -714,8 +715,10 @@ function BookingPage() {
                       required
                       selected={date} 
                       onSelect={handleDateSelect}
-                                         disabled={(d) => {
-                        if (d < new Date(new Date().setHours(0,0,0,0))) return true;
+                      disabled={(d) => {
+                        const todayStr = format(new Date(), "yyyy-MM-dd");
+                        const dStr = format(d, "yyyy-MM-dd");
+                        if (dStr < todayStr) return true;
 
                         // Check weekly day off (work_days: 1=Seg...7=Dom)
                         const dayOfWeek = d.getDay();
@@ -1046,11 +1049,12 @@ function buildSlots(date: Date, settings: any, slotMin: number, duration: number
   const lunchS = settings?.lunch_start ?? 12;
   const lunchE = settings?.lunch_end ?? 13;
   const slots: { time: string; free: boolean }[] = [];
+  const [year, month, day] = format(date, "yyyy-MM-dd").split("-").map(Number);
   for (let h = open; h <= close; h++) {
     for (let m = 0; m < 60; m += slotMin) {
       if (h === close && m > 0) break;
       if (h >= lunchS && h < lunchE) continue;
-      const t = new Date(date); t.setHours(h, m, 0, 0);
+      const t = new Date(year, month - 1, day, h, m, 0, 0);
       if (t < new Date()) continue;
       const end = new Date(t.getTime() + duration * 60000);
       const conflict = booked.some((b) => new Date(b.start_at) < end && new Date(b.end_at) > t);
