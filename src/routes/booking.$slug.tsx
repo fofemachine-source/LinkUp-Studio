@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   cancelBooking,
   createBooking,
@@ -96,6 +96,7 @@ function BookingPage() {
   const [phone, setPhone] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [bookingCancelled, setBookingCancelled] = useState(false);
+  const timeSectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const refreshCatalog = (event: StorageEvent) => {
@@ -284,8 +285,16 @@ function BookingPage() {
   };
 
   const handleDateSelect = (selectedDate: Date | undefined) => {
+    if (!selectedDate) return;
+
     setDate(selectedDate);
     setTime("");
+
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
+      window.requestAnimationFrame(() => {
+        timeSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
   };
 
   if (isLoading) return <div className="min-h-screen grid place-items-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
@@ -335,6 +344,9 @@ function BookingPage() {
     : professionals;
 
   const timeSlots = date && slotsQuery.data ? buildSlots(date, settings, slotMin, chosenService?.duration_min ?? slotMin, slotsQuery.data) : [];
+  const selectedTimeIsAvailable = timeSlots.some(
+    (slot) => slot.time === time && slot.free,
+  );
   const cancellationUrl = activeCancellationToken && typeof window !== "undefined"
     ? `${window.location.origin}/booking/${slug}?cancel=${activeCancellationToken}`
     : "";
@@ -655,7 +667,7 @@ function BookingPage() {
             <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {services.filter((s: any) => !s.vip_only || isVip).map((s: any) => (
-                <button key={s.id} onClick={() => { setServiceId(s.id); setStep("pro"); }} className={`text-left p-4 rounded-xl border-2 transition ${serviceId === s.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
+                <button key={s.id} onClick={() => { setServiceId(s.id); setProId(""); setDate(undefined); setTime(""); setStep("pro"); }} className={`text-left p-4 rounded-xl border-2 transition ${serviceId === s.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
                   <div className="flex items-center justify-between gap-2"><div className="font-medium">{s.name}</div>{isVip && coveredServiceIds.has(s.id) ? <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-400">INCLUSO</span> : s.vip_only ? <Crown className="h-4 w-4 text-primary" /> : null}</div>
                   <div className="text-xs text-muted-foreground mt-1">{s.duration_min} min</div>
                   <div className="font-semibold text-primary mt-2">{isVip && coveredServiceIds.has(s.id) ? "Coberto pela assinatura" : brl(s.price)}</div>
@@ -671,7 +683,7 @@ function BookingPage() {
             <StepHeader title="Escolha o profissional" onBack={handleProBack} />
             <div className="grid sm:grid-cols-2 gap-3">
               {availableProsForService.map((p: any) => (
-                <button key={p.id} onClick={() => { setProId(p.id); setStep("date"); }} className={`flex items-center gap-3 p-4 rounded-xl border-2 transition ${proId === p.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
+                <button key={p.id} onClick={() => { setProId(p.id); setDate(undefined); setTime(""); setStep("date"); }} className={`flex items-center gap-3 p-4 rounded-xl border-2 transition ${proId === p.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
                   <Avatar className="h-14 w-14"><AvatarImage src={p.photo_url ?? undefined} /><AvatarFallback className="bg-primary/10 text-primary font-semibold">{p.full_name.split(" ").map((w:string)=>w[0]).slice(0,2).join("")}</AvatarFallback></Avatar>
                   <div className="text-left"><div className="font-medium">{p.full_name}</div><div className="text-xs text-muted-foreground">{p.role_label}</div></div>
                 </button>
@@ -699,6 +711,7 @@ function BookingPage() {
                   <div className="flex-1 w-full flex justify-center">
                     <CalendarUI 
                       mode="single" 
+                      required
                       selected={date} 
                       onSelect={handleDateSelect}
                                          disabled={(d) => {
@@ -741,7 +754,7 @@ function BookingPage() {
                 </div>
 
                 {/* Lado dos Horários */}
-                <div className="flex flex-col space-y-6">
+                <div ref={timeSectionRef} className="flex scroll-mt-4 flex-col space-y-6" aria-live="polite">
                   <div className="flex items-start gap-4">
                      <div className="h-12 w-12 rounded-full border border-amber-500/30 flex items-center justify-center shrink-0">
                        <CalendarIcon className="h-5 w-5 text-amber-500" />
@@ -781,8 +794,16 @@ function BookingPage() {
                     )}
                   </div>
 
-                  <Button className="w-full mt-auto py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" size="lg" disabled={!time} onClick={() => setStep("form")}>
-                    <span>CONTINUAR</span>
+                  <Button className="w-full mt-auto py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" size="lg" disabled={!selectedTimeIsAvailable || slotsQuery.isFetching} onClick={() => setStep("form")} data-testid="booking-continue">
+                    <span>
+                      {!date
+                        ? "SELECIONE UMA DATA"
+                        : slotsQuery.isFetching
+                          ? "CARREGANDO HORÁRIOS"
+                          : !selectedTimeIsAvailable
+                            ? "SELECIONE UM HORÁRIO"
+                            : "CONTINUAR"}
+                    </span>
                     <ArrowRight className="h-5 w-5" />
                   </Button>
                 </div>
