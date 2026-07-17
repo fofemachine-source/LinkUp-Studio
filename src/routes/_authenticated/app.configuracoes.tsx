@@ -4,8 +4,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { useCurrentTenant } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +17,7 @@ import {
   type BookingBranding,
 } from "@/lib/booking-branding";
 import bookingHero from "@/assets/barber-hero.png.asset.json";
+import { WhatsAppSettings } from "@/components/whatsapp/whatsapp-settings";
 
 export const Route = createFileRoute("/_authenticated/app/configuracoes")({ component: ConfigPage });
 
@@ -35,7 +34,7 @@ function ConfigPage() {
         <TabsContent value="identity"><IdentityTab/></TabsContent>
         <TabsContent value="location"><LocationTab/></TabsContent>
         <TabsContent value="hours"><HoursTab/></TabsContent>
-        <TabsContent value="whatsapp"><WaTab/></TabsContent>
+        <TabsContent value="whatsapp"><WhatsAppTab/></TabsContent>
       </Tabs>
     </div>
   );
@@ -180,17 +179,103 @@ function LocationTab() {
   </CardContent></Card>);
 }
 
+function isMissingClosedDatesColumn(error: any) {
+  const message = String(error?.message ?? "");
+  return (
+    error?.code === "42703" ||
+    error?.code === "PGRST204" ||
+    (message.includes("closed_dates") && /does not exist|schema cache|could not find/i.test(message))
+  );
+}
+
 function HoursTab() {
   const { data: t } = useCurrentTenant(); const tenantId = t?.id;
   const qc = useQueryClient();
-  const { data: s } = useQuery({ queryKey: ["settings", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("tenant_settings").select("*").eq("tenant_id", tenantId!).maybeSingle()).data });
+  const { data: s, error: settingsError } = useQuery({
+    queryKey: ["settings", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("tenant_settings")
+        .select("*")
+        .eq("tenant_id", tenantId!)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
   const [f, setF] = useState<any>({ open_hour: 8, close_hour: 20, lunch_start: 12, lunch_end: 13, vip_days: [1,2,3,4], work_days: [1,2,3,4,5,6], vip_mode: "strict", closed_dates: [] });
   const [newClosedDate, setNewClosedDate] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(()=>{if(s)setF({open_hour:s.open_hour??8,close_hour:s.close_hour??20,lunch_start:s.lunch_start??12,lunch_end:s.lunch_end??13,vip_days:s.vip_days??[1,2,3,4],work_days:s.work_days??[1,2,3,4,5,6],vip_mode:(s as any).vip_mode ?? "strict",closed_dates:(s as any).closed_dates ?? []});},[s]);
   const dayNames = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 
+  async function saveHours() {
+    if (!tenantId) return toast.error("Loja não carregada. Recarregue a página e tente novamente.");
+
+    const { open_hour, close_hour, lunch_start, lunch_end } = f;
+    const validHours =
+      Number.isInteger(open_hour) && open_hour >= 0 && open_hour <= 23 &&
+      Number.isInteger(close_hour) && close_hour >= 1 && close_hour <= 24 &&
+      Number.isInteger(lunch_start) && lunch_start >= 0 && lunch_start <= 23 &&
+      Number.isInteger(lunch_end) && lunch_end >= 1 && lunch_end <= 24;
+    if (!validHours) return toast.error("Informe horários inteiros entre 0 e 24.");
+    if (open_hour >= close_hour) return toast.error("O horário de abertura deve ser anterior ao fechamento.");
+    if (lunch_start >= lunch_end || lunch_start < open_hour || lunch_end > close_hour) {
+      return toast.error("O intervalo de almoço precisa estar dentro do horário de funcionamento.");
+    }
+    if (!Array.isArray(f.work_days) || f.work_days.length === 0) {
+      return toast.error("Selecione pelo menos um dia de funcionamento.");
+    }
+
+    setIsSaving(true);
+    try {
+      let savedWithoutClosedDates = false;
+      let result = await supabase
+        .from("tenant_settings")
+        .upsert({ ...f, tenant_id: tenantId })
+        .select("*")
+        .maybeSingle();
+
+      if (result.error && isMissingClosedDatesColumn(result.error)) {
+        const { closed_dates: _closedDates, ...legacySettings } = f;
+        result = await supabase
+          .from("tenant_settings")
+          .upsert({ ...legacySettings, tenant_id: tenantId })
+          .select("*")
+          .maybeSingle();
+        savedWithoutClosedDates = true;
+      }
+
+      if (result.error) throw result.error;
+      if (!result.data) throw new Error("O banco não confirmou a alteração do funcionamento.");
+
+      qc.setQueryData(["settings", tenantId], result.data);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["settings", tenantId] }),
+        qc.invalidateQueries({ queryKey: ["public-tenant", t?.slug] }),
+      ]);
+      window.localStorage.setItem("linkup:public-catalog-version", String(Date.now()));
+
+      if (savedWithoutClosedDates) {
+        toast.warning("Horários salvos. O bloqueio de datas será liberado após atualizar o banco.");
+      } else {
+        toast.success("Funcionamento salvo.");
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível salvar o funcionamento.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   return (<Card><CardContent className="p-6 space-y-4">
+    {settingsError && (
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+        Não foi possível carregar o funcionamento: {(settingsError as any).message}
+      </div>
+    )}
     <div className="grid grid-cols-4 gap-4">
       <div><Label>Abre</Label><Input type="number" value={f.open_hour} onChange={e=>setF({...f,open_hour:Number(e.target.value)})}/></div>
       <div><Label>Fecha</Label><Input type="number" value={f.close_hour} onChange={e=>setF({...f,close_hour:Number(e.target.value)})}/></div>
@@ -266,24 +351,15 @@ function HoursTab() {
       </div>
     </div>
 
-    <Button onClick={async()=>{const{error}=await supabase.from("tenant_settings").upsert({...f,tenant_id:tenantId!});if(error)toast.error(error.message);else{toast.success("Salvo");qc.invalidateQueries({queryKey:["settings"]});}}}>Salvar</Button>
+    <Button onClick={saveHours} disabled={isSaving}>
+      {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+      {isSaving ? "Salvando..." : "Salvar funcionamento"}
+    </Button>
   </CardContent></Card>);
 }
 
 
-function WaTab() {
-  const { data: t } = useCurrentTenant(); const tenantId = t?.id;
-  const { data: s } = useQuery({ queryKey: ["settings-wa", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("tenant_settings").select("*").eq("tenant_id", tenantId!).maybeSingle()).data });
-  const [f, setF] = useState({ whatsapp_token: "", whatsapp_instance: "", message_client_template: "", message_pro_template: "" });
-  useEffect(()=>{if(s)setF({whatsapp_token:s.whatsapp_token??"",whatsapp_instance:s.whatsapp_instance??"",message_client_template:s.message_client_template??"",message_pro_template:s.message_pro_template??""});},[s]);
-  return (<Card><CardContent className="p-6 space-y-4">
-    <div className="grid md:grid-cols-2 gap-4">
-      <div><Label>Instância WhatsApp</Label><Input value={f.whatsapp_instance} onChange={e=>setF({...f,whatsapp_instance:e.target.value})}/></div>
-      <div><Label>Token</Label><Input type="password" value={f.whatsapp_token} onChange={e=>setF({...f,whatsapp_token:e.target.value})}/></div>
-    </div>
-    <div><Label>Mensagem para o cliente</Label><Textarea rows={3} value={f.message_client_template} onChange={e=>setF({...f,message_client_template:e.target.value})}/>
-      <p className="text-xs text-muted-foreground mt-1">Variáveis: {"{cliente}, {barbearia}, {data}, {hora}, {profissional}"}</p></div>
-    <div><Label>Mensagem para o barbeiro</Label><Textarea rows={3} value={f.message_pro_template} onChange={e=>setF({...f,message_pro_template:e.target.value})}/></div>
-    <Button onClick={async()=>{const{error}=await supabase.from("tenant_settings").upsert({...f,tenant_id:tenantId!});if(error)toast.error(error.message);else toast.success("Salvo");}}>Salvar</Button>
-  </CardContent></Card>);
+function WhatsAppTab() {
+  const { data: tenant } = useCurrentTenant();
+  return <WhatsAppSettings tenantId={tenant?.id} />;
 }

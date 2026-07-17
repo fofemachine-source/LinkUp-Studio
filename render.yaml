@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: linkup-salao-whatsapp-connector
+    runtime: node
+    plan: starter
+    rootDir: services/whatsapp-connector
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    maxShutdownDelaySeconds: 60
+    numInstances: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: LINKUP_WHATSAPP_DATA_DIR
+        value: /var/data/whatsapp
+      - key: LINKUP_WHATSAPP_QUEUE_ENABLED
+        value: "true"
+      - key: LINKUP_WHATSAPP_QUEUE_POLL_MS
+        value: "3000"
+      - key: LINKUP_WHATSAPP_QUEUE_BATCH_SIZE
+        value: "10"
+      - key: LINKUP_WHATSAPP_QUEUE_CONCURRENCY
+        value: "3"
+      - key: LINKUP_WHATSAPP_QUEUE_LOCK_TIMEOUT_MS
+        value: "300000"
+      - key: LINKUP_WHATSAPP_RETRY_BASE_MS
+        value: "30000"
+      - key: LINKUP_WHATSAPP_RETRY_MAX_MS
+        value: "900000"
+      - key: LINKUP_WHATSAPP_CONNECTOR_SECRET
+        sync: false
+      - key: LINKUP_PUBLIC_APP_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+    disk:
+      name: whatsapp-sessions
+      mountPath: /var/data
+      sizeGB: 1
