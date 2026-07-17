@@ -811,7 +811,7 @@ function BookingPage() {
           <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
             <StepHeader title="Seus dados" onBack={() => setStep("date")} />
             <div className="space-y-4">
-              <div className="space-y-2"><Label className="text-white/70">Nome</Label><Input className="bg-neutral-900/50 border-white/10 text-white focus-visible:ring-amber-500" value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div className="space-y-2"><Label className="text-white/70">Nome completo</Label><Input className="bg-neutral-900/50 border-white/10 text-white focus-visible:ring-amber-500" placeholder="Digite seu nome completo" value={name} onChange={(e) => setName(e.target.value)} /></div>
               <div className="space-y-2"><Label className="text-white/70">WhatsApp</Label><Input className="bg-neutral-900/50 border-white/10 text-white focus-visible:ring-amber-500" value={phoneMask(phone)} onChange={(e) => setPhone(e.target.value)} placeholder="(11) 99999-9999" /></div>
             </div>
             <div className="p-5 rounded-xl bg-neutral-900/80 border border-white/5 text-sm space-y-3">

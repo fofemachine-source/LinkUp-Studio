@@ -746,7 +746,7 @@ export const createBooking = createServerFn({ method: "POST" })
 
     // Upsert client
     const cleanWhatsapp = data.clientWhatsapp.replace(/\D/g, "");
-    let { data: existingClient } = await supabase.from("clients").select("id").eq("tenant_id", data.tenantId).eq("whatsapp", cleanWhatsapp).maybeSingle();
+    let { data: existingClient } = await supabase.from("clients").select("id,full_name,is_subscriber").eq("tenant_id", data.tenantId).eq("whatsapp", cleanWhatsapp).maybeSingle();
     let clientId = activeSubscription?.client_id ?? existingClient?.id;
     if (!clientId) {
       const { data: newClient, error: errClient } = await supabase.from("clients").insert({
@@ -756,8 +756,12 @@ export const createBooking = createServerFn({ method: "POST" })
         is_subscriber: data.isVip,
       } as any).select("id").single();
       if (!errClient && newClient) clientId = newClient.id;
-    } else if (data.isVip) {
-      await supabase.from("clients").update({ is_subscriber: true }).eq("id", clientId);
+    } else {
+      // Always update client details to keep the admin panel updated with full_name
+      await supabase.from("clients").update({
+        full_name: data.clientName,
+        is_subscriber: data.isVip ? true : existingClient.is_subscriber,
+      }).eq("id", clientId);
     }
 
     const { data: appt, error } = await supabase.from("appointments").insert({
