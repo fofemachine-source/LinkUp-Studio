@@ -16,7 +16,6 @@ import {
   normalizeBookingBranding,
   type BookingBranding,
 } from "@/lib/booking-branding";
-import bookingHero from "@/assets/barber-hero.png.asset.json";
 import { WhatsAppSettings } from "@/components/whatsapp/whatsapp-settings";
 
 export const Route = createFileRoute("/_authenticated/app/configuracoes")({ component: ConfigPage });
@@ -152,7 +151,8 @@ function IdentityTab() {
             name: t.name,
             subtitle: t.subtitle ?? null,
             logo_url: t.logo_url ?? null,
-            banner_url: t.banner_url ?? bookingHero.url,
+            banner_url: t.banner_url ?? null,
+            primary_color: t.primary_color ?? null,
           }}
           branding={branding}
           sourcePreviewUrl={sourcePreviewUrl}

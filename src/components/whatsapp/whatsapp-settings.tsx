@@ -16,6 +16,7 @@ import {
   Send,
   Smartphone,
   Unplug,
+  UserPlus,
   UserRound,
   Users,
   XCircle,
@@ -62,6 +63,7 @@ type WhatsAppSettingsRow = {
   connected_phone: string | null;
   last_connection_error: string | null;
   last_status_at: string | null;
+  notify_client_registration: boolean;
   notify_client_booking: boolean;
   notify_professional_booking: boolean;
   notify_client_cancellation: boolean;
@@ -70,6 +72,7 @@ type WhatsAppSettingsRow = {
   notify_professional_reschedule: boolean;
   reminder_enabled: boolean;
   reminder_minutes_before: number;
+  client_registration_template: string;
   client_booking_template: string;
   professional_booking_template: string;
   client_reminder_template: string;
@@ -84,6 +87,7 @@ type WhatsAppForm = Pick<
   WhatsAppSettingsRow,
   | "enabled"
   | "responsible_whatsapp"
+  | "notify_client_registration"
   | "notify_client_booking"
   | "notify_professional_booking"
   | "notify_client_cancellation"
@@ -92,6 +96,7 @@ type WhatsAppForm = Pick<
   | "notify_professional_reschedule"
   | "reminder_enabled"
   | "reminder_minutes_before"
+  | "client_registration_template"
   | "client_booking_template"
   | "professional_booking_template"
   | "client_reminder_template"
@@ -131,6 +136,7 @@ type ConnectorResult = {
 const defaultForm: WhatsAppForm = {
   enabled: false,
   responsible_whatsapp: "",
+  notify_client_registration: true,
   notify_client_booking: true,
   notify_professional_booking: true,
   notify_client_cancellation: true,
@@ -139,6 +145,8 @@ const defaultForm: WhatsAppForm = {
   notify_professional_reschedule: true,
   reminder_enabled: true,
   reminder_minutes_before: 120,
+  client_registration_template:
+    "Olá, {cliente}! Seu cadastro em {salao} foi confirmado. Agora você pode entrar com seu CPF e senha para agendar com mais rapidez.",
   client_booking_template:
     "Olá, {cliente}! Seu agendamento em {salao} está confirmado para {data} às {hora}, com {profissional}. Serviço: {servico}. Para cancelar: {link_cancelamento}",
   professional_booking_template:
@@ -164,6 +172,7 @@ const settingsColumns = [
   "connected_phone",
   "last_connection_error",
   "last_status_at",
+  "notify_client_registration",
   "notify_client_booking",
   "notify_professional_booking",
   "notify_client_cancellation",
@@ -172,6 +181,7 @@ const settingsColumns = [
   "notify_professional_reschedule",
   "reminder_enabled",
   "reminder_minutes_before",
+  "client_registration_template",
   "client_booking_template",
   "professional_booking_template",
   "client_reminder_template",
@@ -240,6 +250,7 @@ const statusInfo: Record<
 };
 
 const eventLabels: Record<string, string> = {
+  client_registered: "Cadastro confirmado",
   appointment_created: "Novo agendamento",
   appointment_reminder: "Lembrete",
   appointment_cancelled: "Cancelamento",
@@ -283,6 +294,8 @@ function formFromSettings(settings: WhatsAppSettingsRow): WhatsAppForm {
   return {
     enabled: settings.enabled ?? defaultForm.enabled,
     responsible_whatsapp: settings.responsible_whatsapp ?? "",
+    notify_client_registration:
+      settings.notify_client_registration ?? defaultForm.notify_client_registration,
     notify_client_booking: settings.notify_client_booking ?? defaultForm.notify_client_booking,
     notify_professional_booking:
       settings.notify_professional_booking ?? defaultForm.notify_professional_booking,
@@ -297,6 +310,8 @@ function formFromSettings(settings: WhatsAppSettingsRow): WhatsAppForm {
     reminder_enabled: settings.reminder_enabled ?? defaultForm.reminder_enabled,
     reminder_minutes_before:
       settings.reminder_minutes_before ?? defaultForm.reminder_minutes_before,
+    client_registration_template:
+      settings.client_registration_template || defaultForm.client_registration_template,
     client_booking_template:
       settings.client_booking_template || defaultForm.client_booking_template,
     professional_booking_template:
@@ -772,7 +787,17 @@ export function WhatsAppSettings({ tenantId }: { tenantId?: string }) {
           </div>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <AutomationGroup title="Novo cadastro" icon={<UserPlus className="h-4 w-4" />}>
+              <SettingSwitch
+                label="Confirmar ao cliente"
+                checked={form.notify_client_registration}
+                onCheckedChange={(notify_client_registration) =>
+                  setForm((current) => ({ ...current, notify_client_registration }))
+                }
+              />
+            </AutomationGroup>
+
             <AutomationGroup title="Novo agendamento" icon={<MessageCircle className="h-4 w-4" />}>
               <SettingSwitch
                 label="Avisar cliente"
@@ -894,6 +919,21 @@ export function WhatsAppSettings({ tenantId }: { tenantId?: string }) {
           </p>
         </CardHeader>
         <CardContent className="space-y-6">
+          <TemplateSection
+            title="Novo cadastro"
+            description="Confirma o primeiro acesso do cliente ao link do salão."
+            icon={<UserPlus className="h-4 w-4" />}
+          >
+            <TemplateField
+              label="Mensagem para o cliente"
+              value={form.client_registration_template}
+              onChange={(client_registration_template) =>
+                setForm((current) => ({ ...current, client_registration_template }))
+              }
+              fullWidth
+            />
+          </TemplateSection>
+
           <TemplateSection
             title="Novo agendamento"
             description="Mensagens enviadas assim que o agendamento é registrado."

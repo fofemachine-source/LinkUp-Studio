@@ -876,18 +876,28 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
     },
   });
 
+  const linkedSubscriptionId = cmd.subscription_id ?? appointment?.subscription_id ?? null;
+
   const { data: activeSubscription } = useQuery({
-    queryKey: ["pos-active-subscription", tenantId, cmd.client_id, cmd.client_name],
-    enabled: !!tenantId && !!cmd.client_name,
+    queryKey: [
+      "pos-active-subscription",
+      tenantId,
+      linkedSubscriptionId,
+      cmd.client_id,
+      cmd.client_name,
+    ],
+    enabled: !!tenantId && (!!linkedSubscriptionId || !!cmd.client_name),
     queryFn: async () => {
       let query = (supabase as any)
         .from("client_subscriptions")
         .select("*")
         .eq("tenant_id", tenantId)
         .eq("status", "active");
-      query = cmd.client_id
-        ? query.eq("client_id", cmd.client_id)
-        : query.ilike("subscriber_name", cmd.client_name);
+      query = linkedSubscriptionId
+        ? query.eq("id", linkedSubscriptionId)
+        : cmd.client_id
+          ? query.eq("client_id", cmd.client_id)
+          : query.ilike("subscriber_name", cmd.client_name);
       const { data: contracts, error } = await query.order("created_at", { ascending: false }).limit(1);
       if (error || !contracts?.[0]) return null;
       const contract = contracts[0];

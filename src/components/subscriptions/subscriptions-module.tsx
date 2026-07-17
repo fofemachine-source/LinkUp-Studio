@@ -443,6 +443,7 @@ const monthStart = `${today.slice(0, 7)}-01`;
 
 const statusLabels: Record<string, string> = {
   active: "Ativa",
+  pending_activation: "Aguardando pagamento",
   inactive: "Inativa",
   overdue: "Vencida",
   suspended: "Suspensa",
@@ -479,7 +480,8 @@ function statusClass(status: string) {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status === "overdue" || status === "canceled" || status === "expired")
     return "border-red-200 bg-red-50 text-red-700";
-  if (status === "pending") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (status === "pending" || status === "pending_activation")
+    return "border-amber-200 bg-amber-50 text-amber-700";
   return "border-slate-200 bg-slate-50 text-slate-600";
 }
 
@@ -545,7 +547,7 @@ async function loadModuleData(tenantId: string): Promise<ModuleData> {
       .order("name"),
     db
       .from("clients")
-      .select("id,full_name,whatsapp,email,is_subscriber")
+      .select("id,full_name,whatsapp,email,cpf,is_subscriber")
       .eq("tenant_id", tenantId)
       .order("full_name"),
     db
@@ -1208,6 +1210,7 @@ function ClientsTab({
             onChange={(event) => setFilter(event.target.value)}
           >
             <option value="all">Todas as situações</option>
+            <option value="pending_activation">Aguardando pagamento</option>
             <option value="active">Ativas</option>
             <option value="overdue">Vencidas</option>
             <option value="suspended">Suspensas</option>
@@ -2774,12 +2777,24 @@ function ContractDialog({
     if (selected) setPrice(Number(selected.price));
   }
 
+  function chooseClient(id: string) {
+    setClientId(id);
+    const selected = data?.clients.find((item) => item.id === id);
+    setCpf(selected?.cpf ?? "");
+  }
+
   async function save() {
     const client = data?.clients.find((item) => item.id === clientId);
     if (!tenantId || !client || !plan) return toast.error("Selecione o cliente e o plano.");
     const cleanCpf = cpf.replace(/\D/g, "");
     if (cleanCpf.length !== 11)
       return toast.error("Informe um CPF válido para o reconhecimento no agendamento online.");
+    if (!Number.isFinite(price) || price < 0) return toast.error("Informe um valor válido.");
+    const enrollmentFee = plan.enrollment_fee_allowed ? Number(plan.enrollment_fee || 0) : 0;
+    const firstChargeAmount = price + enrollmentFee;
+    const requiresPayment = firstChargeAmount > 0;
+    if (requiresPayment && !nextDueAt)
+      return toast.error("Informe o vencimento da primeira cobrança.");
     setBusy(true);
     const payload = {
       tenant_id: tenantId,
@@ -2788,7 +2803,7 @@ function ContractDialog({
       subscriber_name: client.full_name,
       cpf: cleanCpf,
       whatsapp: client.whatsapp,
-      status: "active",
+      status: requiresPayment ? "pending_activation" : "active",
       starts_at: startsAt,
       ends_at:
         endsAt ||
@@ -2799,9 +2814,10 @@ function ContractDialog({
           : null),
       next_due_at: nextDueAt || null,
       price,
+      enrollment_fee: enrollmentFee,
       sessions_total: plan.session_limit,
       sessions_used: 0,
-      sessions_remaining: plan.session_limit,
+      sessions_remaining: requiresPayment ? 0 : plan.session_limit,
       auto_renew: plan.automatic_renewal,
       notes: notes || null,
     };
@@ -2814,26 +2830,60 @@ function ContractDialog({
       setBusy(false);
       return toast.error(contractResult.error.message);
     }
-    await db.from("clients").update({ is_subscriber: true }).eq("id", client.id);
-    if (nextDueAt && price > 0) {
+
+    const rollbackContract = async () =>
+      db
+        .from("client_subscriptions")
+        .delete()
+        .eq("id", contractResult.data.id)
+        .eq("tenant_id", tenantId);
+
+    if (requiresPayment) {
       const charge = await db.from("subscription_charges").insert({
         tenant_id: tenantId,
         subscription_id: contractResult.data.id,
         client_id: client.id,
-        amount: price,
+        amount: firstChargeAmount,
         due_date: nextDueAt,
         status: nextDueAt < today ? "overdue" : "pending",
         billing_period_start: startsAt,
         billing_period_end: endsAt || null,
-        description: `Assinatura · ${plan.name}`,
+        description:
+          enrollmentFee > 0
+            ? `Assinatura · ${plan.name} · inclui taxa de adesão`
+            : `Assinatura · ${plan.name}`,
       });
       if (charge.error) {
+        const rollback = await rollbackContract();
         setBusy(false);
-        return toast.error(`Contrato criado, mas a cobrança falhou: ${charge.error.message}`);
+        return toast.error(
+          rollback.error
+            ? `A cobrança falhou e o contrato não pôde ser desfeito: ${charge.error.message}`
+            : `A cobrança falhou e o contrato foi desfeito: ${charge.error.message}`,
+        );
       }
     }
+
+    const clientResult = await db
+      .from("clients")
+      .update({ cpf: cleanCpf, is_subscriber: true })
+      .eq("id", client.id)
+      .eq("tenant_id", tenantId)
+      .select("id")
+      .maybeSingle();
+    if (clientResult.error || !clientResult.data) {
+      setBusy(false);
+      return toast.error(
+        `Contrato e cobrança criados, mas não foi possível atualizar o cadastro do cliente: ${clientResult.error?.message ?? "registro não encontrado"}`,
+      );
+    }
+
     setBusy(false);
-    toast.success("Cliente vinculado e cobrança gerada.");
+    toast.success(
+      requiresPayment
+        ? "Cliente vinculado. A assinatura será ativada após a confirmação do pagamento."
+        : "Cliente vinculado. Assinatura gratuita ativada.",
+    );
     onSaved();
   }
 
@@ -2849,7 +2899,7 @@ function ContractDialog({
             <select
               className={selectClassName()}
               value={clientId}
-              onChange={(event) => setClientId(event.target.value)}
+              onChange={(event) => chooseClient(event.target.value)}
             >
               <option value="">Selecione...</option>
               {data?.clients.map((client) => (

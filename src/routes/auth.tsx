@@ -45,20 +45,20 @@ function AuthPage() {
             <Scissors className="h-6 w-6 text-amber-500" />
           </div>
           <div>
-            <div className="font-semibold text-lg text-white">Ernesth Barbearia</div>
-            <div className="text-xs text-amber-500">Soluções Premium</div>
+            <div className="font-semibold text-lg text-white">LinkUp Studio</div>
+            <div className="text-xs text-amber-500">Gestão Premium</div>
           </div>
         </div>
         <div>
           <h1 className="text-4xl font-semibold leading-tight text-white">
-            Gestão completa para sua barbearia.
+            Gestão completa para seu estúdio.
           </h1>
           <p className="mt-4 text-white/60 max-w-md">
-            Agenda inteligente, comandas, assinaturas VIP e agendamento online — tudo em um único
-            painel.
+            Agenda inteligente, comandas, assinaturas VIP e agendamento online para negócios de
+            beleza.
           </p>
         </div>
-        <div className="text-xs text-white/40">© {new Date().getFullYear()} Ernesth Soluções</div>
+        <div className="text-xs text-white/40">© {new Date().getFullYear()} LinkUp Studio</div>
       </div>
 
       <div className="flex items-center justify-center p-6">
@@ -69,8 +69,8 @@ function AuthPage() {
                 <Scissors className="h-5 w-5" />
               </div>
               <div>
-                <div className="font-semibold">Ernesth Barbearia</div>
-                <div className="text-xs text-amber-500">Soluções Premium</div>
+                <div className="font-semibold">LinkUp Studio</div>
+                <div className="text-xs text-amber-500">Gestão Premium</div>
               </div>
             </div>
             <CardTitle>Bem-vindo de volta</CardTitle>

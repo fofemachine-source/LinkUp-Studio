@@ -18,6 +18,7 @@ type Professional = {
 export type AppointmentComandaInput = {
   appointmentId: string;
   tenantId: string;
+  subscriptionId?: string | null;
   clientId?: string | null;
   clientName: string;
   professionalId: string;
@@ -125,9 +126,12 @@ export async function syncAppointmentComanda(db: DbClient, input: AppointmentCom
 
   if (shouldCancel) {
     if (existing) {
+      const subscriptionUpdate =
+        input.subscriptionId === undefined ? {} : { subscription_id: input.subscriptionId };
       const { error } = await db
         .from("commandas")
         .update({
+          ...subscriptionUpdate,
           status: "canceled",
           scheduled_at: input.scheduledAt,
           closed_at: null,
@@ -155,6 +159,7 @@ export async function syncAppointmentComanda(db: DbClient, input: AppointmentCom
       .insert({
         tenant_id: input.tenantId,
         appointment_id: input.appointmentId,
+        subscription_id: input.subscriptionId ?? null,
         scheduled_at: input.scheduledAt,
         source: input.source,
         client_id: input.clientId ?? null,
@@ -172,9 +177,12 @@ export async function syncAppointmentComanda(db: DbClient, input: AppointmentCom
     if (error) throw error;
     commanda = created;
   } else {
+    const subscriptionUpdate =
+      input.subscriptionId === undefined ? {} : { subscription_id: input.subscriptionId };
     const { error } = await db
       .from("commandas")
       .update({
+        ...subscriptionUpdate,
         scheduled_at: input.scheduledAt,
         source: input.source,
         client_id: input.clientId ?? null,

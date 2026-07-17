@@ -10,6 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 
 type BrandingCssProperties = CSSProperties & {
+  "--booking-accent"?: string;
   "--booking-mobile-position": string;
   "--booking-tablet-position": string;
   "--booking-desktop-position": string;
@@ -26,6 +27,7 @@ export type ImmersiveBackgroundProps = {
   contentClassName?: string;
   imageClassName?: string;
   overlayClassName?: string;
+  accentColor?: string | null;
   children?: ReactNode;
   alt?: string;
   priority?: boolean;
@@ -69,6 +71,23 @@ function previewImageStyle(branding: BookingBranding, viewport: BrandingViewport
   };
 }
 
+function normalizeAccentColor(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim();
+  if (/^#[0-9a-f]{6}$/i.test(normalized) || /^#[0-9a-f]{3}$/i.test(normalized)) {
+    return normalized;
+  }
+  return "#f59e0b";
+}
+
+function shellStyle(accentColor: string | null | undefined): CSSProperties {
+  const accent = normalizeAccentColor(accentColor);
+  return {
+    "--booking-accent": accent,
+    background:
+      "radial-gradient(circle at 18% 16%, color-mix(in srgb, var(--booking-accent) 38%, transparent) 0, transparent 34%), radial-gradient(circle at 88% 82%, color-mix(in srgb, var(--booking-accent) 26%, transparent) 0, transparent 40%), linear-gradient(155deg, #020617 0%, color-mix(in srgb, var(--booking-accent) 18%, #050505) 48%, #000000 100%)",
+  } as CSSProperties;
+}
+
 export function ImmersiveBackground({
   branding: brandingInput,
   fallbackUrl,
@@ -77,6 +96,7 @@ export function ImmersiveBackground({
   contentClassName,
   imageClassName,
   overlayClassName,
+  accentColor,
   children,
   alt = "",
   priority = true,
@@ -93,7 +113,7 @@ export function ImmersiveBackground({
   };
 
   return (
-    <div className={cn("relative isolate overflow-hidden bg-black", className)}>
+    <div className={cn("relative isolate overflow-hidden bg-black", className)} style={shellStyle(accentColor)}>
       {previewViewport && previewUrl ? (
         <img
           {...imageProps}

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,10 +11,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Users, Scissors, Sparkles, Package, UserCog } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Scissors, Sparkles, Package, UserCog, KeyRound } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { brl } from "@/lib/format";
+import { brl, cpfMask } from "@/lib/format";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { deleteProfessional } from "@/lib/professionals.functions";
 import { useServerFn } from "@tanstack/react-start";
@@ -21,6 +22,7 @@ import {
   projectPasswordAuthErrorMessage,
   validateProjectPassword,
 } from "@/lib/password-policy";
+import { isValidCustomerCpf } from "@/lib/customer-auth";
 
 export const Route = createFileRoute("/_authenticated/app/cadastros")({ component: CadastrosPage });
 
@@ -61,6 +63,7 @@ function useTenantId() { return useCurrentTenant().data?.id; }
 function ClientsTab() {
   const tenantId = useTenantId(); const qc = useQueryClient();
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
+  const [issuingAccessCodeFor, setIssuingAccessCodeFor] = useState<string | null>(null);
   const { data } = useQuery({ queryKey: ["clients", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("clients").select("*").eq("tenant_id", tenantId!).order("full_name")).data ?? [] });
   
   const { data: subscribers } = useQuery({
@@ -115,17 +118,66 @@ function ClientsTab() {
     sync();
   }, [data, subscribers, tenantId, qc]);
 
+  async function copyAccessCode(code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      return true;
+    } catch {
+      const textArea = document.createElement("textarea");
+      textArea.value = code;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const copied = document.execCommand("copy");
+      textArea.remove();
+      return copied;
+    }
+  }
+
+  async function issueAccessCode(client: any) {
+    if (!tenantId || issuingAccessCodeFor) return;
+    if (!isValidCustomerCpf(String(client.cpf || ""))) {
+      toast.error("Cadastre um CPF válido para liberar ou redefinir o acesso deste cliente.");
+      return;
+    }
+
+    setIssuingAccessCodeFor(client.id);
+    try {
+      const { data: code, error } = await (supabase as any).rpc(
+        "create_customer_booking_activation_code",
+        { p_tenant_id: tenantId, p_client_id: client.id },
+      );
+      if (error || typeof code !== "string" || !code) {
+        throw new Error(error?.message || "Não foi possível gerar o código de acesso.");
+      }
+
+      const copied = await copyAccessCode(code);
+      toast.success(
+        copied
+          ? `Código ${code} copiado. Ele vale por 24h e libera ou redefine o acesso.`
+          : `Código ${code}. Copie-o agora: ele vale por 24h e libera ou redefine o acesso.`,
+        { duration: 12000 },
+      );
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível gerar o código de acesso.");
+    } finally {
+      setIssuingAccessCodeFor(null);
+    }
+  }
+
   return (
     <Card className="premium-card"><CardContent className="p-6 space-y-4">
       <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} clientes</h3>
         <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />Novo</Button></DialogTrigger>
           <ClientDialog key={edit?.id ?? "new"} client={edit} tenantId={tenantId} onDone={()=>{setOpen(false); setEdit(null); qc.invalidateQueries({queryKey:["clients"]});}}/></Dialog></div>
       <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
-        <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>WhatsApp</TableHead><TableHead>Email</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
+        <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>CPF</TableHead><TableHead>WhatsApp</TableHead><TableHead>Email</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
           <TableBody>{(data ?? []).map((c: any) => (
-            <TableRow key={c.id}><TableCell className="font-medium whitespace-nowrap">{c.full_name}</TableCell><TableCell className="whitespace-nowrap">{c.whatsapp}</TableCell><TableCell className="text-muted-foreground whitespace-nowrap">{c.email}</TableCell>
+            <TableRow key={c.id}><TableCell className="font-medium whitespace-nowrap">{c.full_name}</TableCell><TableCell className="whitespace-nowrap">{c.cpf ? cpfMask(c.cpf) : "—"}</TableCell><TableCell className="whitespace-nowrap">{c.whatsapp}</TableCell><TableCell className="text-muted-foreground whitespace-nowrap">{c.email}</TableCell>
             <TableCell className="whitespace-nowrap">{c.is_subscriber && <span className="text-xs px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 font-bold">Assinante</span>}</TableCell>
-            <TableCell className="text-right whitespace-nowrap"><Button size="icon" variant="ghost" onClick={()=>{setEdit(c);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
+            <TableCell className="text-right whitespace-nowrap"><Button size="icon" variant="ghost" title="Liberar ou redefinir acesso" aria-label={`Liberar ou redefinir acesso de ${c.full_name}`} disabled={issuingAccessCodeFor === c.id} onClick={()=>issueAccessCode(c)}><KeyRound className="h-4 w-4"/></Button><Button size="icon" variant="ghost" onClick={()=>{setEdit(c);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
             <Button size="icon" variant="ghost" onClick={async()=>{if(confirm("Excluir?")){await supabase.from("clients").delete().eq("id",c.id);qc.invalidateQueries({queryKey:["clients"]});}}}><Trash2 className="h-4 w-4"/></Button></TableCell></TableRow>
           ))}</TableBody></Table>
       </div>
@@ -136,6 +188,7 @@ function ClientsTab() {
 function ClientDialog({ client, tenantId, onDone }: any) {
   const [f, setF] = useState({ 
     full_name: client?.full_name ?? "", 
+    cpf: cpfMask(client?.cpf ?? ""),
     whatsapp: client?.whatsapp ?? "", 
     email: client?.email ?? "", 
     address: client?.address ?? "", 
@@ -143,16 +196,23 @@ function ClientDialog({ client, tenantId, onDone }: any) {
     is_subscriber: client?.is_subscriber ?? false
   });
   async function save() {
-    const payload = { ...f, tenant_id: tenantId };
-    const { error } = client ? await supabase.from("clients").update(f).eq("id", client.id) : await supabase.from("clients").insert(payload);
+    const cpf = f.cpf.replace(/\D/g, "");
+    if (cpf && !isValidCustomerCpf(cpf)) {
+      toast.error("Informe um CPF válido.");
+      return;
+    }
+    const values = { ...f, cpf: cpf || null };
+    const payload = { ...values, tenant_id: tenantId };
+    const { error } = client ? await supabase.from("clients").update(values).eq("id", client.id) : await supabase.from("clients").insert(payload);
     if (error) return toast.error(error.message);
     toast.success("Salvo"); onDone();
   }
   return (<DialogContent><DialogHeader><DialogTitle>{client?"Editar":"Novo"} cliente</DialogTitle></DialogHeader>
     <div className="space-y-3">
       <div><Label>Nome</Label><Input value={f.full_name} onChange={e=>setF({...f,full_name:e.target.value})}/></div>
-      <div className="grid grid-cols-2 gap-3"><div><Label>WhatsApp</Label><Input value={f.whatsapp} onChange={e=>setF({...f,whatsapp:e.target.value})}/></div>
-      <div><Label>Email</Label><Input value={f.email} onChange={e=>setF({...f,email:e.target.value})}/></div></div>
+      <div className="grid grid-cols-2 gap-3"><div><Label>CPF</Label><Input inputMode="numeric" placeholder="000.000.000-00" value={f.cpf} onChange={e=>setF({...f,cpf:cpfMask(e.target.value)})}/></div>
+      <div><Label>WhatsApp</Label><Input value={f.whatsapp} onChange={e=>setF({...f,whatsapp:e.target.value})}/></div></div>
+      <div><Label>Email</Label><Input type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})}/></div>
       <div><Label>Endereço</Label><Input value={f.address} onChange={e=>setF({...f,address:e.target.value})}/></div>
       <div><Label>Observações</Label><Input value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></div>
       <div className="flex items-center gap-2 pt-2">

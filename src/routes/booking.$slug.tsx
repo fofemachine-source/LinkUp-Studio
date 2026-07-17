@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   cancelBooking,
   createBooking,
@@ -11,6 +11,17 @@ import {
   submitSubscriptionProof,
   validateVip,
 } from "@/lib/booking.functions";
+import {
+  getBookingCustomer,
+  loginBookingCustomer,
+  logoutBookingCustomer,
+  registerBookingCustomer,
+} from "@/lib/customer-auth.functions";
+import {
+  isValidCustomerCpf,
+  isValidCustomerWhatsapp,
+  type BookingCustomer,
+} from "@/lib/customer-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,11 +47,17 @@ import {
   XCircle,
   FileCheck2,
   UploadCloud,
+  Eye,
+  EyeOff,
+  LogIn,
+  LogOut,
+  ShieldCheck,
+  UserPlus,
+  UserRound,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
-import bookingHero from "@/assets/barber-hero.png.asset.json";
 import { supabase } from "@/integrations/supabase/client";
 import { ImmersiveBackground } from "@/components/branding/immersive-background";
 import {
@@ -57,11 +74,30 @@ export const Route = createFileRoute("/booking/$slug")({
 });
 
 type Step = "vip" | "service" | "pro" | "date" | "form" | "done";
+type CustomerAccessMode = "register" | "login";
+
+function canBookWithVip(vipInfo: any) {
+  return Boolean(vipInfo && (vipInfo.can_book ?? vipInfo.status === "active"));
+}
+
+function vipSubscriptionStatusLabel(status: string) {
+  return (
+    {
+      active: "ativa",
+      pending_activation: "aguardando pagamento",
+      overdue: "vencida",
+      suspended: "suspensa",
+      canceled: "cancelada",
+      expired: "expirada",
+    }[status] ?? status
+  );
+}
 
 import { buildPixPayload } from "@/lib/pix";
 import { QrCode } from "@/lib/qr";
 
 function BookingPage() {
+  const queryClient = useQueryClient();
   const { slug } = Route.useParams();
   const { cancel: cancellationTokenFromUrl } = Route.useSearch();
   const getTenant = useServerFn(getPublicTenant);
@@ -71,6 +107,10 @@ function BookingPage() {
   const cancel = useServerFn(cancelBooking);
   const prepareProofUpload = useServerFn(prepareSubscriptionProofUpload);
   const submitProof = useServerFn(submitSubscriptionProof);
+  const getCustomer = useServerFn(getBookingCustomer);
+  const registerCustomer = useServerFn(registerBookingCustomer);
+  const loginCustomer = useServerFn(loginBookingCustomer);
+  const logoutCustomer = useServerFn(logoutBookingCustomer);
 
   const {
     data,
@@ -84,9 +124,9 @@ function BookingPage() {
     refetchOnWindowFocus: "always",
     refetchOnReconnect: "always",
   });
+  const tenantId = (data as any)?.tenant?.id as string | undefined;
   const [step, setStep] = useState<Step>("vip");
   const [isVip, setIsVip] = useState(false);
-  const [cpf, setCpf] = useState("");
   const [vipInfo, setVipInfo] = useState<any>(null);
   const [serviceId, setServiceId] = useState<string>("");
   const [proId, setProId] = useState<string>("");
@@ -96,7 +136,95 @@ function BookingPage() {
   const [phone, setPhone] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [bookingCancelled, setBookingCancelled] = useState(false);
+  const [accessMode, setAccessMode] = useState<CustomerAccessMode>("register");
+  const [accessName, setAccessName] = useState("");
+  const [accessCpf, setAccessCpf] = useState("");
+  const [accessPhone, setAccessPhone] = useState("");
+  const [accessPassword, setAccessPassword] = useState("");
+  const [accessActivationCode, setAccessActivationCode] = useState("");
+  const [whatsappConsent, setWhatsappConsent] = useState(false);
   const timeSectionRef = useRef<HTMLDivElement>(null);
+
+  const customerQuery = useQuery({
+    queryKey: ["booking-customer", tenantId],
+    enabled: Boolean(tenantId) && !cancellationTokenFromUrl,
+    queryFn: () => getCustomer({ data: { tenantId: tenantId! } }),
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: Infinity,
+  });
+
+  const applyCustomer = useCallback((customer: BookingCustomer) => {
+    setName(customer.fullName);
+    setPhone(customer.whatsapp);
+    setAccessPassword("");
+    setAccessActivationCode("");
+    setAccessCpf("");
+    setVipInfo(null);
+    setIsVip(false);
+    setStep("vip");
+  }, []);
+
+  const registerCustomerMut = useMutation({
+    mutationFn: () => {
+      if (!tenantId) throw new Error("Salão indisponível no momento.");
+      return registerCustomer({
+        data: {
+          tenantId,
+          fullName: accessName,
+          cpf: accessCpf,
+          whatsapp: accessPhone,
+          password: accessPassword,
+          activationCode: accessActivationCode,
+          whatsappConsent,
+        },
+      });
+    },
+    onSuccess: (customer) => {
+      queryClient.setQueryData(["booking-customer", tenantId], customer);
+      applyCustomer(customer);
+      toast.success("Cadastro confirmado! Seu acesso ficou salvo neste aparelho.");
+    },
+    onError: (error: any) => toast.error(error.message ?? "Não foi possível criar o cadastro."),
+  });
+
+  const loginCustomerMut = useMutation({
+    mutationFn: () => {
+      if (!tenantId) throw new Error("Salão indisponível no momento.");
+      return loginCustomer({
+        data: { tenantId, cpf: accessCpf, password: accessPassword },
+      });
+    },
+    onSuccess: (customer) => {
+      queryClient.setQueryData(["booking-customer", tenantId], customer);
+      applyCustomer(customer);
+      toast.success(`Bem-vindo, ${customer.fullName}!`);
+    },
+    onError: (error: any) => toast.error(error.message ?? "Não foi possível entrar."),
+  });
+
+  const logoutCustomerMut = useMutation({
+    mutationFn: () => {
+      if (!tenantId) throw new Error("Salão indisponível no momento.");
+      return logoutCustomer({ data: { tenantId } });
+    },
+    onSuccess: () => {
+      queryClient.setQueryData(["booking-customer", tenantId], null);
+      setName("");
+      setPhone("");
+      setVipInfo(null);
+      setIsVip(false);
+      setStep("vip");
+      setAccessMode("login");
+      setWhatsappConsent(false);
+    },
+    onError: () => toast.error("Não foi possível sair agora."),
+  });
+
+  useEffect(() => {
+    if (customerQuery.data) applyCustomer(customerQuery.data);
+  }, [customerQuery.data, applyCustomer]);
 
   useEffect(() => {
     const refreshCatalog = (event: StorageEvent) => {
@@ -132,8 +260,17 @@ function BookingPage() {
       const [h, m] = time.split(":").map(Number);
       const [year, month, day] = format(date!, "yyyy-MM-dd").split("-").map(Number);
       const start = new Date(year, month - 1, day, h, m, 0, 0);
-      const tenantId = (data as any)?.tenant?.id;
-      return create({ data: { tenantId, professionalId: proId, serviceId, clientName: name, clientWhatsapp: phone, startAt: start.toISOString(), isVip, vipCpf: cpf || undefined } });
+      if (!tenantId) throw new Error("Salão indisponível no momento.");
+      return create({
+        data: {
+          tenantId,
+          professionalId: proId,
+          serviceId,
+          startAt: start.toISOString(),
+          isVip,
+          subscriptionId: isVip ? (vipInfo as any)?.subscription_id : undefined,
+        },
+      });
     },
     onSuccess: () => { toast.success("Agendamento confirmado!"); setStep("done"); },
     onError: (e: any) => toast.error(e.message ?? "Erro"),
@@ -154,10 +291,9 @@ function BookingPage() {
   });
 
   const validateVipMut = useMutation({
-    mutationFn: async () => {
-      const tenantId = (data as any)?.tenant?.id;
+    mutationFn: async (subscriptionId?: string) => {
       if (!tenantId) throw new Error("Salão indisponível no momento.");
-      return validate({ data: { tenantId, cpf } });
+      return validate({ data: { tenantId, subscriptionId } });
     },
     onSuccess: (result) => {
       if (!result) {
@@ -168,11 +304,10 @@ function BookingPage() {
       setVipInfo(result);
       setProofFile(null);
       setName((result as any).full_name);
-      if ((result as any).whatsapp) {
-        setPhone((result as any).whatsapp);
-      }
-      if ((result as any).status === "active") {
+      if (canBookWithVip(result)) {
         toast.success(`Bem-vindo, ${(result as any).full_name}!`);
+      } else if ((result as any).booking_block_reason) {
+        toast.info((result as any).booking_block_reason);
       } else {
         toast.info("Assinatura localizada. Confira a renovação abaixo.");
       }
@@ -276,7 +411,7 @@ function BookingPage() {
   }
 
   const handleVipContinue = () => {
-    if (isVip && (!vipInfo || vipInfo.status !== "active")) return;
+    if (isVip && (validateVipMut.isPending || !canBookWithVip(vipInfo))) return;
     setStep("service");
   };
 
@@ -325,7 +460,7 @@ function BookingPage() {
     branding: brandingRow,
   } = data as any;
   const bookingBranding = normalizeBookingBranding(brandingRow);
-  const bookingFallback = tenant.banner_url || bookingHero.url;
+  const bookingFallback = null;
   const tenantThemeStyle = tenant.primary_color
     ? ({
         "--primary": tenant.primary_color,
@@ -341,16 +476,42 @@ function BookingPage() {
     if (vipInfo?.plan?.startsWith("{") || vipInfo?.plan?.startsWith("[")) {
       parsedVipPlan = JSON.parse(vipInfo.plan);
     }
-  } catch(e){}
+  } catch {
+    // Legacy plans may be stored as plain text instead of JSON.
+  }
+  const availableVipSubscriptions = Array.isArray((vipInfo as any)?.available_subscriptions)
+    ? ((vipInfo as any).available_subscriptions as any[])
+    : [];
+  const vipBenefitBalances = Array.isArray((vipInfo as any)?.benefits)
+    ? ((vipInfo as any).benefits as any[])
+    : [];
+  const vipBenefitByService = new Map<string, any>();
+  for (const benefit of vipBenefitBalances) {
+    if (
+      benefit?.benefit_type === "service" &&
+      benefit?.service_id &&
+      !vipBenefitByService.has(benefit.service_id)
+    ) {
+      vipBenefitByService.set(benefit.service_id, benefit);
+    }
+  }
   const coveredServiceIds = new Set(parsedVipPlan.services ?? []);
+  const vipCoveredBalanceExhausted =
+    isVip &&
+    (vipInfo as any)?.available_sessions != null &&
+    Number((vipInfo as any).available_sessions) <= 0;
+  const visibleServices = services.filter((service: any) => {
+    if (service.vip_only && !isVip) return false;
+    if (!isVip || coveredServiceIds.has(service.id)) return true;
+    return !(vipInfo as any)?.included_services_only || Boolean((vipInfo as any)?.allow_extras);
+  });
   const availableProsForService = (() => {
     let pros = chosenService?.vip_only && !isVip ? [] : professionals;
     if (isVip && chosenService?.name?.toLowerCase().includes("corte")) {
-      pros = pros.filter(
-        (p: any) =>
-          p.full_name?.toLowerCase().includes("françois") ||
-          p.full_name?.toLowerCase().includes("francois")
-      );
+      pros = pros.filter((professional: any) => {
+        const professionalName = professional.full_name?.toLowerCase() ?? "";
+        return professionalName.includes("françois") || professionalName.includes("francois");
+      });
     }
     return pros;
   })();
@@ -368,6 +529,7 @@ function BookingPage() {
       <ImmersiveBackground
         branding={bookingBranding}
         fallbackUrl={bookingFallback}
+        accentColor={tenant.primary_color}
         className="min-h-screen text-foreground"
         contentClassName="min-h-screen"
       >
@@ -427,6 +589,7 @@ function BookingPage() {
     <ImmersiveBackground
       branding={bookingBranding}
       fallbackUrl={bookingFallback}
+      accentColor={tenant.primary_color}
       className="min-h-screen text-foreground"
       contentClassName="min-h-screen"
     >
@@ -436,24 +599,103 @@ function BookingPage() {
       >
         <BookingIdentityHeader tenant={tenant} branding={bookingBranding} />
 
-        {step === "vip" && (
+        {customerQuery.isLoading && (
+          <Card className="border-white/5 bg-[#0a0a0a] text-white shadow-2xl">
+            <CardContent className="flex items-center justify-center gap-3 p-8 text-sm text-white/70">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Verificando seu acesso neste aparelho...
+            </CardContent>
+          </Card>
+        )}
+
+        {customerQuery.isError && (
+          <Card className="border-red-400/20 bg-[#0a0a0a] text-white shadow-2xl">
+            <CardContent className="space-y-4 p-6 text-center">
+              <p className="text-sm text-red-200">
+                Não foi possível abrir o acesso do cliente. Tente novamente em instantes.
+              </p>
+              <Button variant="outline" onClick={() => void customerQuery.refetch()}>
+                Tentar novamente
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {!customerQuery.isLoading && !customerQuery.isError && !customerQuery.data && (
+          <CustomerAccessCard
+            mode={accessMode}
+            name={accessName}
+            cpf={accessCpf}
+            phone={accessPhone}
+            password={accessPassword}
+            activationCode={accessActivationCode}
+            whatsappConsent={whatsappConsent}
+            pending={registerCustomerMut.isPending || loginCustomerMut.isPending}
+            onModeChange={(mode) => {
+              setAccessMode(mode);
+              setAccessPassword("");
+              setAccessActivationCode("");
+            }}
+            onNameChange={setAccessName}
+            onCpfChange={setAccessCpf}
+            onPhoneChange={setAccessPhone}
+            onPasswordChange={setAccessPassword}
+            onActivationCodeChange={setAccessActivationCode}
+            onWhatsappConsentChange={setWhatsappConsent}
+            onSubmit={() =>
+              accessMode === "register"
+                ? registerCustomerMut.mutate()
+                : loginCustomerMut.mutate()
+            }
+          />
+        )}
+
+        {customerQuery.data && step === "vip" && (
           <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl">
             <CardContent className="p-6 md:p-8 space-y-6">
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
+                  <UserRound className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-semibold">Olá, {customerQuery.data.fullName}</div>
+                  <div className="text-xs text-white/55">
+                    {phoneMask(customerQuery.data.whatsapp)} · CPF final {customerQuery.data.cpfLast4}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-white/60 hover:bg-white/10 hover:text-white"
+                  disabled={logoutCustomerMut.isPending}
+                  onClick={() => logoutCustomerMut.mutate()}
+                >
+                  {logoutCustomerMut.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <LogOut className="h-4 w-4" />
+                  )}
+                  <span className="sr-only">Sair</span>
+                </Button>
+              </div>
+
               {bookingBranding.show_subscriber_badge ? (
                 <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
                   <Crown className="h-6 w-6 text-primary" />
-                    <div className="flex-1">
-                      <div className="font-semibold">Sou assinante VIP</div>
-                      <div className="text-xs text-white/60">
-                        Valide seu CPF para consultar benefícios, saldo e renovação.
-                      </div>
+                  <div className="flex-1">
+                    <div className="font-semibold">Sou assinante VIP</div>
+                    <div className="text-xs text-white/60">
+                      Consulte benefícios, saldo e renovação com seu cadastro.
                     </div>
+                  </div>
                   <Switch
                     checked={isVip}
                     onCheckedChange={(value) => {
                       setIsVip(value);
                       setVipInfo(null);
                       setProofFile(null);
+                      if (value) validateVipMut.mutate(undefined);
                     }}
                   />
                 </div>
@@ -462,9 +704,11 @@ function BookingPage() {
                   type="button"
                   className="mx-auto flex items-center gap-2 text-sm text-white/65 transition hover:text-white"
                   onClick={() => {
-                    setIsVip((current) => !current);
+                    const nextVip = !isVip;
+                    setIsVip(nextVip);
                     setVipInfo(null);
                     setProofFile(null);
+                    if (nextVip) validateVipMut.mutate(undefined);
                   }}
                 >
                   <Crown className="h-4 w-4 text-primary" />
@@ -473,28 +717,60 @@ function BookingPage() {
               )}
               {isVip && (
                 <div className="space-y-3">
-                  <Label>Informe seu CPF</Label>
-                  <Input
-                    value={cpfMask(cpf)}
-                    onChange={(e) => {
-                      setCpf(e.target.value);
-                      setVipInfo(null);
-                    }}
-                    placeholder="000.000.000-00"
-                  />
                   <Button
                     className="w-full"
-                    disabled={
-                      cpf.replace(/\D/g, "").length !== 11 ||
-                      validateVipMut.isPending
-                    }
-                    onClick={() => validateVipMut.mutate()}
+                    disabled={validateVipMut.isPending}
+                    onClick={() => validateVipMut.mutate(undefined)}
                   >
                     {validateVipMut.isPending && (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     )}
-                    {validateVipMut.isPending ? "VALIDANDO..." : "VALIDAR DADOS"}
+                    {validateVipMut.isPending ? "CONSULTANDO..." : "CONSULTAR MINHA ASSINATURA"}
                   </Button>
+                  {availableVipSubscriptions.length > 1 && (
+                    <div className="space-y-2 rounded-xl border border-white/10 bg-white/5 p-4">
+                      <Label htmlFor="vip-subscription" className="text-xs text-white/70">
+                        Qual assinatura deseja usar?
+                      </Label>
+                      <select
+                        id="vip-subscription"
+                        className="h-11 w-full rounded-lg border border-white/15 bg-[#111] px-3 text-sm text-white outline-none focus:border-primary disabled:opacity-60"
+                        value={(vipInfo as any)?.subscription_id ?? ""}
+                        disabled={validateVipMut.isPending}
+                        onChange={(event) => {
+                          const subscriptionId = event.target.value;
+                          setVipInfo((current: any) =>
+                            current
+                              ? {
+                                  ...current,
+                                  subscription_id: subscriptionId,
+                                  can_book: false,
+                                  booking_block_reason: "Carregando a assinatura escolhida...",
+                                }
+                              : current,
+                          );
+                          setServiceId("");
+                          setProId("");
+                          setDate(undefined);
+                          setTime("");
+                          setProofFile(null);
+                          validateVipMut.mutate(subscriptionId);
+                        }}
+                      >
+                        {availableVipSubscriptions.map((subscription: any) => (
+                          <option key={subscription.id} value={subscription.id}>
+                            {subscription.plan_name} · {vipSubscriptionStatusLabel(subscription.status)}
+                            {subscription.sessions_remaining == null
+                              ? " · saldo ilimitado"
+                              : ` · saldo ${subscription.sessions_remaining}`}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] leading-relaxed text-white/45">
+                        Benefícios, saldo e renovação abaixo correspondem à assinatura escolhida.
+                      </p>
+                    </div>
+                  )}
                   {bookingBranding.show_subscription_summary &&
                     vipInfo &&
                     (vipInfo as any).status === "active" && (
@@ -506,21 +782,92 @@ function BookingPage() {
                           if ((vipInfo as any).plan?.startsWith("{") || (vipInfo as any).plan?.startsWith("[")) {
                             return JSON.parse((vipInfo as any).plan).name;
                           }
-                        } catch(e){}
+                        } catch {
+                          // Legacy plans may be stored as plain text instead of JSON.
+                        }
                         return (vipInfo as any).plan;
                         })()}
                       </div>
-                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-white/70">
-                        <span>Saldo: <strong className="text-white">{(vipInfo as any).sessions_remaining ?? "Ilimitado"}</strong></span>
-                        <span>Validade: <strong className="text-white">{(vipInfo as any).ends_at ? format(new Date(`${(vipInfo as any).ends_at}T12:00:00`), "dd/MM/yyyy") : "Sem prazo"}</strong></span>
+                      <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-white/70">
+                        <span>
+                          Saldo do plano:{" "}
+                          <strong className="text-white">
+                            {(vipInfo as any).sessions_remaining ?? "Ilimitado"}
+                          </strong>
+                        </span>
+                        <span>
+                          Já reservadas:{" "}
+                          <strong className="text-white">
+                            {(vipInfo as any).reserved_sessions ?? 0}
+                          </strong>
+                        </span>
+                        <span>
+                          Disponíveis agora:{" "}
+                          <strong className="text-emerald-300">
+                            {(vipInfo as any).available_sessions ?? "Ilimitado"}
+                          </strong>
+                        </span>
+                        <span>
+                          Validade:{" "}
+                          <strong className="text-white">
+                            {(vipInfo as any).ends_at
+                              ? format(
+                                  new Date(`${(vipInfo as any).ends_at}T12:00:00`),
+                                  "dd/MM/yyyy",
+                                )
+                              : "Sem prazo"}
+                          </strong>
+                        </span>
                       </div>
+                      {vipBenefitBalances.some(
+                        (benefit: any) =>
+                          benefit.benefit_type === "service" && benefit.quantity != null,
+                      ) && (
+                        <div className="mt-4 space-y-2 border-t border-white/10 pt-3">
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-white/45">
+                            Saldo por benefício neste ciclo
+                          </div>
+                          {vipBenefitBalances
+                            .filter(
+                              (benefit: any) =>
+                                benefit.benefit_type === "service" && benefit.quantity != null,
+                            )
+                            .map((benefit: any) => (
+                              <div
+                                key={benefit.id}
+                                className="flex items-center justify-between gap-3 rounded-lg bg-black/20 px-3 py-2 text-xs"
+                              >
+                                <span className="min-w-0 truncate text-white/75">{benefit.name}</span>
+                                <span
+                                  className={
+                                    Number(benefit.available_quantity) > 0
+                                      ? "shrink-0 font-semibold text-emerald-300"
+                                      : "shrink-0 font-semibold text-red-300"
+                                  }
+                                >
+                                  {benefit.available_quantity} disponível(is) · {benefit.used_quantity} usado(s) ·{" "}
+                                  {benefit.reserved_quantity} reservado(s)
+                                </span>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {vipInfo && !canBookWithVip(vipInfo) && (vipInfo as any).booking_block_reason && (
+                    <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+                      {(vipInfo as any).booking_block_reason}
                     </div>
                   )}
                   {vipInfo && (vipInfo as any).renewal && (
                     <div className="p-5 rounded-xl bg-black/40 border border-white/10 text-sm flex flex-col gap-5 text-center mt-4">
                       <div className="flex flex-col items-center gap-1">
                         <div className={`font-semibold text-base ${(vipInfo as any).status === "active" ? "text-amber-400" : "text-red-500"}`}>
-                          {(vipInfo as any).status === "active" ? "Renovação da assinatura" : "Assinatura aguardando renovação"}
+                          {(vipInfo as any).status === "pending_activation"
+                            ? "Assinatura aguardando ativação"
+                            : (vipInfo as any).status === "active"
+                              ? "Renovação da assinatura"
+                              : "Assinatura aguardando renovação"}
                         </div>
                         <div className="text-white/70">
                           Valor <strong className="text-primary">{brl(Number((vipInfo as any).renewal.amount))}</strong>
@@ -530,7 +877,9 @@ function BookingPage() {
                             if ((vipInfo as any).plan?.startsWith("{") || (vipInfo as any).plan?.startsWith("[")) {
                               return JSON.parse((vipInfo as any).plan).name;
                             }
-                          } catch(e){}
+                          } catch {
+                            // Legacy plans may be stored as plain text instead of JSON.
+                          }
                           return (vipInfo as any).plan;
                         })()}.
                         </div>
@@ -637,14 +986,15 @@ function BookingPage() {
                     (vipInfo as any).status !== "active" &&
                     !(vipInfo as any).renewal && (
                       <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">
-                        Esta assinatura não possui uma cobrança disponível para renovação no
-                        momento. Fale com o salão para regularizar o cadastro.
+                        {(vipInfo as any).status === "pending_activation"
+                          ? "O primeiro pagamento ainda não foi confirmado e não há uma cobrança disponível neste acesso. Fale com o salão para ativar a assinatura."
+                          : "Esta assinatura não possui uma cobrança disponível para renovação no momento. Fale com o salão para regularizar o cadastro."}
                       </div>
                     )}
                 </div>
               )}
               {bookingBranding.show_primary_button ? (
-                <Button className="flex w-full justify-between rounded-xl bg-primary px-6 py-6 font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90" size="lg" disabled={isVip && (!vipInfo || (vipInfo as any).status !== "active")} onClick={handleVipContinue}>
+                <Button className="flex w-full justify-between rounded-xl bg-primary px-6 py-6 font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90" size="lg" disabled={isVip && (validateVipMut.isPending || !canBookWithVip(vipInfo))} onClick={handleVipContinue}>
                   <span>CONTINUAR</span>
                   <ArrowRight className="h-5 w-5" />
                 </Button>
@@ -652,7 +1002,7 @@ function BookingPage() {
                 <button
                   type="button"
                   className="mx-auto flex items-center gap-2 text-sm font-medium text-white/70 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={isVip && (!vipInfo || (vipInfo as any).status !== "active")}
+                  disabled={isVip && (validateVipMut.isPending || !canBookWithVip(vipInfo))}
                   onClick={handleVipContinue}
                 >
                   Iniciar agendamento
@@ -663,41 +1013,98 @@ function BookingPage() {
           </Card>
         )}
 
-        {step === "service" && (
+        {customerQuery.data && step === "service" && (
           <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
             <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
             <div className="grid sm:grid-cols-2 gap-3">
-              {services.filter((s: any) => !s.vip_only || isVip).map((s: any) => (
-                <button key={s.id} onClick={() => {
-                  setServiceId(s.id);
-                  setDate(undefined);
-                  setTime("");
-                  let pros = s.vip_only && !isVip ? [] : professionals;
-                  if (isVip && s.name.toLowerCase().includes("corte")) {
-                    pros = pros.filter((p: any) =>
-                      p.full_name?.toLowerCase().includes("françois") ||
-                      p.full_name?.toLowerCase().includes("francois")
-                    );
-                  }
-                  if (pros.length === 1) {
-                    setProId(pros[0].id);
-                    setStep("date");
-                  } else {
-                    setProId("");
-                    setStep("pro");
-                  }
-                }} className={`text-left p-4 rounded-xl border-2 transition ${serviceId === s.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
-                  <div className="flex items-center justify-between gap-2"><div className="font-medium">{s.name}</div>{isVip && coveredServiceIds.has(s.id) ? <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-400">INCLUSO</span> : s.vip_only ? <Crown className="h-4 w-4 text-primary" /> : null}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{s.duration_min} min</div>
-                  <div className="font-semibold text-primary mt-2">{isVip && coveredServiceIds.has(s.id) ? "Coberto pela assinatura" : brl(s.price)}</div>
-                  {isVip && !coveredServiceIds.has(s.id) && <div className="mt-1 text-[11px] text-amber-400">Serviço extra: haverá cobrança adicional.</div>}
+              {visibleServices.map((service: any) => {
+                const covered = isVip && coveredServiceIds.has(service.id);
+                const serviceBenefit = vipBenefitByService.get(service.id);
+                const benefitBalanceExhausted =
+                  covered &&
+                  serviceBenefit?.available_quantity != null &&
+                  Number(serviceBenefit.available_quantity) <= 0;
+                const unavailable =
+                  covered && (vipCoveredBalanceExhausted || benefitBalanceExhausted);
+                return (
+                  <button
+                    key={service.id}
+                    type="button"
+                    disabled={unavailable}
+                    onClick={() => {
+                      setServiceId(service.id);
+                      setDate(undefined);
+                      setTime("");
+                      let availableProfessionals =
+                        service.vip_only && !isVip ? [] : professionals;
+                      if (isVip && service.name.toLowerCase().includes("corte")) {
+                        availableProfessionals = availableProfessionals.filter(
+                          (professional: any) => {
+                            const professionalName =
+                              professional.full_name?.toLowerCase() ?? "";
+                            return (
+                              professionalName.includes("françois") ||
+                              professionalName.includes("francois")
+                            );
+                          },
+                        );
+                      }
+                      if (availableProfessionals.length === 1) {
+                        setProId(availableProfessionals[0].id);
+                        setStep("date");
+                      } else {
+                        setProId("");
+                        setStep("pro");
+                      }
+                    }}
+                    className={`rounded-xl border-2 p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      serviceId === service.id
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium">{service.name}</div>
+                      {covered ? (
+                        <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-400">
+                          INCLUSO
+                        </span>
+                      ) : service.vip_only ? (
+                        <Crown className="h-4 w-4 text-primary" />
+                      ) : null}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {service.duration_min} min
+                    </div>
+                    <div className="mt-2 font-semibold text-primary">
+                      {covered ? "Coberto pela assinatura" : brl(service.price)}
+                    </div>
+                    {covered && serviceBenefit?.quantity != null && !unavailable && (
+                      <div className="mt-1 text-[11px] text-emerald-300">
+                        {serviceBenefit.available_quantity} de {serviceBenefit.quantity} disponível(is)
+                        neste ciclo
+                      </div>
+                    )}
+                    {unavailable && (
+                      <div className="mt-1 text-[11px] text-red-300">
+                        {benefitBalanceExhausted
+                          ? `Benefício esgotado neste ciclo: ${serviceBenefit.used_quantity ?? 0} usado(s) e ${serviceBenefit.reserved_quantity ?? 0} reservado(s).`
+                          : "Sem saldo livre: as sessões foram usadas ou já estão reservadas."}
+                      </div>
+                    )}
+                    {isVip && !covered && (
+                      <div className="mt-1 text-[11px] text-amber-400">
+                        Serviço extra: haverá cobrança adicional.
+                      </div>
+                    )}
                   </button>
-              ))}
+                );
+              })}
             </div>
           </CardContent></Card>
         )}
 
-        {step === "pro" && (
+        {customerQuery.data && step === "pro" && (
           <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
             <StepHeader title="Escolha o profissional" onBack={handleProBack} />
             <div className="grid sm:grid-cols-2 gap-3">
@@ -711,7 +1118,7 @@ function BookingPage() {
           </CardContent></Card>
         )}
 
-        {step === "date" && (
+        {customerQuery.data && step === "date" && (
           <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl">
             <CardContent className="p-0">
               <div className="p-6 pb-2">
@@ -749,6 +1156,13 @@ function BookingPage() {
                         const closedDates = settings?.closed_dates ?? [];
                         if (closedDates.includes(dateStr)) return true;
 
+                        if (isVip && (vipInfo as any)?.starts_at && dateStr < (vipInfo as any).starts_at) {
+                          return true;
+                        }
+                        if (isVip && (vipInfo as any)?.ends_at && dateStr > (vipInfo as any).ends_at) {
+                          return true;
+                        }
+
                         // Check specific professional work_days and blocked_dates
                         if (selectedPro) {
                           const proWorkDays = selectedPro.work_days ?? [1,2,3,4,5,6];
@@ -758,9 +1172,10 @@ function BookingPage() {
                           if (proBlockedDates.includes(dateStr)) return true;
                         }
 
-                        if (isVip) {
-                          const vipDays = settings?.vip_days ?? [1,2,3,4];
-                          if (!vipDays.includes(normalizedDay)) return true;
+                        const vipMode = settings?.vip_mode ?? "strict";
+                        const vipDays = settings?.vip_days ?? [1,2,3,4];
+                        if (vipMode === "strict" && !isVip && vipDays.includes(normalizedDay)) {
+                          return true;
                         }
                         return false;
                       }}
@@ -833,12 +1248,18 @@ function BookingPage() {
           </Card>
         )}
 
-        {step === "form" && (
+        {customerQuery.data && step === "form" && (
           <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
             <StepHeader title="Seus dados" onBack={() => setStep("date")} />
-            <div className="space-y-4">
-              <div className="space-y-2"><Label className="text-white/70">Nome completo</Label><Input className="bg-neutral-900/50 border-white/10 text-white focus-visible:ring-amber-500" placeholder="Digite seu nome completo" value={name} onChange={(e) => setName(e.target.value)} /></div>
-              <div className="space-y-2"><Label className="text-white/70">WhatsApp</Label><Input className="bg-neutral-900/50 border-white/10 text-white focus-visible:ring-amber-500" value={phoneMask(phone)} onChange={(e) => setPhone(e.target.value)} placeholder="(11) 99999-9999" /></div>
+            <div className="grid gap-3 rounded-xl border border-white/10 bg-white/5 p-4 sm:grid-cols-2">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Cliente</div>
+                <div className="mt-1 font-medium">{customerQuery.data.fullName}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-white/40">WhatsApp</div>
+                <div className="mt-1 font-medium">{phoneMask(customerQuery.data.whatsapp)}</div>
+              </div>
             </div>
             <div className="p-5 rounded-xl bg-neutral-900/80 border border-white/5 text-sm space-y-3">
               <div className="flex items-center text-white/70"><span className="w-24">Serviço:</span> <strong className="text-white font-medium">{chosenService?.name}</strong> <span className="ml-2 text-amber-500 font-medium">— {isVip && coveredServiceIds.has(chosenService?.id) ? "Incluso no plano" : brl(chosenService?.price)}</span></div>
@@ -846,14 +1267,14 @@ function BookingPage() {
               <div className="flex items-center text-white/70"><span className="w-24">Data:</span> <span className="text-white">{date && format(date, "dd/MM/yyyy")} às {time}</span></div>
               {isVip && !coveredServiceIds.has(chosenService?.id) && <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-300">Este serviço não faz parte da assinatura e será cobrado normalmente no atendimento.</div>}
             </div>
-            <Button size="lg" className="w-full mt-auto py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" disabled={!name || phone.replace(/\D/g,"").length < 10 || bookMut.isPending} onClick={() => bookMut.mutate()}>
+            <Button size="lg" className="w-full mt-auto py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" disabled={bookMut.isPending} onClick={() => bookMut.mutate()}>
               <span className="flex items-center">{bookMut.isPending ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null} CONFIRMAR AGENDAMENTO</span>
               {!bookMut.isPending && <Check className="h-5 w-5 text-black" />}
             </Button>
           </CardContent></Card>
         )}
 
-        {step === "done" && (
+        {customerQuery.data && step === "done" && (
           <Card className="bg-white border-none text-black shadow-2xl overflow-hidden rounded-3xl mx-auto w-full max-w-lg">
             <div className="bg-white p-6 md:p-8">
               <div className="text-center mb-6 mt-4">
@@ -988,6 +1409,223 @@ function BookingPage() {
         )}
       </div>
     </ImmersiveBackground>
+  );
+}
+
+function CustomerAccessCard({
+  mode,
+  name,
+  cpf,
+  phone,
+  password,
+  activationCode,
+  whatsappConsent,
+  pending,
+  onModeChange,
+  onNameChange,
+  onCpfChange,
+  onPhoneChange,
+  onPasswordChange,
+  onActivationCodeChange,
+  onWhatsappConsentChange,
+  onSubmit,
+}: {
+  mode: CustomerAccessMode;
+  name: string;
+  cpf: string;
+  phone: string;
+  password: string;
+  activationCode: string;
+  whatsappConsent: boolean;
+  pending: boolean;
+  onModeChange: (mode: CustomerAccessMode) => void;
+  onNameChange: (value: string) => void;
+  onCpfChange: (value: string) => void;
+  onPhoneChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
+  onActivationCodeChange: (value: string) => void;
+  onWhatsappConsentChange: (value: boolean) => void;
+  onSubmit: () => void;
+}) {
+  const [showPassword, setShowPassword] = useState(false);
+  const registering = mode === "register";
+  const valid =
+    isValidCustomerCpf(cpf) &&
+    password.length >= 8 &&
+    (!registering ||
+      (name.trim().length >= 2 && isValidCustomerWhatsapp(phone) && whatsappConsent));
+
+  return (
+    <Card className="border-white/5 bg-[#0a0a0a] text-white shadow-2xl">
+      <CardContent className="space-y-6 p-6 md:p-8">
+        <div>
+          <div className="flex items-center gap-2 text-primary">
+            {registering ? <UserPlus className="h-5 w-5" /> : <LogIn className="h-5 w-5" />}
+            <span className="text-xs font-bold uppercase tracking-[0.18em]">
+              {registering ? "Primeiro acesso" : "Acesso do cliente"}
+            </span>
+          </div>
+          <h2 className="mt-2 text-2xl font-semibold">
+            {registering ? "Crie seu cadastro" : "Entre para agendar"}
+          </h2>
+          <p className="mt-1 text-sm leading-relaxed text-white/55">
+            {registering
+              ? "Seus dados ficam vinculados a este salão e o acesso permanece salvo neste aparelho."
+              : "Use o CPF e a senha escolhida no seu primeiro acesso."}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 rounded-xl border border-white/10 bg-white/5 p-1">
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+              registering ? "bg-primary text-primary-foreground" : "text-white/55 hover:text-white"
+            }`}
+            onClick={() => onModeChange("register")}
+          >
+            Criar cadastro
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+              !registering ? "bg-primary text-primary-foreground" : "text-white/55 hover:text-white"
+            }`}
+            onClick={() => onModeChange("login")}
+          >
+            Entrar
+          </button>
+        </div>
+
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (valid && !pending) onSubmit();
+          }}
+        >
+          {registering && (
+            <div className="space-y-2">
+              <Label htmlFor="customer-name" className="text-white/70">Nome completo</Label>
+              <Input
+                id="customer-name"
+                autoComplete="name"
+                maxLength={120}
+                className="border-white/10 bg-neutral-900/50 text-white focus-visible:ring-primary"
+                value={name}
+                onChange={(event) => onNameChange(event.target.value)}
+                placeholder="Como podemos chamar você?"
+              />
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="customer-cpf" className="text-white/70">CPF</Label>
+            <Input
+              id="customer-cpf"
+              autoComplete="username"
+              inputMode="numeric"
+              className="border-white/10 bg-neutral-900/50 text-white focus-visible:ring-primary"
+              value={cpfMask(cpf)}
+              onChange={(event) => onCpfChange(event.target.value)}
+              placeholder="000.000.000-00"
+            />
+          </div>
+
+          {registering && (
+            <div className="space-y-2">
+              <Label htmlFor="customer-activation-code" className="text-white/70">
+                Código de liberação <span className="text-white/35">(opcional)</span>
+              </Label>
+              <Input
+                id="customer-activation-code"
+                autoComplete="one-time-code"
+                maxLength={32}
+                className="border-white/10 bg-neutral-900/50 uppercase text-white focus-visible:ring-primary"
+                value={activationCode}
+                onChange={(event) => onActivationCodeChange(event.target.value)}
+                placeholder="Use somente se o salão forneceu um código"
+              />
+              <p className="text-[11px] leading-relaxed text-white/40">
+                Clientes já cadastrados pela equipe ou redefinindo a senha usam o código
+                fornecido pelo salão.
+              </p>
+            </div>
+          )}
+
+          {registering && (
+            <div className="space-y-2">
+              <Label htmlFor="customer-whatsapp" className="text-white/70">WhatsApp</Label>
+              <Input
+                id="customer-whatsapp"
+                autoComplete="tel"
+                inputMode="tel"
+                className="border-white/10 bg-neutral-900/50 text-white focus-visible:ring-primary"
+                value={phoneMask(phone)}
+                onChange={(event) => onPhoneChange(event.target.value)}
+                placeholder="(00) 00000-0000"
+              />
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="customer-password" className="text-white/70">Senha</Label>
+            <div className="relative">
+              <Input
+                id="customer-password"
+                type={showPassword ? "text" : "password"}
+                autoComplete={registering ? "new-password" : "current-password"}
+                maxLength={128}
+                className="border-white/10 bg-neutral-900/50 pr-11 text-white focus-visible:ring-primary"
+                value={password}
+                onChange={(event) => onPasswordChange(event.target.value)}
+                placeholder="Mínimo de 8 caracteres"
+              />
+              <button
+                type="button"
+                className="absolute inset-y-0 right-0 grid w-11 place-items-center text-white/45 transition hover:text-white"
+                onClick={() => setShowPassword((current) => !current)}
+                aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+
+          {registering && (
+            <label className="flex cursor-pointer gap-3 rounded-xl border border-emerald-400/15 bg-emerald-400/5 p-3 text-xs leading-relaxed text-white/70">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-500"
+                checked={whatsappConsent}
+                onChange={(event) => onWhatsappConsentChange(event.target.checked)}
+                required
+              />
+              <span>
+                <span className="mb-1 flex items-center gap-1.5 font-medium text-white">
+                  <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                  Autorização para mensagens
+                </span>
+                Autorizo o salão a enviar confirmações e lembretes deste agendamento pelo meu
+                WhatsApp. Este aceite é obrigatório para concluir o cadastro.
+              </span>
+            </label>
+          )}
+
+          <Button
+            type="submit"
+            size="lg"
+            className="flex w-full justify-between rounded-xl px-6 py-6 font-semibold"
+            disabled={!valid || pending}
+          >
+            <span className="flex items-center">
+              {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {pending ? "AGUARDE..." : registering ? "CRIAR CADASTRO" : "ENTRAR"}
+            </span>
+            {!pending && <ArrowRight className="h-5 w-5" />}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 

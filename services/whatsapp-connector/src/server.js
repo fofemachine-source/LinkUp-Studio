@@ -16,7 +16,7 @@ const {
   useMultiFileAuthState,
 } = require("@whiskeysockets/baileys");
 
-const BUILD_VERSION = "2026-07-16-linkup-salao-queue-v1";
+const BUILD_VERSION = "2026-07-17-linkup-studio-queue-v1";
 const PORT = integerEnv("PORT", 10000, 1, 65535);
 const HOST = String(process.env.HOST || "0.0.0.0").trim();
 const DATA_DIR = path.resolve(
@@ -52,7 +52,7 @@ const RETRY_MAX_MS = integerEnv(
 
 const logger = pino({
   level: process.env.LOG_LEVEL || "info",
-  base: { service: "linkup-salao-whatsapp-connector" },
+  base: { service: "linkup-studio-whatsapp-connector" },
 });
 
 function integerEnv(name, fallback, minimum, maximum) {
@@ -586,7 +586,7 @@ function createSupabaseAdmin() {
     },
     global: {
       headers: {
-        "X-Client-Info": "linkup-salao-whatsapp-connector/1.0.0",
+        "X-Client-Info": "linkup-studio-whatsapp-connector/1.0.0",
       },
     },
   });
@@ -1047,7 +1047,7 @@ app.use((request, response, next) => {
   if (isHealth) {
     response.status(200).json({
       ok: true,
-      service: "linkup-salao-whatsapp-connector",
+      service: "linkup-studio-whatsapp-connector",
       buildVersion: BUILD_VERSION,
       sessions: {
         active: manager.sessions.size,
@@ -1138,7 +1138,7 @@ const server = app.listen(PORT, HOST, () => {
       dataDir: DATA_DIR,
       queueEnabled: QUEUE_ENABLED,
     },
-    "LinkUp Salão WhatsApp Connector iniciado",
+    "LinkUp Studio WhatsApp Connector iniciado",
   );
   manager.restoreSavedSessions().finally(() => worker.start());
 });

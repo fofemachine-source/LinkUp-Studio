@@ -84,13 +84,44 @@ function hasValidProofSignature(
   return bytes.length >= 5 && String.fromCharCode(...bytes.slice(0, 5)) === "%PDF-";
 }
 
-function saoPauloToday() {
+function saoPauloDate(value: Date) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date());
+  }).format(value);
+}
+
+function saoPauloToday() {
+  return saoPauloDate(new Date());
+}
+
+function saoPauloTimeMinutes(value: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(value);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
+}
+
+function configuredTimeMinutes(value: unknown, fallbackHour: number) {
+  if (typeof value === "number" && Number.isFinite(value)) return value * 60;
+  if (typeof value === "string") {
+    const [hour, minute = "0"] = value.split(":");
+    const parsed = Number(hour) * 60 + Number(minute);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallbackHour * 60;
+}
+
+function includesBookingWeekday(days: unknown, weekday: number) {
+  if (!Array.isArray(days)) return true;
+  return days.includes(weekday) || (weekday === 7 && days.includes(0));
 }
 
 async function findOpenSubscriptionCharge(db: any, contract: any) {
@@ -105,6 +136,270 @@ async function findOpenSubscriptionCharge(db: any, contract: any) {
 
   if (error) throw new Error("Não foi possível localizar a cobrança da assinatura.");
   return charges?.[0] ?? null;
+}
+
+async function countReservedSubscriptionSessions(
+  db: any,
+  tenantId: string,
+  subscriptionId: string,
+  coveredServiceIds: string[],
+) {
+  if (coveredServiceIds.length === 0) return 0;
+
+  const { data: reservations, error } = await db
+    .from("appointments")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("subscription_id", subscriptionId)
+    .eq("is_vip", true)
+    .in("service_id", coveredServiceIds)
+    .in("status", ["pending", "confirmed"])
+    .gte("start_at", new Date().toISOString());
+
+  if (error) {
+    throw new Error("Não foi possível calcular as sessões VIP já reservadas.");
+  }
+  const reservationIds = (reservations ?? []).map((item: any) => item.id).filter(Boolean);
+  if (reservationIds.length === 0) return 0;
+
+  const { data: usages, error: usagesError } = await db
+    .from("subscription_usages")
+    .select("appointment_id")
+    .eq("tenant_id", tenantId)
+    .eq("subscription_id", subscriptionId)
+    .in("appointment_id", reservationIds);
+  if (usagesError) {
+    throw new Error("Não foi possível calcular as sessões VIP já reservadas.");
+  }
+  const consumedAppointmentIds = new Set(
+    (usages ?? []).map((usage: any) => usage.appointment_id).filter(Boolean),
+  );
+  return reservationIds.filter((id: string) => !consumedAppointmentIds.has(id)).length;
+}
+
+type SubscriptionBenefitBalance = {
+  id: string;
+  service_id: string | null;
+  benefit_type: string;
+  name: string;
+  quantity: number | null;
+  used_quantity: number;
+  reserved_quantity: number;
+  available_quantity: number | null;
+  cycle_start: string;
+  cycle_end: string | null;
+};
+
+function dateOnly(value: unknown) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+function addDaysToDate(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function addMonthsToDate(value: string, months: number) {
+  const date = new Date(`${value}T12:00:00Z`);
+  const day = date.getUTCDate();
+  date.setUTCDate(1);
+  date.setUTCMonth(date.getUTCMonth() + months);
+  const lastDay = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0, 12),
+  ).getUTCDate();
+  date.setUTCDate(Math.min(day, lastDay));
+  return date.toISOString().slice(0, 10);
+}
+
+function addSubscriptionCycle(value: string, billingCycle: string) {
+  if (billingCycle === "weekly") return addDaysToDate(value, 7);
+  if (billingCycle === "biweekly") return addDaysToDate(value, 15);
+  if (billingCycle === "yearly") return addMonthsToDate(value, 12);
+  if (billingCycle === "monthly") return addMonthsToDate(value, 1);
+  return null;
+}
+
+function cycleTimestamp(value: string) {
+  return new Date(`${value}T00:00:00-03:00`).toISOString();
+}
+
+async function resolveSubscriptionCycle(
+  db: any,
+  tenantId: string,
+  contract: any,
+  billingCycle: string,
+  referenceDate: string,
+) {
+  const { data: charges, error } = await db
+    .from("subscription_charges")
+    .select("billing_period_start,billing_period_end,due_date,paid_at,status")
+    .eq("tenant_id", tenantId)
+    .eq("subscription_id", contract.id)
+    .order("due_date", { ascending: false })
+    .limit(36);
+  if (error) throw new Error("Não foi possível calcular o ciclo atual da assinatura.");
+
+  const paidPeriods = (charges ?? [])
+    .filter((charge: any) => charge.status === "paid")
+    .map((charge: any) => {
+      const start = dateOnly(charge.billing_period_start) ?? dateOnly(charge.due_date);
+      const nextStart = start ? addSubscriptionCycle(start, billingCycle) : null;
+      return {
+        start,
+        end:
+          dateOnly(charge.billing_period_end) ??
+          (nextStart ? addDaysToDate(nextStart, -1) : dateOnly(contract.ends_at)),
+      };
+    })
+    .filter((period: any) => period.start);
+  const matchingPeriod = paidPeriods.find(
+    (period: any) =>
+      period.start <= referenceDate && (!period.end || period.end >= referenceDate),
+  );
+  if (matchingPeriod) {
+    return { start: matchingPeriod.start as string, end: matchingPeriod.end as string | null };
+  }
+
+  // Once a paid plan has entered the financial workflow, only an explicitly
+  // paid period may expose benefits. This mirrors the database trigger and
+  // avoids showing a balance that would be rejected only at confirmation.
+  if (Number(contract.price ?? 0) > 0 && (charges ?? []).length > 0) {
+    throw new Error(
+      "O ciclo desta data ainda não foi pago ou renovado. Escolha uma data dentro do ciclo confirmado.",
+    );
+  }
+
+  // Compatibility for free plans and active legacy contracts that predate
+  // financial charges. This mirrors the SQL resolver; as soon as a paid plan
+  // has any charge, only an explicitly paid period is accepted above.
+  const configuredCycleStart = dateOnly(contract.benefit_cycle_started_at);
+  const contractStart = dateOnly(contract.starts_at);
+  let legacyCycleStart =
+    configuredCycleStart && configuredCycleStart <= referenceDate
+      ? configuredCycleStart
+      : contractStart;
+  const contractEnd = dateOnly(contract.ends_at);
+  if (
+    !legacyCycleStart ||
+    legacyCycleStart > referenceDate ||
+    (contractEnd && referenceDate > contractEnd)
+  ) {
+    throw new Error("A assinatura não possui um ciclo válido para a data escolhida.");
+  }
+  if (billingCycle === "one_time") {
+    return { start: legacyCycleStart, end: contractEnd };
+  }
+
+  for (let index = 0; index < 240; index += 1) {
+    const nextStart = addSubscriptionCycle(legacyCycleStart, billingCycle);
+    if (!nextStart || referenceDate < nextStart) {
+      const inferredEnd = nextStart ? addDaysToDate(nextStart, -1) : null;
+      return {
+        start: legacyCycleStart,
+        end:
+          contractEnd && (!inferredEnd || contractEnd < inferredEnd)
+            ? contractEnd
+            : inferredEnd,
+      };
+    }
+    legacyCycleStart = nextStart;
+  }
+
+  throw new Error("Não foi possível identificar o ciclo da assinatura.");
+}
+
+async function loadSubscriptionBenefitBalances(
+  db: any,
+  tenantId: string,
+  contract: any,
+  plan: any,
+  benefits: any[],
+  referenceDate: string,
+) {
+  const serviceBenefits = benefits.filter(
+    (benefit: any) => benefit.benefit_type === "service" && benefit.service_id,
+  );
+  const cycle = await resolveSubscriptionCycle(
+    db,
+    tenantId,
+    contract,
+    String(plan.billing_cycle ?? "monthly"),
+    referenceDate,
+  );
+  if (serviceBenefits.length === 0) return [] as SubscriptionBenefitBalance[];
+
+  const cycleStart = cycleTimestamp(cycle.start);
+  const cycleEndExclusive = cycleTimestamp(
+    cycle.end ? addDaysToDate(cycle.end, 1) : addDaysToDate(referenceDate, 3660),
+  );
+  const [{ data: usages, error: usagesError }, { data: reservations, error: reservationsError }] =
+    await Promise.all([
+      db
+        .from("subscription_usages")
+        .select("benefit_id,service_id,appointment_id,quantity,used_at")
+        .eq("tenant_id", tenantId)
+        .eq("subscription_id", contract.id)
+        .gte("used_at", cycleStart)
+        .lt("used_at", cycleEndExclusive),
+      db
+        .from("appointments")
+        .select("id,service_id,start_at")
+        .eq("tenant_id", tenantId)
+        .eq("subscription_id", contract.id)
+        .eq("is_vip", true)
+        .in("status", ["pending", "confirmed"])
+        .gte("start_at", cycleStart)
+        .lt("start_at", cycleEndExclusive),
+    ]);
+  if (usagesError || reservationsError) {
+    throw new Error("Não foi possível calcular o saldo dos benefícios da assinatura.");
+  }
+
+  const benefitById = new Map(serviceBenefits.map((benefit: any) => [benefit.id, benefit]));
+  const benefitByService = new Map<string, any>();
+  for (const benefit of serviceBenefits) {
+    if (!benefitByService.has(benefit.service_id)) {
+      benefitByService.set(benefit.service_id, benefit);
+    }
+  }
+  const usedByBenefit = new Map<string, number>();
+  const consumedAppointmentIds = new Set<string>();
+  for (const usage of usages ?? []) {
+    if (usage.appointment_id) consumedAppointmentIds.add(usage.appointment_id);
+    const benefit =
+      (usage.benefit_id ? benefitById.get(usage.benefit_id) : null) ??
+      (usage.service_id ? benefitByService.get(usage.service_id) : null);
+    if (!benefit) continue;
+    usedByBenefit.set(
+      benefit.id,
+      (usedByBenefit.get(benefit.id) ?? 0) + Math.max(0, Number(usage.quantity ?? 0)),
+    );
+  }
+
+  const reservedByBenefit = new Map<string, number>();
+  for (const reservation of reservations ?? []) {
+    if (consumedAppointmentIds.has(reservation.id)) continue;
+    const benefit = benefitByService.get(reservation.service_id);
+    if (!benefit) continue;
+    reservedByBenefit.set(benefit.id, (reservedByBenefit.get(benefit.id) ?? 0) + 1);
+  }
+
+  return serviceBenefits.map((benefit: any) => {
+    const quantity = benefit.quantity == null ? null : Number(benefit.quantity);
+    const usedQuantity = usedByBenefit.get(benefit.id) ?? 0;
+    const reservedQuantity = reservedByBenefit.get(benefit.id) ?? 0;
+    return {
+      ...benefit,
+      quantity,
+      used_quantity: usedQuantity,
+      reserved_quantity: reservedQuantity,
+      available_quantity:
+        quantity == null ? null : Math.max(0, quantity - usedQuantity - reservedQuantity),
+      cycle_start: cycle.start,
+      cycle_end: cycle.end,
+    } as SubscriptionBenefitBalance;
+  });
 }
 
 // Public: get barbershop info by slug for the booking page.
@@ -143,38 +438,80 @@ export const getPublicTenant = createServerFn({ method: "GET" })
     };
   });
 
-// Public: identify a subscriber using CPF and return only booking/renewal data.
+// Identify the signed-in customer subscription without exposing CPF in the browser.
 export const validateVip = createServerFn({ method: "POST" })
-  .inputValidator((d: { tenantId: string; cpf: string }) =>
+  .inputValidator((d: { tenantId: string; subscriptionId?: string }) =>
     z
-      .object({
-        tenantId: z.string().uuid(),
-        cpf: z.string(),
-      })
+      .object({ tenantId: z.string().uuid(), subscriptionId: z.string().uuid().optional() })
       .parse(d),
   )
   .handler(async ({ data }) => {
     const supabase = await pub();
     const db = supabase as any;
-    const cpf = cleanCpf(data.cpf);
-    if (cpf.length !== 11) return null;
+    const { requireCustomerSession } = await import("@/lib/customer-auth.server");
+    const customer = await requireCustomerSession(data.tenantId);
+    const cpf = cleanCpf(customer.cpf);
+    const whatsapp = cleanBrazilianPhone(customer.whatsapp);
 
-    const { data: contracts, error } = await db
+    let { data: contracts, error } = await db
       .from("client_subscriptions")
       .select("*")
       .eq("tenant_id", data.tenantId)
-      .eq("cpf", cpf)
+      .eq("client_id", customer.clientId)
       .order("created_at", { ascending: false })
       .limit(10);
 
-    if (error || !contracts || contracts.length === 0) return null;
-    const matchingContracts = contracts;
+    if (!error && (!contracts || contracts.length === 0)) {
+      const fallback = await db
+        .from("client_subscriptions")
+        .select("*")
+        .eq("tenant_id", data.tenantId)
+        .eq("cpf", cpf)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      contracts = fallback.data;
+      error = fallback.error;
+    }
+    if (error) throw new Error("Não foi possível consultar sua assinatura.");
+
+    const matchingContracts = (contracts ?? []).filter(
+      (item: any) =>
+        (item.client_id
+          ? item.client_id === customer.clientId
+          : cleanCpf(String(item.cpf ?? "")) === cpf &&
+            cleanBrazilianPhone(String(item.whatsapp ?? "")) === whatsapp),
+    );
     const today = saoPauloToday();
+    const planIds = [...new Set(matchingContracts.map((item: any) => item.plan_id).filter(Boolean))];
+    const planListResult =
+      planIds.length > 0
+        ? await db
+            .from("subscription_plans")
+            .select("id,name")
+            .eq("tenant_id", data.tenantId)
+            .in("id", planIds)
+        : { data: [], error: null };
+    if (planListResult.error) {
+      throw new Error("Não foi possível identificar os planos das suas assinaturas.");
+    }
+    const planNames = new Map(
+      (planListResult.data ?? []).map((plan: any) => [plan.id, plan.name]),
+    );
+    const requestedContract = data.subscriptionId
+      ? matchingContracts.find((item: any) => item.id === data.subscriptionId)
+      : null;
+    if (data.subscriptionId && !requestedContract) {
+      throw new Error("A assinatura selecionada não pertence ao seu cadastro.");
+    }
     const contract =
+      requestedContract ??
       matchingContracts.find(
         (item: any) =>
-          item.status === "active" && (!item.ends_at || item.ends_at >= today),
+          item.status === "active" &&
+          (!item.starts_at || item.starts_at <= today) &&
+          (!item.ends_at || item.ends_at >= today),
       ) ??
+      matchingContracts.find((item: any) => item.status === "pending_activation") ??
       matchingContracts.find((item: any) => item.status === "overdue") ??
       matchingContracts.find((item: any) => item.status === "active") ??
       matchingContracts[0] ??
@@ -199,8 +536,9 @@ export const validateVip = createServerFn({ method: "POST" })
 
       let contractStatus = contract.status;
       let renewal =
-        ["active", "overdue", "expired"].includes(contractStatus) &&
-        plan.billing_cycle !== "one_time"
+        contractStatus === "pending_activation" ||
+        (["active", "overdue", "expired"].includes(contractStatus) &&
+          plan.billing_cycle !== "one_time")
           ? await findOpenSubscriptionCharge(db, contract)
           : null;
 
@@ -278,7 +616,9 @@ export const validateVip = createServerFn({ method: "POST" })
             : Promise.resolve(),
         ]);
         renewal = { ...renewal, status: "overdue" };
-        contractStatus = "overdue";
+        if (contractStatus !== "pending_activation") {
+          contractStatus = "overdue";
+        }
       }
 
       let payment: { pix_key: string; pix_holder: string | null; city: string | null } | null =
@@ -302,6 +642,74 @@ export const validateVip = createServerFn({ method: "POST" })
       const serviceIds = (benefits ?? [])
         .filter((benefit: any) => benefit.benefit_type === "service" && benefit.service_id)
         .map((benefit: any) => benefit.service_id);
+      let cycleBlockReason: string | null = null;
+      let serviceBenefitBalances: SubscriptionBenefitBalance[] = [];
+      try {
+        serviceBenefitBalances = await loadSubscriptionBenefitBalances(
+          db,
+          data.tenantId,
+          contract,
+          plan,
+          benefits ?? [],
+          today,
+        );
+      } catch (cycleError: any) {
+        cycleBlockReason =
+          cycleError?.message ?? "O ciclo atual desta assinatura ainda não está confirmado.";
+      }
+      const balanceByBenefitId = new Map(
+        serviceBenefitBalances.map((benefit) => [benefit.id, benefit]),
+      );
+      const benefitsWithBalance = (benefits ?? []).map(
+        (benefit: any) => balanceByBenefitId.get(benefit.id) ?? benefit,
+      );
+      const reservedSessions = await countReservedSubscriptionSessions(
+        db,
+        data.tenantId,
+        contract.id,
+        serviceIds,
+      );
+      const sessionsRemaining =
+        contract.sessions_remaining == null ? null : Number(contract.sessions_remaining);
+      const availableSessions =
+        sessionsRemaining == null
+          ? null
+          : Math.max(0, sessionsRemaining - reservedSessions);
+      let bookingBlockReason: string | null = null;
+      if (contractStatus === "pending_activation") {
+        bookingBlockReason =
+          "Sua assinatura aguarda a confirmação do primeiro pagamento pelo salão.";
+      } else if (contractStatus !== "active") {
+        bookingBlockReason = "Sua assinatura precisa ser regularizada antes de um agendamento VIP.";
+      } else if (contract.starts_at && contract.starts_at > today) {
+        bookingBlockReason = `Sua assinatura começa em ${contract.starts_at
+          .split("-")
+          .reverse()
+          .join("/")}.`;
+      } else if (contract.ends_at && contract.ends_at < today) {
+        bookingBlockReason = "Sua assinatura está fora do período de validade.";
+      } else if (cycleBlockReason) {
+        bookingBlockReason = cycleBlockReason;
+      }
+      const availableSubscriptions = matchingContracts.map((item: any) => {
+        const status = item.id === contract.id ? contractStatus : item.status;
+        const eligibleNow =
+          status === "active" &&
+          (!item.starts_at || item.starts_at <= today) &&
+          (!item.ends_at || item.ends_at >= today);
+        return {
+          id: item.id,
+          plan_id: item.plan_id,
+          plan_name: planNames.get(item.plan_id) ?? "Assinatura",
+          status,
+          starts_at: item.starts_at,
+          ends_at: item.ends_at,
+          sessions_remaining:
+            item.sessions_remaining == null ? null : Number(item.sessions_remaining),
+          eligible_now: eligibleNow,
+        };
+      });
+
       return {
         id: contract.id,
         subscription_id: contract.id,
@@ -310,9 +718,15 @@ export const validateVip = createServerFn({ method: "POST" })
         price: contract.price,
         whatsapp: contract.whatsapp,
         next_due_at: contract.next_due_at,
+        starts_at: contract.starts_at,
         ends_at: contract.ends_at,
-        sessions_remaining: contract.sessions_remaining,
-        benefits: benefits ?? [],
+        sessions_remaining: sessionsRemaining,
+        reserved_sessions: reservedSessions,
+        available_sessions: availableSessions,
+        can_book: bookingBlockReason == null,
+        booking_block_reason: bookingBlockReason,
+        benefits: benefitsWithBalance,
+        available_subscriptions: availableSubscriptions,
         allow_extras: plan.allow_extras,
         included_services_only: plan.included_services_only,
         discount_value: plan.discount_allowed ? plan.discount_value : 0,
@@ -338,7 +752,7 @@ export const validateVip = createServerFn({ method: "POST" })
           name: plan.name,
           services: serviceIds,
           professional_id: "",
-          benefits: benefits ?? [],
+          benefits: benefitsWithBalance,
         }),
       };
     }
@@ -383,8 +797,11 @@ export const prepareSubscriptionProofUpload = createServerFn({ method: "POST" })
       .eq("id", charge.subscription_id)
       .eq("tenant_id", charge.tenant_id)
       .maybeSingle();
-    if (!contract || !["active", "overdue", "expired"].includes(contract.status)) {
-      throw new Error("Esta assinatura não está disponível para renovação.");
+    if (
+      !contract ||
+      !["pending_activation", "active", "overdue", "expired"].includes(contract.status)
+    ) {
+      throw new Error("Esta assinatura não está disponível para pagamento ou renovação.");
     }
 
     const { data: plan } = await db
@@ -393,7 +810,11 @@ export const prepareSubscriptionProofUpload = createServerFn({ method: "POST" })
       .eq("id", contract.plan_id)
       .eq("tenant_id", charge.tenant_id)
       .maybeSingle();
-    if (!plan || plan.billing_cycle === "one_time" || !plan.pix_enabled) {
+    if (
+      !plan ||
+      (contract.status !== "pending_activation" && plan.billing_cycle === "one_time") ||
+      !plan.pix_enabled
+    ) {
       throw new Error("O pagamento online não está habilitado para este plano.");
     }
 
@@ -474,8 +895,11 @@ export const submitSubscriptionProof = createServerFn({ method: "POST" })
       .eq("id", charge.subscription_id)
       .eq("tenant_id", charge.tenant_id)
       .maybeSingle();
-    if (!contract || !["active", "overdue", "expired"].includes(contract.status)) {
-      throw new Error("Esta assinatura não está disponível para renovação.");
+    if (
+      !contract ||
+      !["pending_activation", "active", "overdue", "expired"].includes(contract.status)
+    ) {
+      throw new Error("Esta assinatura não está disponível para pagamento ou renovação.");
     }
 
     const { data: plan } = await db
@@ -484,7 +908,11 @@ export const submitSubscriptionProof = createServerFn({ method: "POST" })
       .eq("id", contract.plan_id)
       .eq("tenant_id", charge.tenant_id)
       .maybeSingle();
-    if (!plan || plan.billing_cycle === "one_time" || !plan.pix_enabled) {
+    if (
+      !plan ||
+      (contract.status !== "pending_activation" && plan.billing_cycle === "one_time") ||
+      !plan.pix_enabled
+    ) {
       throw new Error("O pagamento online não está habilitado para este plano.");
     }
 
@@ -609,7 +1037,7 @@ export const getBookedSlots = createServerFn({ method: "POST" })
       .eq("professional_id", data.professionalId)
       .gte("start_at", start)
       .lte("start_at", end)
-      .neq("status", "cancelled");
+      .not("status", "in", "(cancelled,canceled,noshow)");
     if (error) throw new Error(error.message);
     return appts ?? [];
   });
@@ -620,20 +1048,20 @@ export const createBooking = createServerFn({ method: "POST" })
     tenantId: z.string().uuid(),
     professionalId: z.string().uuid(),
     serviceId: z.string().uuid(),
-    clientName: z.string().min(2),
-    clientWhatsapp: z.string().min(8),
-    startAt: z.string(),
+    startAt: z.string().datetime(),
     isVip: z.boolean().default(false),
-    vipCpf: z.string().optional(),
+    subscriptionId: z.string().uuid().optional(),
   }).parse(d))
   .handler(async ({ data }) => {
     const supabase = await pub();
     const db = supabase as any;
+    const { requireCustomerSession } = await import("@/lib/customer-auth.server");
+    const customer = await requireCustomerSession(data.tenantId);
     const cancellationToken = crypto.randomUUID();
 
     const [{ data: t }, { data: settings }, { data: svc }, { data: pro }] = await Promise.all([
       supabase.from("tenants").select("id,name,whatsapp,slot_minutes").eq("id", data.tenantId).maybeSingle(),
-      supabase.from("tenant_settings").select("vip_days,work_days,open_hour,close_hour,lunch_start,lunch_end,vip_mode").eq("tenant_id", data.tenantId).maybeSingle(),
+      supabase.from("tenant_settings").select("vip_days,work_days,open_hour,close_hour,lunch_start,lunch_end,vip_mode,closed_dates").eq("tenant_id", data.tenantId).maybeSingle(),
       supabase
         .from("services")
         .select("id,name,duration_min,price,vip_only")
@@ -642,34 +1070,66 @@ export const createBooking = createServerFn({ method: "POST" })
         .maybeSingle(),
       supabase
         .from("professionals")
-        .select("id,commission_pct")
+        .select("id,commission_pct,work_days,blocked_dates,lunch_start,lunch_end")
         .eq("id", data.professionalId)
         .eq("tenant_id", data.tenantId)
         .eq("active", true)
         .maybeSingle(),
     ]);
     if (!t || !svc || !pro) throw new Error("Barbearia, serviço ou profissional inválido");
+    if (svc.vip_only && !data.isVip) {
+      throw new Error("Este serviço é exclusivo para assinantes VIP com assinatura ativa.");
+    }
+
+    const start = new Date(data.startAt);
+    const end = new Date(start.getTime() + (svc.duration_min ?? t.slot_minutes ?? 30) * 60000);
+    const bookingDate = saoPauloDate(start);
+    if (start.getTime() <= Date.now()) {
+      throw new Error("Escolha um horário futuro para realizar o agendamento.");
+    }
 
     let activeSubscription: any = null;
     let coveredBySubscription = false;
     if (data.isVip) {
-      const cpf = data.vipCpf?.replace(/\D/g, "") ?? "";
-      if (cpf.length !== 11) throw new Error("Informe um CPF válido para usar a assinatura.");
-      const { data: contracts } = await db
+      if (!data.subscriptionId) {
+        throw new Error("Escolha qual assinatura deseja usar neste agendamento VIP.");
+      }
+      const { data: selectedSubscription, error: subscriptionError } = await db
         .from("client_subscriptions")
         .select("*")
         .eq("tenant_id", data.tenantId)
-        .eq("cpf", cpf)
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
-        .limit(10);
-      const cleanWhatsapp = cleanBrazilianPhone(data.clientWhatsapp);
-      activeSubscription =
-        (contracts ?? []).find(
-          (item: any) =>
-            cleanBrazilianPhone(String(item.whatsapp ?? "")) === cleanWhatsapp,
-        ) ?? null;
-      if (!activeSubscription) throw new Error("Assinatura ativa não encontrada.");
+        .eq("id", data.subscriptionId)
+        .maybeSingle();
+      if (subscriptionError) throw new Error("Não foi possível consultar a assinatura escolhida.");
+      if (!selectedSubscription) {
+        throw new Error("A assinatura escolhida não foi encontrada.");
+      }
+
+      const cleanCpfValue = cleanCpf(customer.cpf);
+      const cleanWhatsapp = cleanBrazilianPhone(customer.whatsapp);
+      const belongsToCustomer =
+        selectedSubscription.client_id === customer.clientId ||
+        (!selectedSubscription.client_id &&
+          ((cleanCpfValue.length === 11 &&
+            cleanCpf(String(selectedSubscription.cpf ?? "")) === cleanCpfValue) ||
+            cleanBrazilianPhone(String(selectedSubscription.whatsapp ?? "")) === cleanWhatsapp));
+      if (!belongsToCustomer) {
+        throw new Error("A assinatura escolhida não pertence ao seu cadastro.");
+      }
+      activeSubscription = selectedSubscription;
+      if (activeSubscription.status !== "active") {
+        if (activeSubscription.status === "pending_activation") {
+          throw new Error(
+            "Sua assinatura aguarda a confirmação do primeiro pagamento pelo salão.",
+          );
+        }
+        if (activeSubscription.status === "overdue") {
+          throw new Error(
+            "Sua assinatura está vencida. Envie o comprovante e aguarde a confirmação do salão.",
+          );
+        }
+        throw new Error("A assinatura escolhida não está ativa para agendamentos VIP.");
+      }
       const { data: overdueCharges } = await db
         .from("subscription_charges")
         .select("id,due_date")
@@ -689,11 +1149,11 @@ export const createBooking = createServerFn({ method: "POST" })
           "Sua assinatura possui uma renovação vencida. Envie o comprovante e aguarde a confirmação do salão.",
         );
       }
-      if (
-        activeSubscription.ends_at &&
-        activeSubscription.ends_at < saoPauloToday()
-      ) {
-        throw new Error("Esta assinatura está fora do período de validade.");
+      if (activeSubscription.starts_at && activeSubscription.starts_at > bookingDate) {
+        throw new Error("Sua assinatura ainda não estará vigente na data escolhida.");
+      }
+      if (activeSubscription.ends_at && activeSubscription.ends_at < bookingDate) {
+        throw new Error("Sua assinatura não estará vigente na data escolhida.");
       }
 
       const [{ data: plan }, { data: benefits }] = await Promise.all([
@@ -705,7 +1165,7 @@ export const createBooking = createServerFn({ method: "POST" })
           .maybeSingle(),
         db
           .from("subscription_plan_benefits")
-          .select("id,service_id,benefit_type,active")
+          .select("id,service_id,benefit_type,name,quantity,active")
           .eq("plan_id", activeSubscription.plan_id)
           .eq("tenant_id", data.tenantId)
           .eq("active", true),
@@ -714,16 +1174,87 @@ export const createBooking = createServerFn({ method: "POST" })
         (benefit: any) =>
           benefit.benefit_type === "service" && benefit.service_id === data.serviceId,
       );
-      if (coveredBySubscription && activeSubscription.sessions_remaining === 0)
-        throw new Error("Sua assinatura não possui sessões disponíveis.");
+      if (!plan) throw new Error("O plano desta assinatura não foi encontrado.");
+      const benefitsWithBalance = await loadSubscriptionBenefitBalances(
+        db,
+        data.tenantId,
+        activeSubscription,
+        plan,
+        benefits ?? [],
+        bookingDate,
+      );
+      if (coveredBySubscription) {
+        const selectedBenefit = benefitsWithBalance.find(
+          (benefit) => benefit.service_id === data.serviceId,
+        );
+        if (
+          selectedBenefit?.available_quantity != null &&
+          selectedBenefit.available_quantity <= 0
+        ) {
+          throw new Error(
+            `O benefício "${selectedBenefit.name}" não possui saldo livre neste ciclo.`,
+          );
+        }
+        const coveredServiceIds = (benefits ?? [])
+          .filter((benefit: any) => benefit.benefit_type === "service" && benefit.service_id)
+          .map((benefit: any) => benefit.service_id);
+        const reservedSessions = await countReservedSubscriptionSessions(
+          db,
+          data.tenantId,
+          activeSubscription.id,
+          coveredServiceIds,
+        );
+        const sessionsRemaining =
+          activeSubscription.sessions_remaining == null
+            ? null
+            : Number(activeSubscription.sessions_remaining);
+        const availableSessions =
+          sessionsRemaining == null
+            ? null
+            : Math.max(0, sessionsRemaining - reservedSessions);
+        if (availableSessions != null && availableSessions <= 0) {
+          throw new Error(
+            "Todas as sessões disponíveis já foram usadas ou estão reservadas em outros agendamentos.",
+          );
+        }
+      }
       if (!coveredBySubscription && plan?.included_services_only && !plan?.allow_extras)
         throw new Error("Este serviço não está incluído na sua assinatura.");
     }
 
-    const start = new Date(data.startAt);
-    const end = new Date(start.getTime() + (svc.duration_min ?? t.slot_minutes ?? 30) * 60000);
+    const bookingDayAtNoonUtc = new Date(`${bookingDate}T12:00:00Z`);
+    const dow = ((bookingDayAtNoonUtc.getUTCDay() + 6) % 7) + 1; // 1=Mon..7=Sun
+    if (!includesBookingWeekday(settings?.work_days, dow)) {
+      throw new Error("O salão não funciona no dia escolhido.");
+    }
+    if (!includesBookingWeekday(pro.work_days, dow)) {
+      throw new Error("O profissional não atende no dia escolhido.");
+    }
+    if ((settings?.closed_dates ?? []).includes(bookingDate)) {
+      throw new Error("O salão está fechado na data escolhida.");
+    }
+    if ((pro.blocked_dates ?? []).includes(bookingDate)) {
+      throw new Error("O profissional não está disponível na data escolhida.");
+    }
 
-    const dow = ((start.getUTCDay() + 6) % 7) + 1; // 1=Mon..7=Sun
+    const openingMinutes = configuredTimeMinutes(settings?.open_hour, 8);
+    const closingMinutes = configuredTimeMinutes(settings?.close_hour, 20);
+    const startMinutes = saoPauloTimeMinutes(start);
+    const endMinutes = saoPauloTimeMinutes(end);
+    if (
+      saoPauloDate(end) !== bookingDate ||
+      startMinutes < openingMinutes ||
+      endMinutes > closingMinutes
+    ) {
+      throw new Error("O horário escolhido está fora do funcionamento do salão.");
+    }
+
+    const lunchStart = configuredTimeMinutes(pro.lunch_start ?? settings?.lunch_start, 12);
+    const lunchEnd = configuredTimeMinutes(pro.lunch_end ?? settings?.lunch_end, 13);
+    if (lunchEnd > lunchStart && startMinutes < lunchEnd && endMinutes > lunchStart) {
+      throw new Error("O horário escolhido coincide com o intervalo de almoço.");
+    }
+
     const vipDays: number[] = (settings?.vip_days as number[] | null) ?? [1,2,3,4];
     const vipMode = (settings as any)?.vip_mode ?? "strict";
     if (vipMode === "strict" && vipDays.includes(dow) && !data.isVip) {
@@ -741,36 +1272,27 @@ export const createBooking = createServerFn({ method: "POST" })
       .eq("professional_id", data.professionalId)
       .lt("start_at", end.toISOString())
       .gt("end_at", start.toISOString())
-      .neq("status", "cancelled");
+      .not("status", "in", "(cancelled,canceled,noshow)");
     if (conflicts && conflicts.length > 0) throw new Error("Este horário já está ocupado. Escolha outro.");
 
-    // Upsert client
-    const cleanWhatsapp = data.clientWhatsapp.replace(/\D/g, "");
-    let { data: existingClient } = await supabase.from("clients").select("id,full_name,is_subscriber").eq("tenant_id", data.tenantId).eq("whatsapp", cleanWhatsapp).maybeSingle();
-    let clientId = activeSubscription?.client_id ?? existingClient?.id;
-    if (!clientId) {
-      const { data: newClient, error: errClient } = await supabase.from("clients").insert({
-        tenant_id: data.tenantId,
-        full_name: data.clientName,
-        whatsapp: cleanWhatsapp,
-        is_subscriber: data.isVip,
-      } as any).select("id").single();
-      if (!errClient && newClient) clientId = newClient.id;
-    } else {
-      // Always update client details to keep the admin panel updated with full_name
-      await supabase.from("clients").update({
-        full_name: data.clientName,
-        is_subscriber: data.isVip ? true : existingClient.is_subscriber,
-      }).eq("id", clientId);
+    const cleanWhatsapp = cleanBrazilianPhone(customer.whatsapp);
+    const clientId = customer.clientId;
+    if (data.isVip) {
+      await supabase
+        .from("clients")
+        .update({ is_subscriber: true })
+        .eq("id", clientId)
+        .eq("tenant_id", data.tenantId);
     }
 
     const { data: appt, error } = await supabase.from("appointments").insert({
       tenant_id: data.tenantId,
       professional_id: data.professionalId,
       service_id: data.serviceId,
-      client_name: data.clientName,
+      client_name: customer.fullName,
       client_whatsapp: cleanWhatsapp,
-      client_id: clientId || null,
+      client_id: clientId,
+      subscription_id: activeSubscription?.id ?? null,
       start_at: start.toISOString(),
       end_at: end.toISOString(),
       status: "confirmed",
@@ -789,8 +1311,9 @@ export const createBooking = createServerFn({ method: "POST" })
       await syncAppointmentComanda(supabase, {
         appointmentId: appt.id,
         tenantId: data.tenantId,
-        clientId: clientId || null,
-        clientName: data.clientName,
+        subscriptionId: activeSubscription?.id ?? null,
+        clientId,
+        clientName: customer.fullName,
         professionalId: data.professionalId,
         serviceIds: [data.serviceId],
         services: [svc],

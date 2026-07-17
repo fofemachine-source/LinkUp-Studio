@@ -15,7 +15,6 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { toast } from "sonner";
-import defaultBookingHero from "@/assets/barber-hero.png.asset.json";
 import {
   BackgroundFramingDialog,
   type BackgroundFramingFrames,
@@ -57,6 +56,7 @@ type IdentityTenant = {
   subtitle: string | null;
   logo_url: string | null;
   banner_url: string | null;
+  primary_color: string | null;
 };
 
 export type ImmersiveBackgroundEditorProps = {
@@ -261,17 +261,13 @@ export function ImmersiveBackgroundEditor({
     });
   }, [draft, removeRequested, sourceFile]);
 
-  const systemFallbackUrl = tenant.banner_url ?? defaultBookingHero.url;
-  const previewFallback = removeRequested
-    ? systemFallbackUrl
-    : (localPreviewUrl ?? sourcePreviewUrl ?? systemFallbackUrl);
+  const previewFallback = removeRequested ? null : (localPreviewUrl ?? sourcePreviewUrl ?? null);
   const thumbnailUrl =
     localPreviewUrl ??
     (!removeRequested ? sourcePreviewUrl : null) ??
     (!removeRequested
       ? getPublicBrandingUrl(readNullableString(draft, "background_mobile_path"))
-      : null) ??
-    systemFallbackUrl;
+      : null);
   const framingImageUrl =
     localPreviewUrl ??
     (!removeRequested ? sourcePreviewUrl : null) ??
@@ -280,8 +276,7 @@ export function ImmersiveBackgroundEditor({
           readNullableString(draft, "background_desktop_path") ??
             readNullableString(draft, "background_mobile_path"),
         )
-      : null) ??
-    systemFallbackUrl;
+      : null);
   const hasConfiguredImage =
     Boolean(sourceFile) ||
     (!removeRequested &&
@@ -944,6 +939,7 @@ function BookingPreview({
       <ImmersiveBackground
         branding={branding}
         fallbackUrl={fallbackUrl}
+        accentColor={tenant.primary_color}
         previewViewport={viewport}
         className="absolute inset-0 h-full w-full"
       />
