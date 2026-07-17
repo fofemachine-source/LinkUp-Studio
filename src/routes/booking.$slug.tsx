@@ -343,9 +343,17 @@ function BookingPage() {
     }
   } catch(e){}
   const coveredServiceIds = new Set(parsedVipPlan.services ?? []);
-  const availableProsForService = chosenService?.vip_only && !isVip 
-    ? [] 
-    : professionals;
+  const availableProsForService = (() => {
+    let pros = chosenService?.vip_only && !isVip ? [] : professionals;
+    if (isVip && chosenService?.name?.toLowerCase().includes("corte")) {
+      pros = pros.filter(
+        (p: any) =>
+          p.full_name?.toLowerCase().includes("françois") ||
+          p.full_name?.toLowerCase().includes("francois")
+      );
+    }
+    return pros;
+  })();
 
   const timeSlots = date && slotsQuery.data ? buildSlots(date, settings, slotMin, chosenService?.duration_min ?? slotMin, slotsQuery.data) : [];
   const selectedTimeIsAvailable = timeSlots.some(
@@ -660,7 +668,25 @@ function BookingPage() {
             <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
             <div className="grid sm:grid-cols-2 gap-3">
               {services.filter((s: any) => !s.vip_only || isVip).map((s: any) => (
-                <button key={s.id} onClick={() => { setServiceId(s.id); setProId(""); setDate(undefined); setTime(""); setStep("pro"); }} className={`text-left p-4 rounded-xl border-2 transition ${serviceId === s.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
+                <button key={s.id} onClick={() => {
+                  setServiceId(s.id);
+                  setDate(undefined);
+                  setTime("");
+                  let pros = s.vip_only && !isVip ? [] : professionals;
+                  if (isVip && s.name.toLowerCase().includes("corte")) {
+                    pros = pros.filter((p: any) =>
+                      p.full_name?.toLowerCase().includes("françois") ||
+                      p.full_name?.toLowerCase().includes("francois")
+                    );
+                  }
+                  if (pros.length === 1) {
+                    setProId(pros[0].id);
+                    setStep("date");
+                  } else {
+                    setProId("");
+                    setStep("pro");
+                  }
+                }} className={`text-left p-4 rounded-xl border-2 transition ${serviceId === s.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
                   <div className="flex items-center justify-between gap-2"><div className="font-medium">{s.name}</div>{isVip && coveredServiceIds.has(s.id) ? <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-400">INCLUSO</span> : s.vip_only ? <Crown className="h-4 w-4 text-primary" /> : null}</div>
                   <div className="text-xs text-muted-foreground mt-1">{s.duration_min} min</div>
                   <div className="font-semibold text-primary mt-2">{isVip && coveredServiceIds.has(s.id) ? "Coberto pela assinatura" : brl(s.price)}</div>
