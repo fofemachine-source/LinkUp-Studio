@@ -7,6 +7,42 @@ async function pub() {
   return supabaseAdmin;
 }
 
+function isMissingPostgrestColumn(error: any, column: string) {
+  const message = String(error?.message ?? "");
+  return (
+    error?.code === "42703" ||
+    error?.code === "PGRST204" ||
+    (message.includes(column) && /does not exist|schema cache|could not find/i.test(message))
+  );
+}
+
+async function loadPublicTenantSettings(supabase: any, tenantId: string) {
+  const settingsWithClosedDates = await supabase
+    .from("tenant_settings")
+    .select("work_days,open_hour,close_hour,lunch_start,lunch_end,vip_days,closed_dates")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (!settingsWithClosedDates.error) return settingsWithClosedDates;
+  if (!isMissingPostgrestColumn(settingsWithClosedDates.error, "closed_dates")) {
+    throw new Error(settingsWithClosedDates.error.message);
+  }
+
+  const legacySettings = await supabase
+    .from("tenant_settings")
+    .select("work_days,open_hour,close_hour,lunch_start,lunch_end,vip_days")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (legacySettings.error) throw new Error(legacySettings.error.message);
+
+  return {
+    ...legacySettings,
+    data: legacySettings.data
+      ? { ...legacySettings.data, closed_dates: [] as string[] }
+      : legacySettings.data,
+  };
+}
+
 const subscriptionProofTypes = [
   "image/jpeg",
   "image/png",
@@ -73,20 +109,19 @@ async function findOpenSubscriptionCharge(db: any, contract: any) {
 
 // Public: get barbershop info by slug for the booking page.
 export const getPublicTenant = createServerFn({ method: "GET" })
-  .inputValidator((d: { slug: string }) => z.object({ slug: z.string() }).parse(d))
+  .inputValidator((d: { slug: string; freshAt?: number }) =>
+    z.object({ slug: z.string(), freshAt: z.number().optional() }).parse(d),
+  )
   .handler(async ({ data }) => {
     const supabase = await pub();
     const db = supabase as any;
-    const { data: t } = await supabase.from("tenants").select("id,name,subtitle,logo_url,banner_url,slug,primary_color,slot_minutes,whatsapp,city").eq("slug", data.slug).eq("status", "active").maybeSingle();
+    const { data: t, error: tenantError } = await supabase.from("tenants").select("id,name,subtitle,logo_url,banner_url,slug,primary_color,slot_minutes,whatsapp,city").eq("slug", data.slug).eq("status", "active").maybeSingle();
+    if (tenantError) throw new Error(tenantError.message);
     if (!t) return null;
-    const [{ data: pros }, { data: svcs }, { data: settings }, { data: branding }] = await Promise.all([
-      supabase.from("professionals").select("id,full_name,photo_url,role_label").eq("tenant_id", t.id).eq("active", true).order("full_name"),
+    const [professionalsResult, servicesResult, settingsResult, brandingResult] = await Promise.all([
+      supabase.from("professionals").select("id,full_name,photo_url,role_label,work_days,blocked_dates").eq("tenant_id", t.id).eq("active", true).order("full_name"),
       supabase.from("services").select("id,name,price,duration_min,vip_only").eq("tenant_id", t.id).eq("active", true).order("name"),
-      supabase
-        .from("tenant_settings")
-        .select("work_days,open_hour,close_hour,lunch_start,lunch_end,vip_days,closed_dates")
-        .eq("tenant_id", t.id)
-        .maybeSingle(),
+      loadPublicTenantSettings(supabase, t.id),
       db
         .from("tenant_booking_branding")
         .select(
@@ -95,12 +130,16 @@ export const getPublicTenant = createServerFn({ method: "GET" })
         .eq("tenant_id", t.id)
         .maybeSingle(),
     ]);
+    if (professionalsResult.error) throw new Error(professionalsResult.error.message);
+    if (servicesResult.error) throw new Error(servicesResult.error.message);
+    if (brandingResult.error) throw new Error(brandingResult.error.message);
+
     return {
       tenant: t,
-      professionals: pros ?? [],
-      services: svcs ?? [],
-      settings,
-      branding,
+      professionals: professionalsResult.data ?? [],
+      services: servicesResult.data ?? [],
+      settings: settingsResult.data,
+      branding: brandingResult.data,
     };
   });
 
@@ -568,7 +607,7 @@ export const getBookedSlots = createServerFn({ method: "POST" })
     const supabase = await pub();
     const start = new Date(data.date + "T00:00:00").toISOString();
     const end = new Date(data.date + "T23:59:59").toISOString();
-    const { data: appts } = await supabase
+    const { data: appts, error } = await supabase
       .from("appointments")
       .select("start_at,end_at")
       .eq("tenant_id", data.tenantId)
@@ -576,6 +615,7 @@ export const getBookedSlots = createServerFn({ method: "POST" })
       .gte("start_at", start)
       .lte("start_at", end)
       .neq("status", "cancelled");
+    if (error) throw new Error(error.message);
     return appts ?? [];
   });
 

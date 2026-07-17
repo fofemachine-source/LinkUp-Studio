@@ -777,6 +777,7 @@ export type Database = {
       tenant_settings: {
         Row: {
           close_hour: number | null
+          closed_dates: string[]
           lunch_end: number | null
           lunch_start: number | null
           message_client_template: string | null
@@ -792,6 +793,7 @@ export type Database = {
         }
         Insert: {
           close_hour?: number | null
+          closed_dates?: string[]
           lunch_end?: number | null
           lunch_start?: number | null
           message_client_template?: string | null
@@ -807,6 +809,7 @@ export type Database = {
         }
         Update: {
           close_hour?: number | null
+          closed_dates?: string[]
           lunch_end?: number | null
           lunch_start?: number | null
           message_client_template?: string | null

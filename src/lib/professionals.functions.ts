@@ -81,19 +81,30 @@ export const deleteProfessional = createServerFn({ method: "POST" })
     }
 
     if (hasHistory) {
-      const { error } = await db
+      const { data: archivedProfessional, error } = await db
         .from("professionals")
         .update({ active: false, auth_user_id: null })
         .eq("id", data.professionalId)
-        .eq("tenant_id", data.tenantId);
+        .eq("tenant_id", data.tenantId)
+        .eq("active", true)
+        .select("id, active")
+        .maybeSingle();
       if (error) throw new Error(error.message);
+      if (!archivedProfessional || archivedProfessional.active !== false) {
+        throw new Error("Não foi possível confirmar o arquivamento do profissional.");
+      }
     } else {
-      const { error } = await db
+      const { data: deletedProfessional, error } = await db
         .from("professionals")
         .delete()
         .eq("id", data.professionalId)
-        .eq("tenant_id", data.tenantId);
+        .eq("tenant_id", data.tenantId)
+        .select("id")
+        .maybeSingle();
       if (error) throw new Error(error.message);
+      if (!deletedProfessional) {
+        throw new Error("Não foi possível confirmar a exclusão do profissional.");
+      }
     }
 
     return { ok: true, archived: hasHistory };

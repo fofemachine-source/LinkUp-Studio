@@ -168,6 +168,21 @@ function ProsTab() {
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const { data } = useQuery({ queryKey: ["pros-all", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("professionals").select("*").eq("tenant_id", tenantId!).eq("active", true).order("full_name")).data ?? [] });
+  async function refreshPublicCatalog(removedProfessionalId?: string) {
+    if (removedProfessionalId) {
+      qc.setQueriesData<any>({ queryKey: ["public-tenant"] }, (current: any) => {
+        if (!current?.professionals) return current;
+        return {
+          ...current,
+          professionals: current.professionals.filter(
+            (professional: any) => professional.id !== removedProfessionalId,
+          ),
+        };
+      });
+    }
+    await qc.invalidateQueries({ queryKey: ["public-tenant"] });
+    window.localStorage.setItem("linkup:public-catalog-version", String(Date.now()));
+  }
   async function openProfessional(p: any) {
     let currentProfessional = p;
     if (tenantId) {
@@ -206,6 +221,7 @@ function ProsTab() {
         qc.invalidateQueries({ queryKey: ["pros"] }),
         qc.invalidateQueries({ queryKey: ["pos-professionals"] }),
         qc.invalidateQueries({ queryKey: ["commission-professionals"] }),
+        refreshPublicCatalog(p.id),
       ]);
     } catch (error: any) {
       toast.error(error?.message || "Não foi possível excluir o profissional.");
@@ -223,6 +239,7 @@ function ProsTab() {
             await Promise.all([
               qc.invalidateQueries({queryKey:["pros-all", tenantId]}),
               qc.invalidateQueries({queryKey:["pros"]}),
+              refreshPublicCatalog(),
             ]);
           }}/></Dialog></div>
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">

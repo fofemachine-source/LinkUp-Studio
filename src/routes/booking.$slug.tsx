@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import {
   cancelBooking,
   createBooking,
@@ -72,7 +72,18 @@ function BookingPage() {
   const prepareProofUpload = useServerFn(prepareSubscriptionProofUpload);
   const submitProof = useServerFn(submitSubscriptionProof);
 
-  const { data, isLoading } = useQuery({ queryKey: ["public-tenant", slug], queryFn: () => getTenant({ data: { slug } }) });
+  const {
+    data,
+    isLoading,
+    error: publicTenantError,
+    refetch: refetchPublicTenant,
+  } = useQuery({
+    queryKey: ["public-tenant", slug],
+    queryFn: () => getTenant({ data: { slug, freshAt: Date.now() } }),
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: "always",
+  });
   const [step, setStep] = useState<Step>("vip");
   const [isVip, setIsVip] = useState(false);
   const [cpf, setCpf] = useState("");
@@ -85,6 +96,22 @@ function BookingPage() {
   const [phone, setPhone] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [bookingCancelled, setBookingCancelled] = useState(false);
+
+  useEffect(() => {
+    const refreshCatalog = (event: StorageEvent) => {
+      if (event.key === "linkup:public-catalog-version") {
+        void refetchPublicTenant();
+      }
+    };
+    window.addEventListener("storage", refreshCatalog);
+    return () => window.removeEventListener("storage", refreshCatalog);
+  }, [refetchPublicTenant]);
+
+  useEffect(() => {
+    if (step === "pro") {
+      void refetchPublicTenant();
+    }
+  }, [step, refetchPublicTenant]);
 
   const slotsQuery = useQuery({
     queryKey: ["booked", (data as any)?.tenant?.id, proId, date ? format(date, "yyyy-MM-dd") : ""],
@@ -256,7 +283,25 @@ function BookingPage() {
     setStep("pro");
   };
 
+  const handleDateSelect = (selectedDate: Date | undefined) => {
+    setDate(selectedDate);
+    setTime("");
+  };
+
   if (isLoading) return <div className="min-h-screen grid place-items-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+  if (publicTenantError) {
+    return (
+      <div className="min-h-screen grid place-items-center p-6 text-center">
+        <div className="max-w-md space-y-4">
+          <h1 className="text-2xl font-semibold">Não foi possível carregar o agendamento</h1>
+          <p className="text-muted-foreground">
+            A vitrine está temporariamente indisponível. Tente novamente em instantes.
+          </p>
+          <Button onClick={() => void refetchPublicTenant()}>Tentar novamente</Button>
+        </div>
+      </div>
+    );
+  }
   if (!data) return <div className="min-h-screen grid place-items-center p-6 text-center"><div><h1 className="text-2xl font-semibold">Barbearia não encontrada</h1><p className="text-muted-foreground mt-2">Verifique o link de agendamento.</p></div></div>;
 
   const {
@@ -655,6 +700,7 @@ function BookingPage() {
                     <CalendarUI 
                       mode="single" 
                       selected={date} 
+                      onSelect={handleDateSelect}
                                          disabled={(d) => {
                         if (d < new Date(new Date().setHours(0,0,0,0))) return true;
 
@@ -701,13 +747,26 @@ function BookingPage() {
                        <CalendarIcon className="h-5 w-5 text-amber-500" />
                      </div>
                      <div>
-                       <h3 className="font-medium text-lg">Selecione uma data</h3>
-                       <p className="text-sm text-white/50">Escolha o melhor dia para seu atendimento.</p>
+                       <h3 className="font-medium text-lg">
+                         {date
+                           ? format(date, "EEEE, d 'de' MMMM", { locale: ptBR })
+                           : "Selecione uma data"}
+                       </h3>
+                       <p className="text-sm text-white/50">
+                         {date
+                           ? "Agora escolha um horário disponível."
+                           : "Escolha o melhor dia para seu atendimento."}
+                       </p>
                      </div>
                   </div>
                   
                   <div className="flex-1">
                     {slotsQuery.isFetching && <Loader2 className="h-5 w-5 animate-spin" />}
+                    {slotsQuery.isError && (
+                      <div className="text-sm text-red-300">
+                        Não foi possível carregar os horários. Escolha a data novamente.
+                      </div>
+                    )}
                     {date ? (
                       <>
                         <div className="grid grid-cols-4 gap-2">
