@@ -514,6 +514,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "commanda_items_commanda_tenant_fk"
+            columns: ["commanda_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "commandas"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
             foreignKeyName: "commanda_items_professional_id_fkey"
             columns: ["professional_id"]
             isOneToOne: false
@@ -564,6 +571,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "commandas"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commanda_payments_commanda_tenant_fk"
+            columns: ["commanda_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "commandas"
+            referencedColumns: ["id", "tenant_id"]
           },
           {
             foreignKeyName: "commanda_payments_tenant_id_fkey"
@@ -1501,6 +1515,605 @@ export type Database = {
           },
         ]
       }
+      platform_billing_audit_log: {
+        Row: {
+          action: string
+          actor_user_id: string | null
+          after_data: Json | null
+          before_data: Json | null
+          charge_id: string | null
+          contract_id: string | null
+          created_at: string
+          entity_id: string | null
+          entity_type: string
+          id: string
+          provider_event_id: string | null
+          source: string
+          tenant_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_user_id?: string | null
+          after_data?: Json | null
+          before_data?: Json | null
+          charge_id?: string | null
+          contract_id?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          provider_event_id?: string | null
+          source?: string
+          tenant_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string | null
+          after_data?: Json | null
+          before_data?: Json | null
+          charge_id?: string | null
+          contract_id?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          provider_event_id?: string | null
+          source?: string
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_audit_log_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_audit_log_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_audit_log_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_charges: {
+        Row: {
+          access_applied_at: string | null
+          access_reversed_at: string | null
+          amount: number
+          bank_slip_url: string | null
+          billing_type: string
+          confirmed_at: string | null
+          contract_id: string
+          coverage_end: string
+          coverage_start: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          due_date: string
+          environment: string
+          error_message: string | null
+          external_reference: string
+          id: string
+          idempotency_key: string
+          invoice_url: string | null
+          last_provider_event_at: string | null
+          last_provider_event_id: string | null
+          last_synced_at: string | null
+          plan_id: string
+          provider: string
+          provider_customer_id: string | null
+          provider_payment_id: string | null
+          provider_status: string | null
+          received_at: string | null
+          refunded_at: string | null
+          source: string
+          status: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          access_applied_at?: string | null
+          access_reversed_at?: string | null
+          amount: number
+          bank_slip_url?: string | null
+          billing_type?: string
+          confirmed_at?: string | null
+          contract_id: string
+          coverage_end: string
+          coverage_start: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date: string
+          environment: string
+          error_message?: string | null
+          external_reference: string
+          id?: string
+          idempotency_key: string
+          invoice_url?: string | null
+          last_provider_event_at?: string | null
+          last_provider_event_id?: string | null
+          last_synced_at?: string | null
+          plan_id: string
+          provider?: string
+          provider_customer_id?: string | null
+          provider_payment_id?: string | null
+          provider_status?: string | null
+          received_at?: string | null
+          refunded_at?: string | null
+          source?: string
+          status?: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          access_applied_at?: string | null
+          access_reversed_at?: string | null
+          amount?: number
+          bank_slip_url?: string | null
+          billing_type?: string
+          confirmed_at?: string | null
+          contract_id?: string
+          coverage_end?: string
+          coverage_start?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date?: string
+          environment?: string
+          error_message?: string | null
+          external_reference?: string
+          id?: string
+          idempotency_key?: string
+          invoice_url?: string | null
+          last_provider_event_at?: string | null
+          last_provider_event_id?: string | null
+          last_synced_at?: string | null
+          plan_id?: string
+          provider?: string
+          provider_customer_id?: string | null
+          provider_payment_id?: string | null
+          provider_status?: string | null
+          received_at?: string | null
+          refunded_at?: string | null
+          source?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_charges_contract_tenant_fk"
+            columns: ["contract_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_contracts"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "platform_billing_charges_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_charges_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_contracts: {
+        Row: {
+          amount_snapshot: number
+          auto_renew: boolean
+          billing_type: string
+          cancel_at_period_end: boolean
+          cancelled_at: string | null
+          created_at: string
+          created_by: string | null
+          current_period_end: string | null
+          current_period_start: string | null
+          due_day: number
+          id: string
+          interval_months_snapshot: number
+          last_paid_at: string | null
+          next_due_date: string | null
+          past_due_since: string | null
+          plan_id: string
+          starts_on: string
+          status: string
+          suspended_at: string | null
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          amount_snapshot: number
+          auto_renew?: boolean
+          billing_type?: string
+          cancel_at_period_end?: boolean
+          cancelled_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
+          due_day?: number
+          id?: string
+          interval_months_snapshot: number
+          last_paid_at?: string | null
+          next_due_date?: string | null
+          past_due_since?: string | null
+          plan_id: string
+          starts_on?: string
+          status?: string
+          suspended_at?: string | null
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          amount_snapshot?: number
+          auto_renew?: boolean
+          billing_type?: string
+          cancel_at_period_end?: boolean
+          cancelled_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
+          due_day?: number
+          id?: string
+          interval_months_snapshot?: number
+          last_paid_at?: string | null
+          next_due_date?: string | null
+          past_due_since?: string | null
+          plan_id?: string
+          starts_on?: string
+          status?: string
+          suspended_at?: string | null
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_contracts_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_contracts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_plans: {
+        Row: {
+          active: boolean
+          amount: number
+          code: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          interval_months: number
+          name: string
+          sort_order: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          active?: boolean
+          amount: number
+          code: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          interval_months?: number
+          name: string
+          sort_order?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          active?: boolean
+          amount?: number
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          interval_months?: number
+          name?: string
+          sort_order?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      platform_billing_provider_operations: {
+        Row: {
+          attempts: number
+          charge_id: string | null
+          completed_at: string | null
+          contract_id: string | null
+          created_at: string
+          environment: string
+          id: string
+          last_error: string | null
+          operation_key: string
+          operation_type: string
+          provider: string
+          provider_resource_id: string | null
+          request_fingerprint: string | null
+          request_payload: Json
+          response_payload: Json
+          started_at: string | null
+          status: string
+          tenant_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          charge_id?: string | null
+          completed_at?: string | null
+          contract_id?: string | null
+          created_at?: string
+          environment: string
+          id?: string
+          last_error?: string | null
+          operation_key: string
+          operation_type: string
+          provider?: string
+          provider_resource_id?: string | null
+          request_fingerprint?: string | null
+          request_payload?: Json
+          response_payload?: Json
+          started_at?: string | null
+          status?: string
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          charge_id?: string | null
+          completed_at?: string | null
+          contract_id?: string | null
+          created_at?: string
+          environment?: string
+          id?: string
+          last_error?: string | null
+          operation_key?: string
+          operation_type?: string
+          provider?: string
+          provider_resource_id?: string | null
+          request_fingerprint?: string | null
+          request_payload?: Json
+          response_payload?: Json
+          started_at?: string | null
+          status?: string
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_provider_operations_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_provider_operations_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_provider_operations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_settings: {
+        Row: {
+          auto_suspend: boolean
+          created_at: string
+          default_billing_type: string
+          discount_due_days: number
+          discount_percentage: number
+          enabled: boolean
+          environment: string
+          fine_percentage: number
+          grace_days: number
+          id: string
+          interest_percentage: number
+          issue_days_before: number
+          notification_disabled: boolean
+          provider: string
+          updated_at: string
+          updated_by: string | null
+          webhook_environment: string | null
+          webhook_id: string | null
+          webhook_last_synced_at: string | null
+          webhook_status: string
+        }
+        Insert: {
+          auto_suspend?: boolean
+          created_at?: string
+          default_billing_type?: string
+          discount_due_days?: number
+          discount_percentage?: number
+          enabled?: boolean
+          environment?: string
+          fine_percentage?: number
+          grace_days?: number
+          id?: string
+          interest_percentage?: number
+          issue_days_before?: number
+          notification_disabled?: boolean
+          provider?: string
+          updated_at?: string
+          updated_by?: string | null
+          webhook_environment?: string | null
+          webhook_id?: string | null
+          webhook_last_synced_at?: string | null
+          webhook_status?: string
+        }
+        Update: {
+          auto_suspend?: boolean
+          created_at?: string
+          default_billing_type?: string
+          discount_due_days?: number
+          discount_percentage?: number
+          enabled?: boolean
+          environment?: string
+          fine_percentage?: number
+          grace_days?: number
+          id?: string
+          interest_percentage?: number
+          issue_days_before?: number
+          notification_disabled?: boolean
+          provider?: string
+          updated_at?: string
+          updated_by?: string | null
+          webhook_environment?: string | null
+          webhook_id?: string | null
+          webhook_last_synced_at?: string | null
+          webhook_status?: string
+        }
+        Relationships: []
+      }
+      platform_billing_webhook_events: {
+        Row: {
+          attempts: number
+          available_at: string
+          charge_id: string | null
+          claimed_at: string | null
+          claimed_by: string | null
+          environment: string
+          event_type: string
+          external_reference: string | null
+          id: string
+          last_error: string | null
+          payload: Json
+          processed_at: string | null
+          processing_status: string
+          provider: string
+          provider_created_at: string | null
+          provider_event_id: string
+          provider_payment_id: string | null
+          received_at: string
+        }
+        Insert: {
+          attempts?: number
+          available_at?: string
+          charge_id?: string | null
+          claimed_at?: string | null
+          claimed_by?: string | null
+          environment: string
+          event_type: string
+          external_reference?: string | null
+          id?: string
+          last_error?: string | null
+          payload?: Json
+          processed_at?: string | null
+          processing_status?: string
+          provider?: string
+          provider_created_at?: string | null
+          provider_event_id: string
+          provider_payment_id?: string | null
+          received_at?: string
+        }
+        Update: {
+          attempts?: number
+          available_at?: string
+          charge_id?: string | null
+          claimed_at?: string | null
+          claimed_by?: string | null
+          environment?: string
+          event_type?: string
+          external_reference?: string | null
+          id?: string
+          last_error?: string | null
+          payload?: Json
+          processed_at?: string | null
+          processing_status?: string
+          provider?: string
+          provider_created_at?: string | null
+          provider_event_id?: string
+          provider_payment_id?: string | null
+          received_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_webhook_events_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_charges"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_worker_runs: {
+        Row: {
+          action: string
+          completed_at: string | null
+          environment: string
+          error_message: string | null
+          id: string
+          started_at: string
+          status: string
+          summary: Json
+        }
+        Insert: {
+          action?: string
+          completed_at?: string | null
+          environment: string
+          error_message?: string | null
+          id?: string
+          started_at?: string
+          status?: string
+          summary?: Json
+        }
+        Update: {
+          action?: string
+          completed_at?: string | null
+          environment?: string
+          error_message?: string | null
+          id?: string
+          started_at?: string
+          status?: string
+          summary?: Json
+        }
+        Relationships: []
+      }
       products: {
         Row: {
           active: boolean | null
@@ -2274,6 +2887,101 @@ export type Database = {
           },
         ]
       }
+      tenant_billing_provider_customers: {
+        Row: {
+          address: string | null
+          address_number: string | null
+          city: string | null
+          complement: string | null
+          cpf_cnpj: string | null
+          created_at: string
+          created_by: string | null
+          email: string | null
+          environment: string
+          external_reference: string
+          id: string
+          last_error: string | null
+          last_synced_at: string | null
+          legal_name: string
+          notification_disabled: boolean
+          phone: string | null
+          postal_code: string | null
+          preferred_billing_type: string
+          provider: string
+          provider_customer_id: string | null
+          province: string | null
+          state: string | null
+          sync_status: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          address?: string | null
+          address_number?: string | null
+          city?: string | null
+          complement?: string | null
+          cpf_cnpj?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          environment: string
+          external_reference: string
+          id?: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          legal_name: string
+          notification_disabled?: boolean
+          phone?: string | null
+          postal_code?: string | null
+          preferred_billing_type?: string
+          provider?: string
+          provider_customer_id?: string | null
+          province?: string | null
+          state?: string | null
+          sync_status?: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          address?: string | null
+          address_number?: string | null
+          city?: string | null
+          complement?: string | null
+          cpf_cnpj?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          environment?: string
+          external_reference?: string
+          id?: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          legal_name?: string
+          notification_disabled?: boolean
+          phone?: string | null
+          postal_code?: string | null
+          preferred_billing_type?: string
+          provider?: string
+          provider_customer_id?: string | null
+          province?: string | null
+          state?: string | null
+          sync_status?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_billing_provider_customers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenant_booking_branding: {
         Row: {
           background_asset_id: string | null
@@ -2572,6 +3280,7 @@ export type Database = {
         Row: {
           address: string | null
           banner_url: string | null
+          billing_blocked_at: string | null
           city: string | null
           created_at: string
           id: string
@@ -2586,12 +3295,14 @@ export type Database = {
           slug: string
           state: string | null
           status: string | null
+          status_reason: string | null
           subtitle: string | null
           whatsapp: string | null
         }
         Insert: {
           address?: string | null
           banner_url?: string | null
+          billing_blocked_at?: string | null
           city?: string | null
           created_at?: string
           id?: string
@@ -2606,12 +3317,14 @@ export type Database = {
           slug: string
           state?: string | null
           status?: string | null
+          status_reason?: string | null
           subtitle?: string | null
           whatsapp?: string | null
         }
         Update: {
           address?: string | null
           banner_url?: string | null
+          billing_blocked_at?: string | null
           city?: string | null
           created_at?: string
           id?: string
@@ -2626,6 +3339,7 @@ export type Database = {
           slug?: string
           state?: string | null
           status?: string | null
+          status_reason?: string | null
           subtitle?: string | null
           whatsapp?: string | null
         }
@@ -2817,18 +3531,18 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "whatsapp_queue_subscription_charge_tenant_fk"
-            columns: ["subscription_charge_id", "tenant_id"]
-            isOneToOne: false
-            referencedRelation: "subscription_charges"
-            referencedColumns: ["id", "tenant_id"]
-          },
-          {
             foreignKeyName: "whatsapp_message_queue_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_queue_subscription_charge_tenant_fk"
+            columns: ["subscription_charge_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_charges"
+            referencedColumns: ["id", "tenant_id"]
           },
         ]
       }
@@ -2837,8 +3551,53 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_platform_billing_charge_state: {
+        Args: {
+          p_bank_slip_url?: string
+          p_charge_id: string
+          p_event_row_id?: string
+          p_event_type: string
+          p_invoice_url?: string
+          p_provider_event_at?: string
+          p_provider_event_id: string
+          p_provider_payment_id?: string
+          p_source?: string
+        }
+        Returns: Json
+      }
+      apply_platform_billing_suspensions: {
+        Args: { p_as_of?: string }
+        Returns: number
+      }
+      begin_platform_billing_provider_operation: {
+        Args: {
+          p_charge_id: string
+          p_contract_id: string
+          p_environment: string
+          p_operation_key: string
+          p_operation_type: string
+          p_request_fingerprint: string
+          p_request_payload: Json
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
       cancel_payable: {
         Args: { p_movement_id: string; p_reason: string; p_tenant_id: string }
+        Returns: Json
+      }
+      claim_platform_billing_webhook_events: {
+        Args: { p_environment: string; p_limit?: number; p_worker_id?: string }
+        Returns: Json
+      }
+      complete_platform_billing_provider_operation: {
+        Args: {
+          p_error: string
+          p_operation_id: string
+          p_provider_resource_id: string
+          p_response_payload: Json
+          p_status: string
+        }
         Returns: Json
       }
       consume_booking_customer_rate_limit: {
@@ -2874,8 +3633,13 @@ export type Database = {
         }
         Returns: Json
       }
-      enqueue_due_subscription_whatsapp: {
-        Args: Record<PropertyKey, never>
+      enqueue_due_subscription_whatsapp: { Args: never; Returns: Json }
+      fail_platform_billing_webhook_event: {
+        Args: {
+          p_error: string
+          p_event_row_id: string
+          p_retry_after_seconds?: number
+        }
         Returns: Json
       }
       finalize_commanda: {
@@ -2912,6 +3676,23 @@ export type Database = {
       generate_commissions_for_commanda: {
         Args: { p_commanda_id: string; p_tenant_id: string }
         Returns: number
+      }
+      get_platform_billing_worker_health: { Args: never; Returns: Json }
+      ingest_platform_billing_webhook_event: {
+        Args: {
+          p_environment: string
+          p_event_id: string
+          p_event_type: string
+          p_external_reference: string
+          p_payload: Json
+          p_payment_id: string
+          p_provider_created_at: string
+        }
+        Returns: Json
+      }
+      process_platform_billing_webhook_event: {
+        Args: { p_event_row_id: string }
+        Returns: Json
       }
       record_booking_customer_login_failure: {
         Args: { p_cpf_hash: string; p_tenant_id: string }
