@@ -276,6 +276,12 @@ function asaasWebhookToken(environment: BillingEnvironment) {
   return environmentSpecific || Deno.env.get("ASAAS_WEBHOOK_TOKEN") || "";
 }
 
+function asaasWebhookTokenSecretName(environment: BillingEnvironment) {
+  return environment === "production"
+    ? "ASAAS_PRODUCTION_WEBHOOK_TOKEN"
+    : "ASAAS_SANDBOX_WEBHOOK_TOKEN";
+}
+
 function webhookTokensAreUnambiguous() {
   const sandbox = Deno.env.get("ASAAS_SANDBOX_WEBHOOK_TOKEN") || "";
   const production = Deno.env.get("ASAAS_PRODUCTION_WEBHOOK_TOKEN") || "";
@@ -1502,8 +1508,10 @@ Deno.serve(async (request) => {
 
     if (action === "status") {
       const apiKeyConfigured = Boolean(asaasApiKey(environment));
+      const webhookTokenSecretName = asaasWebhookTokenSecretName(environment);
+      const webhookTokenAmbiguous = !webhookTokensAreUnambiguous();
       const webhookTokenConfigured =
-        Boolean(asaasWebhookToken(environment)) && webhookTokensAreUnambiguous();
+        Boolean(asaasWebhookToken(environment)) && !webhookTokenAmbiguous;
       const webhookBelongsToEnvironment = settings.webhook_environment === environment;
       const webhookConfiguredForEnvironment =
         webhookBelongsToEnvironment &&
@@ -1531,6 +1539,8 @@ Deno.serve(async (request) => {
           environment,
           apiKeyConfigured,
           webhookTokenConfigured,
+          webhookTokenSecretName,
+          webhookTokenAmbiguous,
           workerSecretConfigured,
           webhook: {
             id: webhookBelongsToEnvironment ? settings.webhook_id : null,

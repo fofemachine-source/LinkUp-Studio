@@ -82,6 +82,8 @@ type AsaasAdminStatusResponse = {
     environment: BillingEnvironment;
     apiKeyConfigured: boolean;
     webhookTokenConfigured: boolean;
+    webhookTokenSecretName?: string;
+    webhookTokenAmbiguous?: boolean;
     workerSecretConfigured: boolean;
     worker?: {
       schedulerConfigured: boolean;
@@ -1234,6 +1236,11 @@ function IntegrationPanel({
   const integrationStatus: Partial<AsaasAdminStatusResponse["status"]> = status?.status ?? {};
   const configured = Boolean(integrationStatus.apiKeyConfigured);
   const webhookToken = Boolean(integrationStatus.webhookTokenConfigured);
+  const webhookTokenDetail = webhookToken
+    ? "Configurado"
+    : integrationStatus.webhookTokenAmbiguous
+      ? "Sandbox e produção usam o mesmo token"
+      : `Secret ${integrationStatus.webhookTokenSecretName ?? "ASAAS_WEBHOOK_TOKEN"} ausente`;
   const workerProtection = Boolean(integrationStatus.workerSecretConfigured);
   const workerStatus = integrationStatus.worker;
   const automationActive = Boolean(workerStatus?.schedulerConfigured && workerStatus?.healthy);
@@ -1352,7 +1359,7 @@ function IntegrationPanel({
           <StatusTile
             ok={webhookToken}
             label="Token do webhook"
-            detail={webhookToken ? "Configurado" : "Secret ASAAS_WEBHOOK_TOKEN ausente"}
+            detail={webhookTokenDetail}
           />
           <StatusTile
             ok={workerProtection}
