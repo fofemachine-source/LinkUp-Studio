@@ -16,6 +16,7 @@ import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import { dateBR, brl } from "@/lib/format";
 import { validateProjectPassword } from "@/lib/password-policy";
+import { normalizeWhatsAppFormatting } from "@/lib/whatsapp-format";
 
 const whatsappTemplateFields = [
   { key: "client_registration_template", title: "Novo cadastro", label: "Mensagem para o cliente" },
@@ -33,28 +34,74 @@ type WhatsappTemplateForm = Record<WhatsappTemplateKey, string>;
 
 const defaultWhatsappTemplates: WhatsappTemplateForm = {
   client_registration_template:
-    "Olá, {cliente}! Seu cadastro em {salao} foi confirmado. Agora você pode entrar com seu CPF e senha para agendar com mais rapidez.",
+    `🎉 *Tudo pronto, {cliente}!*
+
+Seu cadastro no(a) *{salao}* foi confirmado com sucesso.
+
+Agora você pode acessar com seu *CPF* e *senha* para agendar com mais rapidez.
+
+✨ Esperamos por você em breve!`,
   client_booking_template:
-    "Olá, {cliente}! Seu agendamento em {salao} está confirmado para {data} às {hora}, com {profissional}. Serviço: {servico}. Para cancelar: {link_cancelamento}",
+    `🎉 *Agendamento confirmado, {cliente}!*
+
+Seu atendimento no(a) *{salao}* está reservado.
+
+📅 *Data:* {data}
+🕒 *Horário:* {hora}
+👤 *Profissional:* {profissional}
+💼 *Serviço:* {servico}
+
+Para cancelar: {link_cancelamento}`,
   professional_booking_template:
     `📅 *Olá, {profissional}! Você recebeu um novo agendamento.*
 
-👤 Cliente: *{cliente}*
-💼 Serviço: *{servico}*
-📆 Data: *{data}*
-🕒 Horário: *{hora}*
+👤 *Cliente:* {cliente}
+💼 *Serviço:* {servico}
+📆 *Data:* {data}
+🕒 *Horário:* {hora}
 
 ✨ Desejamos um excelente atendimento!`,
   client_reminder_template:
-    "Olá, {cliente}! Passando para lembrar que seu atendimento em {salao} será em {data} às {hora}, com {profissional}. Serviço: {servico}.",
+    `⏰ *Olá, {cliente}! Este é um lembrete do seu agendamento.*
+
+Seu atendimento no(a) *{salao}* está se aproximando!
+
+📅 *Data:* {data}
+🕒 *Horário:* {hora}
+👤 *Profissional:* {profissional}
+💼 *Serviço:* {servico}
+
+✨ Estamos preparando tudo para receber você. Até breve!`,
   client_cancellation_template:
-    "Olá, {cliente}. Seu agendamento em {salao}, marcado para {data} às {hora}, foi cancelado.",
+    `📢 *Olá, {cliente}.*
+
+Seu agendamento no(a) *{salao}*, previsto para *{data}* às *{hora}*, foi cancelado.
+
+Se desejar, você pode realizar um novo agendamento.`,
   professional_cancellation_template:
-    "Olá, {profissional}. O agendamento de {cliente}, em {data} às {hora}, foi cancelado.",
+    `📅 *Olá, {profissional}.*
+
+O agendamento de *{cliente}*, previsto para *{data}* às *{hora}*, foi cancelado.
+
+✅ Sua agenda foi atualizada automaticamente.`,
   client_reschedule_template:
-    "Olá, {cliente}! Seu agendamento em {salao} foi atualizado para {data} às {hora}, com {profissional}. Serviço: {servico}.",
+    `📅 *Olá, {cliente}! Seu agendamento foi atualizado.*
+
+Confira os novos detalhes no(a) *{salao}*:
+
+📅 *Data:* {data}
+🕒 *Horário:* {hora}
+👤 *Profissional:* {profissional}
+💼 *Serviço:* {servico}`,
   professional_reschedule_template:
-    "Olá, {profissional}. O agendamento de {cliente} foi atualizado para {data} às {hora}. Serviço: {servico}.",
+    `📅 *Olá, {profissional}! Houve uma atualização em sua agenda.*
+
+👤 *Cliente:* {cliente}
+💼 *Serviço:* {servico}
+📅 *Data:* {data}
+🕒 *Horário:* {hora}
+
+✅ Sua agenda já foi atualizada automaticamente.`,
 };
 
 const whatsappTemplateColumns = [
@@ -170,7 +217,9 @@ function normalizeWhatsappTemplates(row?: Record<string, unknown> | null): Whats
   const next = { ...defaultWhatsappTemplates };
   for (const field of whatsappTemplateFields) {
     const value = row?.[field.key];
-    if (typeof value === "string" && value.trim()) next[field.key] = value;
+    if (typeof value === "string" && value.trim()) {
+      next[field.key] = normalizeWhatsAppFormatting(value);
+    }
   }
   return next;
 }
@@ -185,9 +234,12 @@ function renderWhatsappTemplate(template: string, tenant?: any) {
     hora: "09:00",
     link_cancelamento: "https://linkup.studio/cancelar/teste",
   };
-  return template.replace(
-    /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}|\{\s*([a-zA-Z0-9_]+)\s*\}/g,
-    (_match, doubleKey, singleKey) => variables[String(doubleKey || singleKey || "").toLowerCase()] ?? "",
+  return normalizeWhatsAppFormatting(
+    template.replace(
+      /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}|\{\s*([a-zA-Z0-9_]+)\s*\}/g,
+      (_match, doubleKey, singleKey) =>
+        variables[String(doubleKey || singleKey || "").toLowerCase()] ?? "",
+    ),
   );
 }
 
@@ -288,9 +340,11 @@ function WhatsAppAdminTab() {
   async function saveGlobalTemplates() {
     setBusy("global");
     try {
+      const normalizedForm = normalizeWhatsappTemplates(globalForm);
+      setGlobalForm(normalizedForm);
       const { error } = await (supabase as any)
         .from("whatsapp_global_templates")
-        .upsert({ id: "global", ...globalForm }, { onConflict: "id" });
+        .upsert({ id: "global", ...normalizedForm }, { onConflict: "id" });
       if (error) throw error;
       toast.success("Modelo global salvo para todos os salões.");
       await qc.invalidateQueries({ queryKey: ["whatsapp-global-templates"] });
@@ -310,7 +364,11 @@ function WhatsAppAdminTab() {
         session_id: selectedTenantId,
         message_templates_source: templateSource,
       };
-      if (templateSource === "custom") Object.assign(payload, tenantForm);
+      if (templateSource === "custom") {
+        const normalizedForm = normalizeWhatsappTemplates(tenantForm);
+        setTenantForm(normalizedForm);
+        Object.assign(payload, normalizedForm);
+      }
 
       const { error } = await (supabase as any)
         .from("tenant_whatsapp_settings")
@@ -576,6 +634,10 @@ function TemplateEditor({
       <p className="text-xs text-slate-500">
         Variáveis disponíveis: {"{cliente}, {profissional}, {salao}, {servico}, "}
         {"{data}, {hora}, {link_cancelamento}"}.
+      </p>
+      <p className="text-xs text-slate-500">
+        Para destacar em negrito no WhatsApp, use um asterisco de cada lado: <code>*texto*</code>.
+        Se você colar <code>**texto**</code>, o sistema corrigirá automaticamente ao salvar e enviar.
       </p>
     </div>
   );

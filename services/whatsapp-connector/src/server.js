@@ -516,9 +516,7 @@ class WhatsAppSessionManager {
     if (![12, 13].includes(normalizedPhone.length)) {
       throw serviceError("Telefone inválido para envio.", 400, "invalid_phone");
     }
-    const text = String(message || "")
-      .trim()
-      .slice(0, 3_900);
+    const text = normalizeWhatsAppFormatting(String(message || "").trim()).slice(0, 3_900);
     if (!text) {
       throw serviceError("A mensagem não pode ficar vazia.", 400, "empty_message");
     }
@@ -631,6 +629,13 @@ function scalarTemplateValue(value) {
   return "";
 }
 
+function normalizeWhatsAppFormatting(value) {
+  return String(value ?? "").replace(
+    /(^|[^*])\*\*(?![\s*])([^\r\n]*?\S)\*\*(?!\*)/gm,
+    (_match, prefix, content) => `${prefix}*${content}*`,
+  );
+}
+
 function buildCancellationLink(payload) {
   const explicit = scalarTemplateValue(
     payload.link_cancelamento || payload.cancellation_link,
@@ -655,16 +660,18 @@ function renderTemplate(template, payload = {}) {
   variables.link_cancelamento = buildCancellationLink(payload);
   variables.cancellation_link = variables.link_cancelamento;
 
-  const rendered = String(template || "")
-    .replace(
-      /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}|\{\s*([a-zA-Z0-9_]+)\s*\}/g,
-      (_match, doubleKey, singleKey) => {
-        const key = String(doubleKey || singleKey || "").toLowerCase();
-        return Object.prototype.hasOwnProperty.call(variables, key) ? variables[key] : "";
-      },
-    )
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
+  const rendered = normalizeWhatsAppFormatting(
+    String(template || "")
+      .replace(
+        /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}|\{\s*([a-zA-Z0-9_]+)\s*\}/g,
+        (_match, doubleKey, singleKey) => {
+          const key = String(doubleKey || singleKey || "").toLowerCase();
+          return Object.prototype.hasOwnProperty.call(variables, key) ? variables[key] : "";
+        },
+      )
+      .replace(/[ \t]+\n/g, "\n")
+      .trim(),
+  );
 
   if (!rendered) {
     throw serviceError("O modelo gerou uma mensagem vazia.", 400, "empty_template");

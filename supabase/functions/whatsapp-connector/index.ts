@@ -243,6 +243,13 @@ function scalarTemplateValue(value: unknown) {
   return "";
 }
 
+function normalizeWhatsAppFormatting(value: unknown) {
+  return String(value ?? "").replace(
+    /(^|[^*])\*\*(?![\s*])([^\r\n]*?\S)\*\*(?!\*)/gm,
+    (_match, prefix: string, content: string) => `${prefix}*${content}*`,
+  );
+}
+
 function publicAppUrl(request?: Request) {
   return text(
     Deno.env.get("LINKUP_PUBLIC_APP_URL") ||
@@ -277,16 +284,18 @@ function renderTemplate(template: unknown, payloadValue: unknown, appUrl: string
   variables.link_cancelamento = buildCancellationLink(payload, appUrl);
   variables.cancellation_link = variables.link_cancelamento;
 
-  const rendered = String(template || "")
-    .replace(
-      /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}|\{\s*([a-zA-Z0-9_]+)\s*\}/g,
-      (_match, doubleKey, singleKey) => {
-        const key = String(doubleKey || singleKey || "").toLowerCase();
-        return Object.prototype.hasOwnProperty.call(variables, key) ? variables[key] : "";
-      },
-    )
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
+  const rendered = normalizeWhatsAppFormatting(
+    String(template || "")
+      .replace(
+        /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}|\{\s*([a-zA-Z0-9_]+)\s*\}/g,
+        (_match, doubleKey, singleKey) => {
+          const key = String(doubleKey || singleKey || "").toLowerCase();
+          return Object.prototype.hasOwnProperty.call(variables, key) ? variables[key] : "";
+        },
+      )
+      .replace(/[ \t]+\n/g, "\n")
+      .trim(),
+  );
 
   if (!rendered) {
     throw new Error("O modelo gerou uma mensagem vazia.");
@@ -628,7 +637,7 @@ Deno.serve(async (request) => {
       }
       for (const field of editableTemplateFields) {
         if (field in incoming) {
-          const template = text(incoming[field], 4000);
+          const template = text(normalizeWhatsAppFormatting(incoming[field]), 4000);
           if (!template) {
             return json(
               {
@@ -745,7 +754,7 @@ Deno.serve(async (request) => {
         return json({ error: "Informe um WhatsApp válido para receber o teste." }, 400);
       }
 
-      const customMessage = text(body.message, 3900);
+      const customMessage = text(normalizeWhatsAppFormatting(body.message), 3900);
       const templateKey = text(body.templateKey, 120);
       const requestId = text(body.requestId, 120);
       if (!customMessage || !templateKey || !requestId) {

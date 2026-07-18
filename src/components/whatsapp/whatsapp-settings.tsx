@@ -25,6 +25,7 @@ import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { QrCode } from "@/lib/qr";
+import { normalizeWhatsAppFormatting } from "@/lib/whatsapp-format";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -146,28 +147,74 @@ const defaultForm: WhatsAppForm = {
   reminder_enabled: true,
   reminder_minutes_before: 120,
   client_registration_template:
-    "Olá, {cliente}! Seu cadastro em {salao} foi confirmado. Agora você pode entrar com seu CPF e senha para agendar com mais rapidez.",
+    `🎉 *Tudo pronto, {cliente}!*
+
+Seu cadastro no(a) *{salao}* foi confirmado com sucesso.
+
+Agora você pode acessar com seu *CPF* e *senha* para agendar com mais rapidez.
+
+✨ Esperamos por você em breve!`,
   client_booking_template:
-    "Olá, {cliente}! Seu agendamento em {salao} está confirmado para {data} às {hora}, com {profissional}. Serviço: {servico}. Para cancelar: {link_cancelamento}",
+    `🎉 *Agendamento confirmado, {cliente}!*
+
+Seu atendimento no(a) *{salao}* está reservado.
+
+📅 *Data:* {data}
+🕒 *Horário:* {hora}
+👤 *Profissional:* {profissional}
+💼 *Serviço:* {servico}
+
+Para cancelar: {link_cancelamento}`,
   professional_booking_template:
     `📅 *Olá, {profissional}! Você recebeu um novo agendamento.*
 
-👤 Cliente: *{cliente}*
-💼 Serviço: *{servico}*
-📆 Data: *{data}*
-🕒 Horário: *{hora}*
+👤 *Cliente:* {cliente}
+💼 *Serviço:* {servico}
+📆 *Data:* {data}
+🕒 *Horário:* {hora}
 
 ✨ Desejamos um excelente atendimento!`,
   client_reminder_template:
-    "Olá, {cliente}! Passando para lembrar que seu atendimento em {salao} será em {data} às {hora}, com {profissional}. Serviço: {servico}.",
+    `⏰ *Olá, {cliente}! Este é um lembrete do seu agendamento.*
+
+Seu atendimento no(a) *{salao}* está se aproximando!
+
+📅 *Data:* {data}
+🕒 *Horário:* {hora}
+👤 *Profissional:* {profissional}
+💼 *Serviço:* {servico}
+
+✨ Estamos preparando tudo para receber você. Até breve!`,
   client_cancellation_template:
-    "Olá, {cliente}. Seu agendamento em {salao}, marcado para {data} às {hora}, foi cancelado.",
+    `📢 *Olá, {cliente}.*
+
+Seu agendamento no(a) *{salao}*, previsto para *{data}* às *{hora}*, foi cancelado.
+
+Se desejar, você pode realizar um novo agendamento.`,
   professional_cancellation_template:
-    "Olá, {profissional}. O agendamento de {cliente}, em {data} às {hora}, foi cancelado.",
+    `📅 *Olá, {profissional}.*
+
+O agendamento de *{cliente}*, previsto para *{data}* às *{hora}*, foi cancelado.
+
+✅ Sua agenda foi atualizada automaticamente.`,
   client_reschedule_template:
-    "Olá, {cliente}! Seu agendamento em {salao} foi atualizado para {data} às {hora}, com {profissional}. Serviço: {servico}.",
+    `📅 *Olá, {cliente}! Seu agendamento foi atualizado.*
+
+Confira os novos detalhes no(a) *{salao}*:
+
+📅 *Data:* {data}
+🕒 *Horário:* {hora}
+👤 *Profissional:* {profissional}
+💼 *Serviço:* {servico}`,
   professional_reschedule_template:
-    "Olá, {profissional}. O agendamento de {cliente} foi atualizado para {data} às {hora}. Serviço: {servico}.",
+    `📅 *Olá, {profissional}! Houve uma atualização em sua agenda.*
+
+👤 *Cliente:* {cliente}
+💼 *Serviço:* {servico}
+📅 *Data:* {data}
+🕒 *Horário:* {hora}
+
+✅ Sua agenda já foi atualizada automaticamente.`,
 };
 
 const settingsColumns = [
@@ -297,8 +344,26 @@ function dateTimeDisplay(value: string | null | undefined) {
   }).format(date);
 }
 
-function formFromSettings(settings: WhatsAppSettingsRow): WhatsAppForm {
+function normalizeWhatsAppForm(form: WhatsAppForm): WhatsAppForm {
   return {
+    ...form,
+    client_registration_template: normalizeWhatsAppFormatting(form.client_registration_template),
+    client_booking_template: normalizeWhatsAppFormatting(form.client_booking_template),
+    professional_booking_template: normalizeWhatsAppFormatting(form.professional_booking_template),
+    client_reminder_template: normalizeWhatsAppFormatting(form.client_reminder_template),
+    client_cancellation_template: normalizeWhatsAppFormatting(form.client_cancellation_template),
+    professional_cancellation_template: normalizeWhatsAppFormatting(
+      form.professional_cancellation_template,
+    ),
+    client_reschedule_template: normalizeWhatsAppFormatting(form.client_reschedule_template),
+    professional_reschedule_template: normalizeWhatsAppFormatting(
+      form.professional_reschedule_template,
+    ),
+  };
+}
+
+function formFromSettings(settings: WhatsAppSettingsRow): WhatsAppForm {
+  return normalizeWhatsAppForm({
     enabled: settings.enabled ?? defaultForm.enabled,
     responsible_whatsapp: settings.responsible_whatsapp ?? "",
     notify_client_registration:
@@ -333,7 +398,7 @@ function formFromSettings(settings: WhatsAppSettingsRow): WhatsAppForm {
       settings.client_reschedule_template || defaultForm.client_reschedule_template,
     professional_reschedule_template:
       settings.professional_reschedule_template || defaultForm.professional_reschedule_template,
-  };
+  });
 }
 
 async function connectorErrorMessage(error: unknown) {
@@ -908,7 +973,7 @@ export function WhatsAppSettings({ tenantId }: { tenantId?: string }) {
             onClick={() =>
               runAction("save", "Configurações do WhatsApp salvas.", {
                 settings: {
-                  ...form,
+                  ...normalizeWhatsAppForm(form),
                   responsible_whatsapp: onlyDigits(form.responsible_whatsapp),
                 },
               })
@@ -933,6 +998,10 @@ export function WhatsAppSettings({ tenantId }: { tenantId?: string }) {
                 <p className="mt-1 text-sm text-muted-foreground">
                   Para alterar o texto padrão de todos os salões ou criar uma mensagem personalizada
                   somente para esta loja, acesse a área da matriz em SaaS &gt; WhatsApp.
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  O WhatsApp usa <code>*texto*</code> para negrito. A matriz corrige automaticamente
+                  textos colados como <code>**texto**</code>.
                 </p>
               </div>
             </div>
@@ -1064,7 +1133,7 @@ export function WhatsAppSettings({ tenantId }: { tenantId?: string }) {
             onClick={() =>
               runAction("save", "Modelos de mensagem salvos.", {
                 settings: {
-                  ...form,
+                  ...normalizeWhatsAppForm(form),
                   responsible_whatsapp: onlyDigits(form.responsible_whatsapp),
                 },
               })
