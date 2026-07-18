@@ -80,7 +80,6 @@ type BillingSettings = {
   discount_due_days: number;
   notification_disabled: boolean;
   whatsapp_enabled?: boolean;
-  whatsapp_sender_tenant_id?: string | null;
   platform_trial_reminder_enabled?: boolean;
   platform_trial_reminder_days_before?: number[];
   platform_payment_reminder_enabled?: boolean;
@@ -449,19 +448,6 @@ async function saveSettings(admin: SupabaseClient, input: Record<string, unknown
     if (rawValue !== undefined) patch[snakeName] = Boolean(rawValue);
   }
 
-  const whatsappSenderTenantId = inputValue(
-    input,
-    "whatsapp_sender_tenant_id",
-    "whatsappSenderTenantId",
-  );
-  if (whatsappSenderTenantId !== undefined) {
-    const senderTenantId = text(whatsappSenderTenantId, 80);
-    if (senderTenantId && !isUuid(senderTenantId)) {
-      throw new AsaasRequestError("Selecione um WhatsApp remetente válido.", 400, null);
-    }
-    patch.whatsapp_sender_tenant_id = senderTenantId || null;
-  }
-
   const notificationTimeValue = inputValue(
     input,
     "platform_notification_time",
@@ -515,23 +501,6 @@ async function saveSettings(admin: SupabaseClient, input: Record<string, unknown
     const rawValue = inputValue(input, snakeName, camelName);
     if (rawValue !== undefined) patch[snakeName] = messageTemplate(rawValue, label);
   }
-
-  const currentSettingsForWhatsapp = await getSettings(admin);
-  const nextWhatsappEnabled = Boolean(
-    patch.whatsapp_enabled ?? currentSettingsForWhatsapp.whatsapp_enabled,
-  );
-  const nextSenderTenantId =
-    patch.whatsapp_sender_tenant_id !== undefined
-      ? patch.whatsapp_sender_tenant_id
-      : currentSettingsForWhatsapp.whatsapp_sender_tenant_id;
-  if (nextWhatsappEnabled && !nextSenderTenantId) {
-    throw new AsaasRequestError(
-      "Selecione qual conexão WhatsApp da matriz enviará os avisos.",
-      400,
-      null,
-    );
-  }
-
   const { data, error } = await admin
     .from("platform_billing_settings")
     .update(patch)

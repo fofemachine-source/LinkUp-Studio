@@ -57,6 +57,7 @@ import { validateProjectPassword } from "@/lib/password-policy";
 import { normalizeWhatsAppFormatting } from "@/lib/whatsapp-format";
 import { getPublicBookingUrl } from "@/lib/public-booking-url";
 import { PlatformBillingTab } from "@/components/saas/platform-billing";
+import { PlatformWhatsAppSettings } from "@/components/whatsapp/platform-whatsapp-settings";
 
 const whatsappTemplateFields = [
   { key: "client_registration_template", title: "Novo cadastro", label: "Mensagem para o cliente" },
@@ -843,6 +844,8 @@ function WhatsAppAdminTab() {
 
   return (
     <div className="space-y-5">
+      <PlatformWhatsAppSettings />
+
       <Card>
         <CardContent className="p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

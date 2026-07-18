@@ -1962,6 +1962,12 @@ export type Database = {
           interest_percentage: number
           issue_days_before: number
           notification_disabled: boolean
+          platform_whatsapp_connected_phone: string | null
+          platform_whatsapp_connection_status: string
+          platform_whatsapp_last_connection_error: string | null
+          platform_whatsapp_last_status_at: string | null
+          platform_whatsapp_session_id: string
+          platform_whatsapp_test_phone: string | null
           platform_notification_time: string
           platform_overdue_days_after: number[]
           platform_overdue_enabled: boolean
@@ -1998,6 +2004,12 @@ export type Database = {
           interest_percentage?: number
           issue_days_before?: number
           notification_disabled?: boolean
+          platform_whatsapp_connected_phone?: string | null
+          platform_whatsapp_connection_status?: string
+          platform_whatsapp_last_connection_error?: string | null
+          platform_whatsapp_last_status_at?: string | null
+          platform_whatsapp_session_id?: string
+          platform_whatsapp_test_phone?: string | null
           platform_notification_time?: string
           platform_overdue_days_after?: number[]
           platform_overdue_enabled?: boolean
@@ -2034,6 +2046,12 @@ export type Database = {
           interest_percentage?: number
           issue_days_before?: number
           notification_disabled?: boolean
+          platform_whatsapp_connected_phone?: string | null
+          platform_whatsapp_connection_status?: string
+          platform_whatsapp_last_connection_error?: string | null
+          platform_whatsapp_last_status_at?: string | null
+          platform_whatsapp_session_id?: string
+          platform_whatsapp_test_phone?: string | null
           platform_notification_time?: string
           platform_overdue_days_after?: number[]
           platform_overdue_enabled?: boolean
@@ -3270,7 +3288,7 @@ export type Database = {
           reminder_enabled?: boolean
           reminder_minutes_before?: number
           responsible_whatsapp?: string | null
-          session_id: string
+          session_id?: string
           subscription_notification_time?: string
           subscription_overdue_days_after?: number[]
           subscription_overdue_enabled?: boolean
@@ -3523,11 +3541,12 @@ export type Database = {
           rendered_message: string | null
           scheduled_for: string
           sent_at: string | null
-          session_id: string
+          sender_scope: string
+          session_id: string | null
           status: string
           subscription_charge_id: string | null
           template: string
-          tenant_id: string
+          tenant_id: string | null
           updated_at: string
         }
         Insert: {
@@ -3550,11 +3569,12 @@ export type Database = {
           rendered_message?: string | null
           scheduled_for?: string
           sent_at?: string | null
-          session_id: string
+          sender_scope?: string
+          session_id?: string | null
           status?: string
           subscription_charge_id?: string | null
           template: string
-          tenant_id: string
+          tenant_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -3577,11 +3597,12 @@ export type Database = {
           rendered_message?: string | null
           scheduled_for?: string
           sent_at?: string | null
-          session_id?: string
+          sender_scope?: string
+          session_id?: string | null
           status?: string
           subscription_charge_id?: string | null
           template?: string
-          tenant_id?: string
+          tenant_id?: string | null
           updated_at?: string
         }
         Relationships: [

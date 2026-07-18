@@ -120,7 +120,6 @@ type BillingSettings = {
   discount_due_days: number;
   notification_disabled: boolean;
   whatsapp_enabled: boolean;
-  whatsapp_sender_tenant_id?: string | null;
   platform_trial_reminder_enabled: boolean;
   platform_trial_reminder_days_before: number[];
   platform_payment_reminder_enabled: boolean;
@@ -246,7 +245,6 @@ const settingsFallback: BillingSettings = {
   discount_due_days: 0,
   notification_disabled: true,
   whatsapp_enabled: false,
-  whatsapp_sender_tenant_id: null,
   platform_trial_reminder_enabled: false,
   platform_trial_reminder_days_before: [3, 1, 0],
   platform_payment_reminder_enabled: false,
@@ -373,6 +371,28 @@ function errorMessage(error: unknown, fallback = "Não foi possível concluir a 
   return fallback;
 }
 
+async function functionErrorMessage(
+  error: unknown,
+  fallback = "Nao foi possivel concluir a operacao.",
+) {
+  const typed = error as { message?: string; context?: Response };
+  let message = typed?.message || fallback;
+  const response = typed?.context;
+  if (response && typeof response.clone === "function") {
+    try {
+      const payload = (await response.clone().json()) as {
+        error?: string;
+        message?: string;
+        details?: string;
+      };
+      message = payload.error || payload.message || payload.details || message;
+    } catch {
+      // Mantem a mensagem original quando a Edge Function nao retorna JSON.
+    }
+  }
+  return message;
+}
+
 async function invokeAsaas<T = Record<string, unknown>>(
   action: string,
   payload: Record<string, unknown> = {},
@@ -380,7 +400,7 @@ async function invokeAsaas<T = Record<string, unknown>>(
   const { data, error } = await supabase.functions.invoke("asaas-admin", {
     body: { action, ...payload },
   });
-  if (error) throw error;
+  if (error) throw new Error(await functionErrorMessage(error));
   if (data?.error) throw new Error(String(data.error));
   return data as T;
 }
@@ -1230,7 +1250,6 @@ function IntegrationPanel({
     form.discount_due_days !== settings.discount_due_days ||
     form.notification_disabled !== settings.notification_disabled ||
     form.whatsapp_enabled !== settings.whatsapp_enabled ||
-    form.whatsapp_sender_tenant_id !== settings.whatsapp_sender_tenant_id ||
     form.platform_trial_reminder_enabled !== settings.platform_trial_reminder_enabled ||
     !dayListEquals(
       form.platform_trial_reminder_days_before,
@@ -1276,7 +1295,6 @@ function IntegrationPanel({
           discountDueDays: form.discount_due_days,
           notificationDisabled: form.notification_disabled,
           whatsappEnabled: form.whatsapp_enabled,
-          whatsappSenderTenantId: form.whatsapp_sender_tenant_id || null,
           platformTrialReminderEnabled: form.platform_trial_reminder_enabled,
           platformTrialReminderDaysBefore: form.platform_trial_reminder_days_before,
           platformPaymentReminderEnabled: form.platform_payment_reminder_enabled,
@@ -1493,7 +1511,7 @@ function IntegrationPanel({
               <div className="flex items-center gap-3 rounded-lg border bg-white px-4 py-3">
                 <div className="text-right">
                   <Label>Avisos ativos</Label>
-                  <p className="text-xs text-slate-500">Usa a conexão WhatsApp escolhida abaixo.</p>
+                  <p className="text-xs text-slate-500">Usa o WhatsApp Owner/Matriz.</p>
                 </div>
                 <Switch
                   checked={form.whatsapp_enabled}
@@ -1503,33 +1521,12 @@ function IntegrationPanel({
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <Label>WhatsApp remetente da matriz</Label>
-                <Select
-                  value={form.whatsapp_sender_tenant_id || "none"}
-                  disabled={!form.whatsapp_enabled}
-                  onValueChange={(value) =>
-                    setForm({
-                      ...form,
-                      whatsapp_sender_tenant_id: value === "none" ? null : value,
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Escolha a loja/conexão que envia" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Selecione uma conexão WhatsApp</SelectItem>
-                    {tenants.map((tenant) => (
-                      <SelectItem key={tenant.id} value={tenant.id}>
-                        {tenant.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="rounded-lg border bg-white p-4">
+                <Label>Remetente dos avisos B2B</Label>
+                <p className="mt-2 text-sm font-medium text-slate-900">WhatsApp Owner / Matriz</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Precisa ser uma loja com WhatsApp conectado. Ela será usada como emissora da
-                  matriz.
+                  Conecte o QR Code em SaaS &gt; WhatsApp. Esse numero envia avisos financeiros da
+                  LinkUp Studio para os saloes clientes.
                 </p>
               </div>
               <div>
@@ -1548,16 +1545,6 @@ function IntegrationPanel({
               </div>
             </div>
 
-            {form.whatsapp_enabled && !form.whatsapp_sender_tenant_id && (
-              <Alert className="border-amber-200 bg-amber-50">
-                <AlertCircle className="h-4 w-4 text-amber-600" />
-                <AlertTitle>Escolha quem envia</AlertTitle>
-                <AlertDescription>
-                  Para ativar os avisos B2B, selecione a loja/conexão WhatsApp que representa a
-                  matriz.
-                </AlertDescription>
-              </Alert>
-            )}
 
             <div className="grid gap-4 xl:grid-cols-2">
               <MessageRuleCard
