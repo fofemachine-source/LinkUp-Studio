@@ -1195,6 +1195,11 @@ function BookingPage() {
                         return false;
                       }}
                       locale={ptBR}
+                      classNames={{
+                        today:
+                          "rounded-md bg-transparent text-amber-300 ring-1 ring-amber-500/35 data-[selected=true]:ring-0",
+                        disabled: "text-white/20 opacity-25",
+                      }}
                       className="[&_.rdp-day_button[data-selected=true]]:border-amber-500 [&_.rdp-day_button[data-selected=true]]:border [&_.rdp-day_button[data-selected=true]]:text-amber-500 [&_.rdp-day_button[data-selected=true]]:bg-transparent [&_.rdp-button_previous]:text-amber-500 [&_.rdp-button_next]:text-amber-500 [&_.rdp-caption_label]:text-lg [&_.rdp-caption_label]:font-medium [&_.rdp-head_cell]:text-white/50 [&_.rdp-head_cell]:font-normal"
                     />
                   </div>

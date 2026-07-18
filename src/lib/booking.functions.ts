@@ -120,7 +120,7 @@ function configuredTimeMinutes(value: unknown, fallbackHour: number) {
 }
 
 function includesBookingWeekday(days: unknown, weekday: number) {
-  if (!Array.isArray(days)) return true;
+  if (!Array.isArray(days) || days.length === 0) return true;
   return days.some((day) => Number(day) === weekday || (weekday === 7 && Number(day) === 0));
 }
 

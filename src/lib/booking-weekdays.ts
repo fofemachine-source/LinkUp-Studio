@@ -13,14 +13,17 @@ export function normalizeBookingWeekdays(
   days: unknown,
   fallback: readonly number[] = DEFAULT_BOOKING_WORK_DAYS,
 ) {
-  const source = Array.isArray(days) ? days : fallback;
-  return Array.from(
+  const source = Array.isArray(days) && days.length > 0 ? days : fallback;
+  const normalized = Array.from(
     new Set(
       source
         .map(normalizeBookingWeekday)
         .filter((day): day is number => day !== null),
     ),
   ).sort((a, b) => a - b);
+
+  if (normalized.length > 0) return normalized;
+  return Array.from(fallback).sort((a, b) => a - b);
 }
 
 export function bookingWeekdayFromDate(date: Date) {
