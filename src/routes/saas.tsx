@@ -203,6 +203,7 @@ function WhatsAppAdminTab() {
   const [tenantForm, setTenantForm] = useState<WhatsappTemplateForm>(defaultWhatsappTemplates);
   const [testPhone, setTestPhone] = useState("");
   const [testTemplate, setTestTemplate] = useState<WhatsappTemplateKey>("professional_booking_template");
+  const [testTenantId, setTestTenantId] = useState("");
   const [busy, setBusy] = useState<"global" | "tenant" | "test" | null>(null);
 
   const tenantsQuery = useQuery({
@@ -238,28 +239,49 @@ function WhatsAppAdminTab() {
     },
   });
 
+  const tenantSettingsQuery = useQuery({
+    queryKey: ["tenant-whatsapp-template-settings"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("tenant_whatsapp_settings")
+        .select(tenantWhatsappTemplateColumns);
+      if (error) throw error;
+      return (data ?? []) as Array<Record<string, unknown> & { tenant_id?: string; message_templates_source?: string }>;
+    },
+  });
+
   const tenants = tenantsQuery.data ?? [];
-  const selectedTenant = tenants.find((tenant: any) => tenant.id === selectedTenantId);
-  const previewForm = templateSource === "custom" ? tenantForm : globalForm;
-  const testPreview = renderWhatsappTemplate(previewForm[testTemplate], selectedTenant);
+  const tenantSettings = tenantSettingsQuery.data ?? [];
+  const testTenant = tenants.find((tenant: any) => tenant.id === testTenantId);
+  const testTenantSettings = tenantSettings.find((settings) => settings.tenant_id === testTenantId);
+  const testUsesCustom = testTenantSettings?.message_templates_source === "custom";
+  const testForm = testUsesCustom
+    ? normalizeWhatsappTemplates({ ...globalForm, ...testTenantSettings })
+    : globalForm;
+  const testPreview = renderWhatsappTemplate(testForm[testTemplate], testTenant);
 
   useEffect(() => {
     if (globalQuery.data) setGlobalForm(normalizeWhatsappTemplates(globalQuery.data));
   }, [globalQuery.data]);
 
   useEffect(() => {
+    if (templateSource === "global") {
+      if (selectedTenantId) setSelectedTenantId("");
+      return;
+    }
     if (!selectedTenantId && tenants[0]?.id) setSelectedTenantId(tenants[0].id);
-  }, [selectedTenantId, tenants]);
+  }, [selectedTenantId, templateSource, tenants]);
+
+  useEffect(() => {
+    if (!testTenantId && tenants[0]?.id) setTestTenantId(tenants[0].id);
+  }, [testTenantId, tenants]);
 
   useEffect(() => {
     if (!selectedTenantId) return;
     if (!tenantQuery.data) {
-      setTemplateSource("global");
       setTenantForm(globalForm);
       return;
     }
-    const nextSource = tenantQuery.data.message_templates_source === "custom" ? "custom" : "global";
-    setTemplateSource(nextSource);
     setTenantForm(normalizeWhatsappTemplates({ ...globalForm, ...tenantQuery.data }));
   }, [globalForm, selectedTenantId, tenantQuery.data]);
 
@@ -300,6 +322,7 @@ function WhatsAppAdminTab() {
           : "Este salão voltou a usar o modelo global.",
       );
       await qc.invalidateQueries({ queryKey: ["tenant-whatsapp-template-source", selectedTenantId] });
+      await qc.invalidateQueries({ queryKey: ["tenant-whatsapp-template-settings"] });
     } catch (error: any) {
       toast.error(error.message || "Não foi possível salvar a personalização.");
     } finally {
@@ -308,18 +331,21 @@ function WhatsAppAdminTab() {
   }
 
   async function sendTemplateTest() {
-    if (!selectedTenantId) return toast.error("Selecione um salão para usar a conexão WhatsApp.");
+    if (!testTenantId) return toast.error("Selecione a loja que vai abastecer os dados do teste.");
     const phone = cleanPhone(testPhone);
     if (phone.length < 10) return toast.error("Informe um WhatsApp válido para receber o teste.");
+    if (!testPreview.trim()) return toast.error("O modelo escolhido está vazio.");
 
     setBusy("test");
     try {
       const { data, error } = await supabase.functions.invoke("whatsapp-connector", {
         body: {
           action: "send-test",
-          tenantId: selectedTenantId,
+          tenantId: testTenantId,
           phone,
           message: testPreview,
+          templateKey: testTemplate,
+          matrixTemplateTest: true,
         },
       });
       if (error) throw error;
@@ -404,17 +430,6 @@ function WhatsAppAdminTab() {
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <Label>Salão</Label>
-                <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>
-                  <SelectTrigger className="bg-white"><SelectValue placeholder="Selecione um salão" /></SelectTrigger>
-                  <SelectContent>
-                    {tenants.map((tenant: any) => (
-                      <SelectItem key={tenant.id} value={tenant.id}>{tenant.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
                 <Label>Modelo usado</Label>
                 <Select value={templateSource} onValueChange={(value) => setTemplateSource(value as "global" | "custom")}>
                   <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
@@ -424,14 +439,31 @@ function WhatsAppAdminTab() {
                   </SelectContent>
                 </Select>
               </div>
+              <div>
+                <Label>Salão</Label>
+                <Select
+                  value={selectedTenantId}
+                  onValueChange={setSelectedTenantId}
+                  disabled={templateSource === "global"}
+                >
+                  <SelectTrigger className="bg-white disabled:cursor-not-allowed disabled:opacity-60">
+                    <SelectValue placeholder="Selecione um salão" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenants.map((tenant: any) => (
+                      <SelectItem key={tenant.id} value={tenant.id}>{tenant.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {templateSource === "custom" ? (
               <TemplateEditor form={tenantForm} onChange={setTenantForm} />
             ) : (
               <div className="rounded-xl border border-dashed bg-slate-50 p-5 text-sm text-slate-600">
-                Este salão está herdando automaticamente o padrão global. Qualquer mudança no padrão
-                da matriz já passa a valer para ele.
+                Quando o modelo usado é <strong>Padrão da matriz</strong>, nenhum salão específico
+                precisa ser escolhido: todos os salões que não tiverem personalização herdam este texto.
               </div>
             )}
 
@@ -439,10 +471,10 @@ function WhatsAppAdminTab() {
               <Button
                 className="bg-indigo-600 hover:bg-indigo-700"
                 onClick={() => void saveTenantTemplates()}
-                disabled={busy === "tenant" || tenantQuery.isFetching}
+                disabled={busy === "tenant" || tenantQuery.isFetching || templateSource === "global" || !selectedTenantId}
               >
                 <Save className="mr-2 h-4 w-4" />
-                Salvar regra do salão
+                Salvar personalização do salão
               </Button>
             </div>
           </CardContent>
@@ -454,10 +486,10 @@ function WhatsAppAdminTab() {
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Enviar teste</h3>
             <p className="text-sm text-slate-500">
-              O teste usa a conexão WhatsApp do salão selecionado acima e envia o modelo já renderizado.
+              Escolha o modelo e a loja cadastrada que vai preencher os dados dinâmicos do teste.
             </p>
           </div>
-          <div className="grid gap-3 md:grid-cols-[1fr_220px_180px]">
+          <div className="grid gap-3 md:grid-cols-[1fr_240px_260px_180px]">
             <div>
               <Label>Número destinatário</Label>
               <Input value={testPhone} onChange={e=>setTestPhone(e.target.value)} placeholder="(91) 99999-9999" className="bg-white" />
@@ -473,11 +505,25 @@ function WhatsAppAdminTab() {
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label>Loja usada no teste</Label>
+              <Select value={testTenantId} onValueChange={setTestTenantId}>
+                <SelectTrigger className="bg-white"><SelectValue placeholder="Selecione uma loja" /></SelectTrigger>
+                <SelectContent>
+                  {tenants.map((tenant: any) => (
+                    <SelectItem key={tenant.id} value={tenant.id}>{tenant.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {testUsesCustom ? "Usando texto personalizado desta loja." : "Usando padrão da matriz para esta loja."}
+              </p>
+            </div>
             <div className="flex items-end">
               <Button
                 className="w-full bg-indigo-600 hover:bg-indigo-700"
                 onClick={() => void sendTemplateTest()}
-                disabled={busy === "test" || !selectedTenantId}
+                disabled={busy === "test" || !testTenantId}
               >
                 <Send className="mr-2 h-4 w-4" />
                 Enviar teste

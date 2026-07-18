@@ -20,6 +20,8 @@ type RequestBody = {
   tenantId?: string;
   phone?: string;
   message?: string;
+  templateKey?: string;
+  matrixTemplateTest?: boolean;
   messageId?: string;
   limit?: number;
   secret?: string;
@@ -726,6 +728,15 @@ Deno.serve(async (request) => {
         );
       }
       const customMessage = text(body.message, 4000);
+      const isMatrixTemplateTest = body.matrixTemplateTest === true;
+      if (isMatrixTemplateTest && !customMessage) {
+        return json(
+          {
+            error: "O teste de modelo não recebeu a mensagem renderizada. Recarregue a tela e tente novamente.",
+          },
+          400,
+        );
+      }
       result = await connectorRequest(sessionId, "/send", {
         method: "POST",
         body: {
@@ -733,7 +744,8 @@ Deno.serve(async (request) => {
           message:
             customMessage ||
             `Teste LinkUp Studio: o WhatsApp da ${tenant.name} está conectado e pronto para avisar clientes e profissionais.`,
-          kind: "salon_test",
+          kind: isMatrixTemplateTest ? "matrix_template_test" : "salon_test",
+          templateKey: text(body.templateKey, 120) || null,
           tenantId,
         },
       });
