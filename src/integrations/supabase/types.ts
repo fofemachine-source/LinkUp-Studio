@@ -2453,6 +2453,7 @@ export type Database = {
           enabled: boolean
           last_connection_error: string | null
           last_status_at: string | null
+          message_templates_source: string
           notify_client_booking: boolean
           notify_client_cancellation: boolean
           notify_client_registration: boolean
@@ -2482,6 +2483,7 @@ export type Database = {
           enabled?: boolean
           last_connection_error?: string | null
           last_status_at?: string | null
+          message_templates_source?: string
           notify_client_booking?: boolean
           notify_client_cancellation?: boolean
           notify_client_registration?: boolean
@@ -2511,6 +2513,7 @@ export type Database = {
           enabled?: boolean
           last_connection_error?: string | null
           last_status_at?: string | null
+          message_templates_source?: string
           notify_client_booking?: boolean
           notify_client_cancellation?: boolean
           notify_client_registration?: boolean
@@ -2632,6 +2635,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      whatsapp_global_templates: {
+        Row: {
+          client_booking_template: string
+          client_cancellation_template: string
+          client_registration_template: string
+          client_reminder_template: string
+          client_reschedule_template: string
+          created_at: string
+          id: string
+          professional_booking_template: string
+          professional_cancellation_template: string
+          professional_reschedule_template: string
+          updated_at: string
+        }
+        Insert: {
+          client_booking_template?: string
+          client_cancellation_template?: string
+          client_registration_template?: string
+          client_reminder_template?: string
+          client_reschedule_template?: string
+          created_at?: string
+          id?: string
+          professional_booking_template?: string
+          professional_cancellation_template?: string
+          professional_reschedule_template?: string
+          updated_at?: string
+        }
+        Update: {
+          client_booking_template?: string
+          client_cancellation_template?: string
+          client_registration_template?: string
+          client_reminder_template?: string
+          client_reschedule_template?: string
+          created_at?: string
+          id?: string
+          professional_booking_template?: string
+          professional_cancellation_template?: string
+          professional_reschedule_template?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       whatsapp_message_queue: {
         Row: {
