@@ -23,6 +23,10 @@ import {
   validateProjectPassword,
 } from "@/lib/password-policy";
 import { isValidCustomerCpf } from "@/lib/customer-auth";
+import {
+  DEFAULT_BOOKING_WORK_DAYS,
+  normalizeBookingWeekdays,
+} from "@/lib/booking-weekdays";
 
 export const Route = createFileRoute("/_authenticated/app/cadastros")({ component: CadastrosPage });
 
@@ -376,7 +380,7 @@ function ProDialog({ pro, tenantId, onDone }: any) {
     lunch_end: pro?.lunch_end ?? "13:00",
     photo_url: pro?.photo_url ?? "",
     active: pro?.active ?? true,
-    work_days: pro?.work_days ?? [1,2,3,4,5,6],
+    work_days: normalizeBookingWeekdays(pro?.work_days, DEFAULT_BOOKING_WORK_DAYS),
     blocked_dates: pro?.blocked_dates ?? [],
   });
   const [file, setFile] = useState<File | null>(null);
@@ -426,9 +430,13 @@ function ProDialog({ pro, tenantId, onDone }: any) {
       }
       photo_url = signed.signedUrl;
     }
-    const payload: any = { ...f, photo_url, tenant_id: tenantId };
+    const normalizedForm = {
+      ...f,
+      work_days: normalizeBookingWeekdays(f.work_days, []),
+    };
+    const payload: any = { ...normalizedForm, photo_url, tenant_id: tenantId };
     const saved = professionalId
-      ? await supabase.from("professionals").update({ ...f, photo_url }).eq("id", professionalId).select("id").single()
+      ? await supabase.from("professionals").update({ ...normalizedForm, photo_url }).eq("id", professionalId).select("id").single()
       : await supabase.from("professionals").insert(payload).select("id").single();
     const { data: savedPro, error } = saved;
     if (error) {
@@ -439,7 +447,7 @@ function ProDialog({ pro, tenantId, onDone }: any) {
     let authUserId = persistedAuthUserId;
     updateProfessionalCache({
       ...(pro ?? {}),
-      ...f,
+      ...normalizedForm,
       id: savedPro.id,
       tenant_id: tenantId,
       photo_url,
@@ -460,7 +468,7 @@ function ProDialog({ pro, tenantId, onDone }: any) {
         setAllowAccess(access.enabled);
         updateProfessionalCache({
           ...(pro ?? {}),
-          ...f,
+          ...normalizedForm,
           id: savedPro.id,
           tenant_id: tenantId,
           photo_url,
@@ -483,7 +491,7 @@ function ProDialog({ pro, tenantId, onDone }: any) {
         ? { ...persistedProfessional, auth_user_id: persistedProfessional.auth_user_id ?? authUserId }
         : {
             ...(pro ?? {}),
-            ...f,
+            ...normalizedForm,
             id: savedPro.id,
             tenant_id: tenantId,
             photo_url,

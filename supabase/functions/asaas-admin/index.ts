@@ -603,6 +603,21 @@ function addMonthsMinusDay(dateValue: string, months: number) {
   return nextPeriod.toISOString().slice(0, 10);
 }
 
+function addMonths(dateValue: string, months: number) {
+  const source = new Date(`${dateValue}T00:00:00.000Z`);
+  const targetMonth = source.getUTCMonth() + Math.max(1, Math.floor(months));
+  const targetYear = source.getUTCFullYear() + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const lastTargetDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+  const clampedDay = Math.min(source.getUTCDate(), lastTargetDay);
+  return new Date(Date.UTC(targetYear, normalizedMonth, clampedDay)).toISOString().slice(0, 10);
+}
+
+function dueDayFromDate(dateValue: string) {
+  const day = Number(dateValue.slice(8, 10));
+  return Number.isInteger(day) ? Math.min(28, Math.max(1, day)) : 10;
+}
+
 function promotionalDiscountType(value: unknown): PromotionalDiscountType {
   const normalized = text(value, 30);
   return new Set(["none", "percentage", "fixed"]).has(normalized)
@@ -804,15 +819,10 @@ async function saveContract(
 
   const amount = numberValue(plan.amount);
   const intervalMonths = Math.floor(numberValue(plan.interval_months, 1));
-  const dueDay = Math.floor(numberValue(input.dueDay ?? input.due_day, 10));
   if (!(amount >= 0)) throw new AsaasRequestError("Valor contratual inválido.", 400, null);
   if (intervalMonths < 1 || intervalMonths > 120) {
     throw new AsaasRequestError("Intervalo contratual inválido.", 400, null);
   }
-  if (dueDay < 1 || dueDay > 28) {
-    throw new AsaasRequestError("O dia de vencimento precisa estar entre 1 e 28.", 400, null);
-  }
-
   const today = new Date().toISOString().slice(0, 10);
   const startsOn = optionalDate(input.startsOn ?? input.starts_on, "início") || today;
   const promotionalDiscount = normalizePromotionalDiscount(input, startsOn);
@@ -859,7 +869,8 @@ async function saveContract(
   const nextDueDate =
     status === "trialing"
       ? requestedNextDueDate || trialEndsOn || periodStart
-      : requestedNextDueDate || periodStart;
+      : addMonths(periodStart, intervalMonths);
+  const dueDay = dueDayFromDate(nextDueDate);
 
   const contractId = text(input.id, 80);
   if (contractId && !isUuid(contractId)) {

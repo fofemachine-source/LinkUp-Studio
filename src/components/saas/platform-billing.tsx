@@ -344,6 +344,34 @@ function numberValue(value: unknown) {
   return Number.isFinite(result) ? result : 0;
 }
 
+function currencyInputValue(value: unknown) {
+  const amount = numberValue(value);
+  return amount > 0 ? brl(amount) : "";
+}
+
+function currencyInputToNumber(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return 0;
+  return Number(digits) / 100;
+}
+
+function percentInputValue(value: unknown) {
+  const amount = numberValue(value);
+  if (!(amount > 0)) return "";
+  return new Intl.NumberFormat("pt-BR", {
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function percentInputToNumber(value: string) {
+  const normalized = value
+    .replace(/[^\d,.-]/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
 function arrayValue(value: unknown, fallback: number[]) {
   if (!Array.isArray(value)) return fallback;
   return value.map(Number).filter((item) => Number.isInteger(item));
@@ -385,6 +413,32 @@ function addMonthsMinusDayIso(dateValue: string, months: number) {
   const nextPeriod = new Date(Date.UTC(targetYear, normalizedMonth, clampedDay));
   nextPeriod.setUTCDate(nextPeriod.getUTCDate() - 1);
   return nextPeriod.toISOString().slice(0, 10);
+}
+
+function addMonthsIso(dateValue: string, months: number) {
+  if (!dateValue) return "";
+  const source = new Date(`${dateValue}T00:00:00.000Z`);
+  const targetMonth = source.getUTCMonth() + Math.max(1, Math.floor(months));
+  const targetYear = source.getUTCFullYear() + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const lastTargetDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+  const clampedDay = Math.min(source.getUTCDate(), lastTargetDay);
+  return new Date(Date.UTC(targetYear, normalizedMonth, clampedDay)).toISOString().slice(0, 10);
+}
+
+function billingNextDueDate(baseDate: string, intervalMonths: number) {
+  if (!baseDate) return "";
+  return addMonthsIso(baseDate, Math.max(1, Math.floor(numberValue(intervalMonths) || 1)));
+}
+
+function billingPeriodEndDate(baseDate: string, intervalMonths: number) {
+  if (!baseDate) return "";
+  return addMonthsMinusDayIso(baseDate, Math.max(1, Math.floor(numberValue(intervalMonths) || 1)));
+}
+
+function dueDayFromDate(dateValue: string) {
+  const day = Number(dateValue.slice(8, 10));
+  return Number.isInteger(day) ? Math.min(28, Math.max(1, day)) : 10;
 }
 
 const promotionalDurationMonths: Record<PromotionalDiscountDuration, number> = {
@@ -2177,6 +2231,16 @@ type ClientContractForm = {
 function clientForm(client: BillingClient, plans: BillingPlan[]): ClientContractForm {
   const plan = plans.find((item) => item.id === client.contract?.plan_id) ?? plans[0];
   const today = new Date().toISOString().slice(0, 10);
+  const intervalMonthsSnapshot = numberValue(
+    client.contract?.interval_months_snapshot ?? plan?.interval_months ?? 1,
+  );
+  const startsOn = client.contract?.starts_on ?? today;
+  const currentPeriodStart = client.contract?.current_period_start ?? startsOn;
+  const calculatedNextDueDate = billingNextDueDate(currentPeriodStart, intervalMonthsSnapshot);
+  const nextDueDate =
+    client.contract?.status === "trialing"
+      ? (client.contract?.next_due_date ?? client.contract?.trial_ends_on ?? calculatedNextDueDate)
+      : calculatedNextDueDate;
   const trialStartsOn =
     client.contract?.trial_starts_on ??
     (client.contract?.status === "trialing"
@@ -2192,16 +2256,16 @@ function clientForm(client: BillingClient, plans: BillingPlan[]): ClientContract
     planId: client.contract?.plan_id ?? plan?.id ?? "",
     status: client.contract?.status ?? "active",
     amountSnapshot: numberValue(client.contract?.amount_snapshot ?? plan?.amount),
-    intervalMonthsSnapshot: numberValue(
-      client.contract?.interval_months_snapshot ?? plan?.interval_months ?? 1,
-    ),
+    intervalMonthsSnapshot,
     billingType:
       client.contract?.billing_type ?? client.customer?.preferred_billing_type ?? "UNDEFINED",
-    dueDay: numberValue(client.contract?.due_day ?? 10),
-    startsOn: client.contract?.starts_on ?? today,
-    currentPeriodStart: client.contract?.current_period_start ?? "",
-    currentPeriodEnd: client.contract?.current_period_end ?? "",
-    nextDueDate: client.contract?.next_due_date ?? "",
+    dueDay: dueDayFromDate(nextDueDate || calculatedNextDueDate),
+    startsOn,
+    currentPeriodStart,
+    currentPeriodEnd:
+      client.contract?.current_period_end ??
+      billingPeriodEndDate(currentPeriodStart, intervalMonthsSnapshot),
+    nextDueDate,
     trialStartsOn,
     trialEndsOn,
     promotionalDiscountType: client.contract?.promotional_discount_type ?? "none",
@@ -2249,6 +2313,14 @@ function ClientContractDialog({
   const suspended = client.contract?.status === "suspended";
   const selectedPlan = plans.find((item) => item.id === form.planId);
   const normalPlanAmount = numberValue(selectedPlan?.amount ?? form.amountSnapshot);
+  const today = new Date().toISOString().slice(0, 10);
+  const billingBaseDate = form.currentPeriodStart || form.startsOn || today;
+  const calculatedPeriodEnd = billingPeriodEndDate(billingBaseDate, form.intervalMonthsSnapshot);
+  const calculatedNextDueDate =
+    form.status === "trialing"
+      ? form.trialEndsOn || form.nextDueDate || billingBaseDate
+      : billingNextDueDate(billingBaseDate, form.intervalMonthsSnapshot);
+  const calculatedDueDay = dueDayFromDate(calculatedNextDueDate);
   const discountReferenceDate = new Date().toISOString().slice(0, 10);
   const promotionalFinalAmount = effectivePromotionalAmount(
     normalPlanAmount,
@@ -2305,10 +2377,18 @@ function ClientContractDialog({
     }
     setBusy(syncAfter ? "sync" : "save");
     try {
+      const contractBaseDate =
+        currentForm.currentPeriodStart ||
+        currentForm.startsOn ||
+        new Date().toISOString().slice(0, 10);
+      const calculatedContractPeriodEnd = billingPeriodEndDate(
+        contractBaseDate,
+        currentForm.intervalMonthsSnapshot,
+      );
       const effectiveNextDueDate =
         currentForm.status === "trialing"
-          ? currentForm.nextDueDate || currentForm.trialEndsOn
-          : currentForm.nextDueDate || null;
+          ? currentForm.trialEndsOn || currentForm.nextDueDate || null
+          : billingNextDueDate(contractBaseDate, currentForm.intervalMonthsSnapshot) || null;
       await invokeAsaas("save-contract", {
         contract: {
           tenantId: currentForm.tenantId,
@@ -2328,10 +2408,13 @@ function ClientContractDialog({
               ? null
               : currentForm.promotionalDiscountEndsOn,
           billingType: currentForm.billingType,
-          dueDay: currentForm.dueDay,
-          startsOn: currentForm.startsOn,
-          currentPeriodStart: currentForm.currentPeriodStart || null,
-          currentPeriodEnd: currentForm.currentPeriodEnd || null,
+          dueDay: effectiveNextDueDate ? dueDayFromDate(effectiveNextDueDate) : currentForm.dueDay,
+          startsOn: currentForm.startsOn || contractBaseDate,
+          currentPeriodStart: contractBaseDate,
+          currentPeriodEnd:
+            currentForm.status === "trialing"
+              ? currentForm.trialEndsOn || calculatedContractPeriodEnd || null
+              : calculatedContractPeriodEnd || null,
           nextDueDate: effectiveNextDueDate,
           trialStartsOn: currentForm.trialStartsOn || null,
           trialEndsOn: currentForm.trialEndsOn || null,
@@ -2381,13 +2464,25 @@ function ClientContractDialog({
               value={form.planId}
               onValueChange={(planId) => {
                 const plan = plans.find((item) => item.id === planId);
+                const intervalMonthsSnapshot = numberValue(
+                  plan?.interval_months ?? form.intervalMonthsSnapshot,
+                );
+                const baseDate = form.currentPeriodStart || form.startsOn || today;
+                const nextDueDate =
+                  form.status === "trialing"
+                    ? form.trialEndsOn || form.nextDueDate
+                    : billingNextDueDate(baseDate, intervalMonthsSnapshot);
                 setForm({
                   ...form,
                   planId,
                   amountSnapshot: numberValue(plan?.amount ?? form.amountSnapshot),
-                  intervalMonthsSnapshot: numberValue(
-                    plan?.interval_months ?? form.intervalMonthsSnapshot,
-                  ),
+                  intervalMonthsSnapshot,
+                  currentPeriodEnd:
+                    form.status === "trialing"
+                      ? form.currentPeriodEnd
+                      : billingPeriodEndDate(baseDate, intervalMonthsSnapshot),
+                  nextDueDate,
+                  dueDay: nextDueDate ? dueDayFromDate(nextDueDate) : form.dueDay,
                 });
               }}
             >
@@ -2411,7 +2506,15 @@ function ClientContractDialog({
               onValueChange={(status) => {
                 const nextStatus = status as BillingContract["status"];
                 if (nextStatus !== "trialing") {
-                  setForm({ ...form, status: nextStatus });
+                  const baseDate = form.currentPeriodStart || form.startsOn || today;
+                  const nextDueDate = billingNextDueDate(baseDate, form.intervalMonthsSnapshot);
+                  setForm({
+                    ...form,
+                    status: nextStatus,
+                    currentPeriodEnd: billingPeriodEndDate(baseDate, form.intervalMonthsSnapshot),
+                    nextDueDate,
+                    dueDay: dueDayFromDate(nextDueDate),
+                  });
                   return;
                 }
                 const start =
@@ -2422,7 +2525,8 @@ function ClientContractDialog({
                   status: nextStatus,
                   trialStartsOn: start,
                   trialEndsOn: end,
-                  nextDueDate: form.nextDueDate || end,
+                  nextDueDate: end,
+                  dueDay: dueDayFromDate(end),
                 });
               }}
             >
@@ -2499,18 +2603,28 @@ function ClientContractDialog({
               <div>
                 <Label>Valor do desconto</Label>
                 <Input
-                  type="number"
-                  min="0"
-                  max={form.promotionalDiscountType === "percentage" ? 100 : undefined}
-                  step="0.01"
+                  type="text"
+                  inputMode={form.promotionalDiscountType === "percentage" ? "decimal" : "numeric"}
+                  placeholder={form.promotionalDiscountType === "percentage" ? "0%" : "R$ 0,00"}
                   disabled={form.promotionalDiscountType === "none"}
-                  value={form.promotionalDiscountValue}
-                  onChange={(event) =>
+                  value={
+                    form.promotionalDiscountType === "percentage"
+                      ? percentInputValue(form.promotionalDiscountValue)
+                      : currencyInputValue(form.promotionalDiscountValue)
+                  }
+                  onChange={(event) => {
+                    const promotionalDiscountValue =
+                      form.promotionalDiscountType === "percentage"
+                        ? percentInputToNumber(event.target.value)
+                        : currencyInputToNumber(event.target.value);
                     setForm({
                       ...form,
-                      promotionalDiscountValue: numberValue(event.target.value),
-                    })
-                  }
+                      promotionalDiscountValue:
+                        form.promotionalDiscountType === "percentage"
+                          ? Math.min(100, promotionalDiscountValue)
+                          : promotionalDiscountValue,
+                    });
+                  }}
                 />
               </div>
               <div>
@@ -2621,22 +2735,41 @@ function ClientContractDialog({
             <p className="mt-1 text-xs text-slate-500">Definida automaticamente pelo plano.</p>
           </div>
           <div>
-            <Label>Dia de vencimento</Label>
+            <Label>Data do início / pagamento</Label>
             <Input
-              type="number"
-              min="1"
-              max="28"
-              value={form.dueDay}
-              onChange={(event) => setForm({ ...form, dueDay: numberValue(event.target.value) })}
+              type="date"
+              value={billingBaseDate}
+              disabled={form.status === "trialing"}
+              onChange={(event) => {
+                const baseDate = event.target.value;
+                const nextDueDate = billingNextDueDate(baseDate, form.intervalMonthsSnapshot);
+                setForm({
+                  ...form,
+                  startsOn: baseDate,
+                  currentPeriodStart: baseDate,
+                  currentPeriodEnd: billingPeriodEndDate(baseDate, form.intervalMonthsSnapshot),
+                  nextDueDate,
+                  dueDay: dueDayFromDate(nextDueDate),
+                });
+              }}
             />
+            <p className="mt-1 text-xs text-slate-500">
+              O próximo vencimento nasce desta data + periodicidade do plano.
+            </p>
+          </div>
+          <div>
+            <Label>Dia de vencimento</Label>
+            <Input type="number" min="1" max="28" disabled value={calculatedDueDay} />
+            <p className="mt-1 text-xs text-slate-500">Calculado pelo próximo vencimento.</p>
           </div>
           <div>
             <Label>Próximo vencimento</Label>
-            <Input
-              type="date"
-              value={form.nextDueDate}
-              onChange={(event) => setForm({ ...form, nextDueDate: event.target.value })}
-            />
+            <Input type="date" disabled value={calculatedNextDueDate} />
+            <p className="mt-1 text-xs text-slate-500">
+              {form.status === "trialing"
+                ? "No teste grátis, acompanha a data final do teste."
+                : `Período atual: ${localDate(billingBaseDate)} a ${localDate(calculatedPeriodEnd)}.`}
+            </p>
           </div>
           {form.status === "trialing" && (
             <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
@@ -2664,7 +2797,8 @@ function ClientContractDialog({
                       setForm({
                         ...form,
                         trialEndsOn,
-                        nextDueDate: form.nextDueDate || trialEndsOn,
+                        nextDueDate: trialEndsOn,
+                        dueDay: dueDayFromDate(trialEndsOn),
                       });
                     }}
                   />
@@ -2926,11 +3060,13 @@ function PlanDialog({
           <div>
             <Label>Valor</Label>
             <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.amount}
-              onChange={(event) => setForm({ ...form, amount: numberValue(event.target.value) })}
+              type="text"
+              inputMode="numeric"
+              placeholder="R$ 0,00"
+              value={currencyInputValue(form.amount)}
+              onChange={(event) =>
+                setForm({ ...form, amount: currencyInputToNumber(event.target.value) })
+              }
             />
           </div>
           <div>

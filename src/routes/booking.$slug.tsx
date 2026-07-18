@@ -64,6 +64,12 @@ import {
   normalizeBookingBranding,
   type BookingBranding,
 } from "@/lib/booking-branding";
+import {
+  bookingWeekdayFromDate,
+  DEFAULT_BOOKING_VIP_DAYS,
+  DEFAULT_BOOKING_WORK_DAYS,
+  includesBookingWeekday,
+} from "@/lib/booking-weekdays";
 
 export const Route = createFileRoute("/booking/$slug")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -1150,11 +1156,11 @@ function BookingPage() {
                         const dStr = format(d, "yyyy-MM-dd");
                         if (dStr < todayStr) return true;
 
-                        // Check weekly day off (work_days: 1=Seg...7=Dom)
-                        const dayOfWeek = d.getDay();
-                        const normalizedDay = dayOfWeek === 0 ? 7 : dayOfWeek;
-                        const workDays = settings?.work_days ?? [1,2,3,4,5,6];
-                        if (!workDays.includes(normalizedDay)) return true;
+                        // Check weekly day off. Accepts both legacy 0=Dom and current 7=Dom.
+                        const normalizedDay = bookingWeekdayFromDate(d);
+                        if (!includesBookingWeekday(settings?.work_days, normalizedDay, DEFAULT_BOOKING_WORK_DAYS)) {
+                          return true;
+                        }
 
                         // Check specific date block (closed_dates: 'yyyy-MM-dd')
                         const dateStr = format(d, "yyyy-MM-dd");
@@ -1170,16 +1176,20 @@ function BookingPage() {
 
                         // Check specific professional work_days and blocked_dates
                         if (selectedPro) {
-                          const proWorkDays = selectedPro.work_days ?? [1,2,3,4,5,6];
-                          if (!proWorkDays.includes(normalizedDay)) return true;
+                          if (!includesBookingWeekday(selectedPro.work_days, normalizedDay, DEFAULT_BOOKING_WORK_DAYS)) {
+                            return true;
+                          }
 
                           const proBlockedDates = selectedPro.blocked_dates ?? [];
                           if (proBlockedDates.includes(dateStr)) return true;
                         }
 
                         const vipMode = settings?.vip_mode ?? "strict";
-                        const vipDays = settings?.vip_days ?? [1,2,3,4];
-                        if (vipMode === "strict" && !isVip && vipDays.includes(normalizedDay)) {
+                        if (
+                          vipMode === "strict" &&
+                          !isVip &&
+                          includesBookingWeekday(settings?.vip_days, normalizedDay, DEFAULT_BOOKING_VIP_DAYS)
+                        ) {
                           return true;
                         }
                         return false;
@@ -1225,7 +1235,21 @@ function BookingPage() {
                       <>
                         <div className="grid grid-cols-4 gap-2">
                           {timeSlots.map((t) => (
-                            <button key={t.time} disabled={!t.free} onClick={() => setTime(t.time)} className={`py-2 rounded-lg text-sm border transition-colors ${time === t.time ? "bg-amber-500 text-black font-semibold border-amber-500" : t.free ? "border-white/10 hover:border-amber-500/50" : "bg-neutral-900 text-white/30 opacity-40 cursor-not-allowed"}`}>{t.time}</button>
+                            <button
+                              key={t.time}
+                              type="button"
+                              disabled={!t.free}
+                              onClick={() => setTime(t.time)}
+                              className={`py-2 rounded-lg text-sm border transition-all ${
+                                time === t.time
+                                  ? "bg-amber-500 text-black font-semibold border-amber-500 shadow-[0_0_18px_rgba(245,158,11,0.25)]"
+                                  : t.free
+                                    ? "bg-white/5 text-white border-white/20 hover:border-amber-500/70 hover:bg-amber-500/10 active:scale-[0.98]"
+                                    : "bg-neutral-900 text-white/30 opacity-40 cursor-not-allowed"
+                              }`}
+                            >
+                              {t.time}
+                            </button>
                           ))}
                         </div>
                         {timeSlots.length === 0 && <div className="text-sm text-white/50">Sem horários disponíveis neste dia.</div>}

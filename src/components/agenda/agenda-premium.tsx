@@ -59,6 +59,11 @@ import {
 } from "@/components/ui/select";
 import { QrCode } from "@/lib/qr";
 import { brl } from "@/lib/format";
+import {
+  bookingWeekdayFromDate,
+  DEFAULT_BOOKING_WORK_DAYS,
+  includesBookingWeekday,
+} from "@/lib/booking-weekdays";
 
 export type AgendaViewMode = "day" | "threeDays" | "week" | "agenda";
 
@@ -1685,10 +1690,10 @@ function buildTimes(openHour: number, closeHour: number, slotMinutes: number) {
 
 function isProfessionalOff(professional: AgendaProfessional, date: Date) {
   const dateString = format(date, "yyyy-MM-dd");
-  const normalizedDay = date.getDay() === 0 ? 7 : date.getDay();
+  const normalizedDay = bookingWeekdayFromDate(date);
   return (
     Boolean(professional.blocked_dates?.includes(dateString)) ||
-    !(professional.work_days ?? [1, 2, 3, 4, 5, 6]).includes(normalizedDay)
+    !includesBookingWeekday(professional.work_days, normalizedDay, DEFAULT_BOOKING_WORK_DAYS)
   );
 }
 

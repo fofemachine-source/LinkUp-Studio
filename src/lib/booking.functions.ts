@@ -121,7 +121,7 @@ function configuredTimeMinutes(value: unknown, fallbackHour: number) {
 
 function includesBookingWeekday(days: unknown, weekday: number) {
   if (!Array.isArray(days)) return true;
-  return days.includes(weekday) || (weekday === 7 && days.includes(0));
+  return days.some((day) => Number(day) === weekday || (weekday === 7 && Number(day) === 0));
 }
 
 async function findOpenSubscriptionCharge(db: any, contract: any) {

@@ -16,6 +16,11 @@ import {
   normalizeBookingBranding,
   type BookingBranding,
 } from "@/lib/booking-branding";
+import {
+  DEFAULT_BOOKING_VIP_DAYS,
+  DEFAULT_BOOKING_WORK_DAYS,
+  normalizeBookingWeekdays,
+} from "@/lib/booking-weekdays";
 import { WhatsAppSettings } from "@/components/whatsapp/whatsapp-settings";
 
 export const Route = createFileRoute("/_authenticated/app/configuracoes")({ component: ConfigPage });
@@ -204,11 +209,20 @@ function HoursTab() {
       return data;
     },
   });
-  const [f, setF] = useState<any>({ open_hour: 8, close_hour: 20, lunch_start: 12, lunch_end: 13, vip_days: [1,2,3,4], work_days: [1,2,3,4,5,6], vip_mode: "strict", closed_dates: [] });
+  const [f, setF] = useState<any>({
+    open_hour: 8,
+    close_hour: 20,
+    lunch_start: 12,
+    lunch_end: 13,
+    vip_days: [...DEFAULT_BOOKING_VIP_DAYS],
+    work_days: [...DEFAULT_BOOKING_WORK_DAYS],
+    vip_mode: "strict",
+    closed_dates: [],
+  });
   const [newClosedDate, setNewClosedDate] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(()=>{if(s)setF({open_hour:s.open_hour??8,close_hour:s.close_hour??20,lunch_start:s.lunch_start??12,lunch_end:s.lunch_end??13,vip_days:s.vip_days??[1,2,3,4],work_days:s.work_days??[1,2,3,4,5,6],vip_mode:(s as any).vip_mode ?? "strict",closed_dates:(s as any).closed_dates ?? []});},[s]);
+  useEffect(()=>{if(s)setF({open_hour:s.open_hour??8,close_hour:s.close_hour??20,lunch_start:s.lunch_start??12,lunch_end:s.lunch_end??13,vip_days:normalizeBookingWeekdays(s.vip_days, DEFAULT_BOOKING_VIP_DAYS),work_days:normalizeBookingWeekdays(s.work_days, DEFAULT_BOOKING_WORK_DAYS),vip_mode:(s as any).vip_mode ?? "strict",closed_dates:(s as any).closed_dates ?? []});},[s]);
   const dayNames = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 
   async function saveHours() {
@@ -231,15 +245,20 @@ function HoursTab() {
 
     setIsSaving(true);
     try {
+      const normalizedSettings = {
+        ...f,
+        work_days: normalizeBookingWeekdays(f.work_days, []),
+        vip_days: normalizeBookingWeekdays(f.vip_days, []),
+      };
       let savedWithoutClosedDates = false;
       let result = await supabase
         .from("tenant_settings")
-        .upsert({ ...f, tenant_id: tenantId })
+        .upsert({ ...normalizedSettings, tenant_id: tenantId })
         .select("*")
         .maybeSingle();
 
       if (result.error && isMissingClosedDatesColumn(result.error)) {
-        const { closed_dates: _closedDates, ...legacySettings } = f;
+        const { closed_dates: _closedDates, ...legacySettings } = normalizedSettings;
         result = await supabase
           .from("tenant_settings")
           .upsert({ ...legacySettings, tenant_id: tenantId })
