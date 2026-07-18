@@ -25,7 +25,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
-import { makeLocalDateTime, syncAppointmentComanda } from "@/lib/commandas";
+import { makeLocalDateTime } from "@/lib/commandas";
+import { repairAppointmentCommandasForDate } from "@/lib/commandas.functions";
 import { brl, dateBR, timeBR } from "@/lib/format";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { addDays, endOfDay, format, isToday, startOfDay } from "date-fns";
@@ -68,6 +69,16 @@ type PaymentSplit = {
   received: string;
 };
 
+const FINAL_COMANDA_STATUSES = new Set(["closed", "canceled", "cancelled", "no_show", "noshow"]);
+const RECEIVABLE_COMANDA_STATUSES = new Set([
+  "open",
+  "awaiting_payment",
+  "pending",
+  "confirmed",
+  "scheduled",
+  "reserved",
+]);
+
 const PAYMENT_METHODS: Array<{
   value: PaymentMode;
   label: string;
@@ -99,8 +110,20 @@ function sameDay(value: string | null | undefined, date: Date) {
   return current >= startOfDay(date) && current <= endOfDay(date);
 }
 
+function linkedAppointmentOf(cmd: any) {
+  const appointment = cmd.appointments;
+  return Array.isArray(appointment) ? appointment[0] : appointment;
+}
+
 function scheduleOf(cmd: any) {
-  return cmd.scheduled_at ?? cmd.created_at;
+  return cmd.scheduled_at ?? linkedAppointmentOf(cmd)?.start_at ?? cmd.created_at;
+}
+
+function isReceivableCommanda(cmd: any) {
+  const status = String(cmd.status ?? "").toLowerCase();
+  if (!status) return Boolean(cmd.appointment_id || cmd.source === "online");
+  if (FINAL_COMANDA_STATUSES.has(status)) return false;
+  return RECEIVABLE_COMANDA_STATUSES.has(status) || Boolean(cmd.appointment_id || cmd.source === "online");
 }
 
 function normalizeSearch(value: unknown) {
@@ -117,101 +140,6 @@ function professionalsOf(cmd: any) {
       (cmd.commanda_items ?? []).map((item: any) => item.professionals?.full_name).filter(Boolean),
     ),
   ) as string[];
-}
-
-async function repairMissingAppointmentCommandas(
-  tenantId: string,
-  date: Date,
-  existingCommandas: any[],
-) {
-  const dayStart = startOfDay(date).toISOString();
-  const dayEnd = endOfDay(date).toISOString();
-  const existingAppointmentIds = new Set(
-    existingCommandas.map((cmd) => cmd.appointment_id).filter(Boolean),
-  );
-
-  const { data: appointments, error: appointmentsError } = await supabase
-    .from("appointments")
-    .select(
-      "id,tenant_id,client_id,client_name,professional_id,service_id,start_at,status,source,subscription_id",
-    )
-    .eq("tenant_id", tenantId)
-    .gte("start_at", dayStart)
-    .lte("start_at", dayEnd)
-    .not("status", "in", "(cancelled,canceled,no_show,noshow,completed)");
-
-  if (appointmentsError) throw appointmentsError;
-
-  const candidateAppointments = (appointments ?? []).filter(
-    (appointment: any) =>
-      appointment.id &&
-      appointment.service_id &&
-      appointment.professional_id &&
-      !existingAppointmentIds.has(appointment.id),
-  );
-
-  const candidateIds = candidateAppointments.map((appointment: any) => appointment.id);
-  if (candidateIds.length === 0) return false;
-
-  const { data: relatedCommandas, error: relatedCommandasError } = await supabase
-    .from("commandas")
-    .select("appointment_id")
-    .eq("tenant_id", tenantId)
-    .in("appointment_id", candidateIds);
-
-  if (relatedCommandasError) throw relatedCommandasError;
-  relatedCommandas?.forEach((cmd: any) => {
-    if (cmd.appointment_id) existingAppointmentIds.add(cmd.appointment_id);
-  });
-
-  const missingAppointments = candidateAppointments.filter(
-    (appointment: any) => !existingAppointmentIds.has(appointment.id),
-  );
-  if (missingAppointments.length === 0) return false;
-
-  const serviceIds = Array.from(new Set(missingAppointments.map((item: any) => item.service_id)));
-  const professionalIds = Array.from(
-    new Set(missingAppointments.map((item: any) => item.professional_id)),
-  );
-
-  const [{ data: services, error: servicesError }, { data: professionals, error: professionalsError }] =
-    await Promise.all([
-      supabase
-        .from("services")
-        .select("id,name,price,cost_price")
-        .eq("tenant_id", tenantId)
-        .in("id", serviceIds),
-      supabase
-        .from("professionals")
-        .select("id,commission_pct")
-        .eq("tenant_id", tenantId)
-        .in("id", professionalIds),
-    ]);
-
-  if (servicesError) throw servicesError;
-  if (professionalsError) throw professionalsError;
-
-  for (const appointment of missingAppointments) {
-    const service = (services ?? []).find((item: any) => item.id === appointment.service_id);
-    if (!service) continue;
-
-    await syncAppointmentComanda(supabase as any, {
-      appointmentId: appointment.id,
-      tenantId,
-      subscriptionId: appointment.subscription_id ?? null,
-      clientId: appointment.client_id ?? null,
-      clientName: appointment.client_name ?? "Cliente",
-      professionalId: appointment.professional_id,
-      serviceIds: [appointment.service_id],
-      services: [service],
-      professionals: professionals ?? [],
-      scheduledAt: appointment.start_at,
-      status: appointment.status,
-      source: appointment.source === "online" ? "online" : "manual",
-    });
-  }
-
-  return true;
 }
 
 function statusMeta(cmd: any) {
@@ -274,7 +202,7 @@ function FrenteDeCaixaPage() {
     refetchOnWindowFocus: true,
     queryFn: async () => {
       const selection =
-        "*, commanda_items(*, professionals(full_name)), clients(is_subscriber, whatsapp)";
+        "*, appointments(start_at,end_at,status), commanda_items(*, professionals(full_name)), clients(is_subscriber, whatsapp)";
 
       const fetchCommandas = async () => {
         const [pendingResult, closedResult, canceledResult] = await Promise.all([
@@ -282,7 +210,7 @@ function FrenteDeCaixaPage() {
             .from("commandas")
             .select(selection)
             .eq("tenant_id", tenantId!)
-            .in("status", ["open", "awaiting_payment"])
+            .not("status", "in", "(closed,canceled,cancelled,no_show,noshow,completed)")
             .order("scheduled_at", { ascending: true, nullsFirst: false })
             .limit(300),
           supabase
@@ -310,10 +238,15 @@ function FrenteDeCaixaPage() {
         ];
       };
 
-      let commandas = await fetchCommandas();
-      const repaired = await repairMissingAppointmentCommandas(tenantId!, date, commandas);
-      if (repaired) commandas = await fetchCommandas();
-      return commandas;
+      try {
+        await repairAppointmentCommandasForDate({
+          data: { tenantId: tenantId!, date: dateKey },
+        });
+      } catch (repairError) {
+        console.error("Não foi possível sincronizar agendamentos com comandas.", repairError);
+      }
+
+      return fetchCommandas();
     },
   });
 
@@ -327,7 +260,7 @@ function FrenteDeCaixaPage() {
 
   const open = useMemo(
     () =>
-      dayCommandas.filter((cmd: any) => cmd.status === "open" || cmd.status === "awaiting_payment"),
+      dayCommandas.filter((cmd: any) => isReceivableCommanda(cmd)),
     [dayCommandas],
   );
   const closed = useMemo(
@@ -342,8 +275,7 @@ function FrenteDeCaixaPage() {
   const filteredCommandas = useMemo(() => {
     const term = normalizeSearch(search);
     const statusFiltered = dayCommandas.filter((cmd: any) => {
-      if (statusFilter === "pending")
-        return cmd.status === "open" || cmd.status === "awaiting_payment";
+      if (statusFilter === "pending") return isReceivableCommanda(cmd);
       if (statusFilter === "closed") return cmd.status === "closed";
       if (statusFilter === "canceled") return cmd.status === "canceled" || cmd.status === "no_show";
       return true;
@@ -359,8 +291,18 @@ function FrenteDeCaixaPage() {
       })
       .sort((a: any, b: any) => {
         const priority = (value: string) =>
-          value === "awaiting_payment" ? 0 : value === "open" ? 1 : value === "closed" ? 2 : 3;
-        const statusDiff = priority(a.status) - priority(b.status);
+          value === "awaiting_payment"
+            ? 0
+            : value === "open"
+              ? 1
+              : RECEIVABLE_COMANDA_STATUSES.has(value)
+                ? 2
+                : value === "closed"
+                  ? 3
+                  : 4;
+        const statusDiff =
+          priority(String(a.status ?? "").toLowerCase()) -
+          priority(String(b.status ?? "").toLowerCase());
         if (statusDiff !== 0) return statusDiff;
         return new Date(scheduleOf(a)).getTime() - new Date(scheduleOf(b)).getTime();
       });
@@ -402,10 +344,14 @@ function FrenteDeCaixaPage() {
   }
 
   function openCommanda(cmd: any, checkout = false) {
-    const next = checkout && cmd.status === "open" ? { ...cmd, status: "awaiting_payment" } : cmd;
+    const canMoveToCheckout =
+      checkout &&
+      isReceivableCommanda(cmd) &&
+      String(cmd.status ?? "").toLowerCase() !== "awaiting_payment";
+    const next = canMoveToCheckout ? { ...cmd, status: "awaiting_payment" } : cmd;
     setSelected({ cmd: next, checkout });
 
-    if (checkout && cmd.status === "open") {
+    if (canMoveToCheckout) {
       void supabase
         .from("commandas")
         .update({ status: "awaiting_payment", updated_at: new Date().toISOString() })
@@ -709,7 +655,7 @@ function CommandaCard({
   const services = items.filter((item: any) => item.kind === "service");
   const products = items.filter((item: any) => item.kind === "product");
   const professionals = professionalsOf(cmd);
-  const canReceive = cmd.status === "open" || cmd.status === "awaiting_payment";
+  const canReceive = isReceivableCommanda(cmd);
   const sourceLabel =
     cmd.source === "online"
       ? "Agendamento online"
