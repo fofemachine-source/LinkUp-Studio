@@ -83,34 +83,14 @@ import { RevenueForecast } from "@/components/dashboard/revenue-forecast";
 import { QrCode } from "@/lib/qr";
 import { brl } from "@/lib/format";
 import { getPublicBookingUrl } from "@/lib/public-booking-url";
-import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
+import { getTenantAccess, useCurrentTenant, useTenantAccess, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/app/")({
-  beforeLoad: async () => {
-    const { data: userRes } = await supabase.auth.getUser();
-    const uid = userRes.user?.id;
-    if (!uid) throw redirect({ to: "/auth", search: { redirect: "/app" } });
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("active_tenant_id")
-      .eq("id", uid)
-      .maybeSingle();
-    const { data: roles } = await supabase
-      .from("user_roles")
-      .select("tenant_id, role")
-      .eq("user_id", uid);
-    const tenantId = profile?.active_tenant_id ?? roles?.find((role) => role.tenant_id)?.tenant_id;
-    if (!tenantId) return;
-
-    const { data: userRole } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", uid)
-      .eq("tenant_id", tenantId)
-      .maybeSingle();
-    if (userRole?.role === "barber") {
+  beforeLoad: async ({ context }) => {
+    const access = await getTenantAccess(context.queryClient);
+    const role = access.roles.find((item) => item.tenant_id === access.activeTenantId)?.role;
+    if (role === "barber") {
       throw redirect({ to: "/app/agenda" });
     }
   },
@@ -232,6 +212,7 @@ const defaultFilters: DashboardFilters = {
 
 function PainelGeral() {
   const { data: tenant } = useCurrentTenant();
+  const { data: access } = useTenantAccess();
   const tenantId = tenant?.id;
   const { data: role, isLoading: roleLoading } = useUserRole(tenantId);
   const [filters, setFilters] = useState<DashboardFilters>(defaultFilters);
@@ -252,22 +233,6 @@ function PainelGeral() {
 
   const bookingSlug = tenant?.slug || "linkup-studio";
   const bookingLink = getPublicBookingUrl(bookingSlug);
-
-  const { data: userProfile } = useQuery({
-    queryKey: ["dashboard-user-profile"],
-    queryFn: async () => {
-      const { data: userRes } = await supabase.auth.getUser();
-      const uid = userRes.user?.id;
-      if (!uid) return { name: "Gestor" };
-      const { data } = await supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("id", uid)
-        .maybeSingle();
-      const fallback = userRes.user?.email?.split("@")[0] || "Gestor";
-      return { name: data?.full_name || fallback };
-    },
-  });
 
   const { data: options, isLoading: loadingOptions } = useQuery({
     queryKey: ["dashboard-options", tenantId],
@@ -317,7 +282,7 @@ function PainelGeral() {
     queryFn: async () => loadDashboardData(tenantId!, filters, range, options, tenant),
   });
 
-  const greeting = getGreeting(userProfile?.name);
+  const greeting = getGreeting(access?.profileFullName ?? "Gestor");
 
   if (!roleLoading && role === "barber") {
     return <Navigate to="/app/agenda" replace />;

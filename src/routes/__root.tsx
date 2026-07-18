@@ -1,10 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Outlet, createRootRouteWithContext, HeadContent, Scripts } from "@tanstack/react-router";
+import { Outlet, createRootRouteWithContext, HeadContent, Scripts, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "sonner";
-import { getRouter } from "@/router";
+import { authUserQueryKey } from "@/lib/auth-cache";
 
 function NotFound() {
   return (
@@ -12,7 +12,7 @@ function NotFound() {
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold">404</h1>
         <p className="mt-2 text-muted-foreground">Página não encontrada.</p>
-        <a href="/" className="mt-6 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Voltar</a>
+        <Link to="/" className="mt-6 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Voltar</Link>
       </div>
     </div>
   );
@@ -52,15 +52,18 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const router = useRouter();
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
-        getRouter().invalidate();
-        if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
+        queryClient.setQueryData(authUserQueryKey, session?.user ?? null);
+        if (event === "SIGNED_OUT") queryClient.clear();
+        else queryClient.invalidateQueries({ queryKey: ["current-tenant"] });
+        router.invalidate();
       }
     });
     return () => sub.subscription.unsubscribe();
-  }, [queryClient]);
+  }, [queryClient, router]);
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />

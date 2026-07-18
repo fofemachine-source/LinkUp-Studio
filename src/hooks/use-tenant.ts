@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAuthUser, getAuthUser } from "@/lib/auth-cache";
 
 export type Tenant = {
   id: string;
@@ -20,71 +21,139 @@ export type Tenant = {
   billing_blocked_at: string | null;
 };
 
+type TenantAccessRole = {
+  tenant_id: string | null;
+  role: string;
+};
+
+export type TenantAccess = {
+  tenant: Tenant | null;
+  roles: TenantAccessRole[];
+  activeTenantId: string | null;
+  isSuperAdmin: boolean;
+  profileFullName: string | null;
+  userId: string | null;
+};
+
+export const tenantAccessQueryKey = ["current-tenant"] as const;
+export const tenantAccessStaleTime = 60 * 1000;
+
+const emptyAccess: TenantAccess = {
+  tenant: null,
+  roles: [],
+  activeTenantId: null,
+  isSuperAdmin: false,
+  profileFullName: null,
+  userId: null,
+};
+
+const tenantSelect =
+  "id,slug,name,subtitle,logo_url,banner_url,whatsapp,pix_key,pix_holder,primary_color,slot_minutes,status,plan,plan_expires_at,status_reason,billing_blocked_at";
+
+async function fetchTenantAccess(userId?: string | null): Promise<TenantAccess> {
+  const resolvedUserId = userId ?? (await fetchAuthUser())?.id ?? null;
+  if (!resolvedUserId) return emptyAccess;
+
+  const [profileResult, rolesResult] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("active_tenant_id, full_name")
+      .eq("id", resolvedUserId)
+      .maybeSingle(),
+    supabase.from("user_roles").select("tenant_id, role").eq("user_id", resolvedUserId),
+  ]);
+
+  if (profileResult.error) throw profileResult.error;
+  if (rolesResult.error) throw rolesResult.error;
+
+  const roles = rolesResult.data ?? [];
+  const tenantId =
+    profileResult.data?.active_tenant_id ?? roles.find((role) => role.tenant_id)?.tenant_id ?? null;
+  const isSuperAdmin = roles.some((role) => role.role === "super_admin");
+
+  if (!tenantId) {
+    return {
+      ...emptyAccess,
+      roles,
+      isSuperAdmin,
+      profileFullName: profileResult.data?.full_name ?? null,
+      userId: resolvedUserId,
+    };
+  }
+
+  const { data: tenant, error: tenantError } = await supabase
+    .from("tenants")
+    .select(tenantSelect)
+    .eq("id", tenantId)
+    .maybeSingle();
+  if (tenantError) throw tenantError;
+
+  return {
+    tenant: (tenant as Tenant | null) ?? null,
+    roles,
+    activeTenantId: tenantId,
+    isSuperAdmin,
+    profileFullName: profileResult.data?.full_name ?? null,
+    userId: resolvedUserId,
+  };
+}
+
+export async function getTenantAccess(queryClient: QueryClient) {
+  const user = await getAuthUser(queryClient);
+  if (!user) return emptyAccess;
+  return queryClient.fetchQuery({
+    queryKey: tenantAccessQueryKey,
+    queryFn: () => fetchTenantAccess(user.id),
+    staleTime: tenantAccessStaleTime,
+  });
+}
+
+export function useTenantAccess() {
+  return useQuery({
+    queryKey: tenantAccessQueryKey,
+    queryFn: () => fetchTenantAccess(),
+    staleTime: tenantAccessStaleTime,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: false,
+  });
+}
+
 export function useCurrentTenant() {
   return useQuery({
-    queryKey: ["current-tenant"],
-    queryFn: async () => {
-      const { data: userRes, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      const uid = userRes.user?.id;
-      if (!uid) return null;
-      const [profileResult, rolesResult] = await Promise.all([
-        supabase.from("profiles").select("active_tenant_id").eq("id", uid).maybeSingle(),
-        supabase.from("user_roles").select("tenant_id, role").eq("user_id", uid),
-      ]);
-      if (profileResult.error) throw profileResult.error;
-      if (rolesResult.error) throw rolesResult.error;
-      const profile = profileResult.data;
-      const roles = rolesResult.data;
-      const tenantId = profile?.active_tenant_id ?? roles?.find((r) => r.tenant_id)?.tenant_id;
-      if (!tenantId) return null;
-      const { data: tenant, error: tenantError } = await supabase
-        .from("tenants")
-        .select("*")
-        .eq("id", tenantId)
-        .maybeSingle();
-      if (tenantError) throw tenantError;
-      return tenant as Tenant | null;
-    },
-    refetchInterval: 30_000,
+    queryKey: tenantAccessQueryKey,
+    queryFn: () => fetchTenantAccess(),
+    select: (access) => access.tenant,
+    staleTime: tenantAccessStaleTime,
+    refetchInterval: 60_000,
     refetchIntervalInBackground: true,
+    refetchOnWindowFocus: false,
   });
 }
 
 export function useIsSuperAdmin() {
   return useQuery({
-    queryKey: ["is-super-admin"],
-    queryFn: async () => {
-      const { data: userRes, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      const uid = userRes.user?.id;
-      if (!uid) return false;
-      const { data, error } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", uid)
-        .eq("role", "super_admin");
-      if (error) throw error;
-      return (data?.length ?? 0) > 0;
-    },
+    queryKey: tenantAccessQueryKey,
+    queryFn: () => fetchTenantAccess(),
+    select: (access) => access.isSuperAdmin,
+    staleTime: tenantAccessStaleTime,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: false,
   });
 }
 
 export function useUserRole(tenantId?: string) {
   return useQuery({
-    queryKey: ["user-role", tenantId],
+    queryKey: tenantAccessQueryKey,
+    queryFn: () => fetchTenantAccess(),
     enabled: !!tenantId,
-    queryFn: async () => {
-      const { data: userRes } = await supabase.auth.getUser();
-      const uid = userRes.user?.id;
-      if (!uid || !tenantId) return null;
-      const { data } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", uid)
-        .eq("tenant_id", tenantId)
-        .maybeSingle();
-      return data?.role ?? null;
-    },
+    select: (access) =>
+      access.roles.find((role) => role.tenant_id === tenantId)?.role ??
+      (access.isSuperAdmin ? "super_admin" : null),
+    staleTime: tenantAccessStaleTime,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: false,
   });
 }

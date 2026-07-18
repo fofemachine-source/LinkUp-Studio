@@ -4,7 +4,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
 import { TenantAccessScreen } from "@/components/tenant-access-screen";
-import { useCurrentTenant, useIsSuperAdmin } from "@/hooks/use-tenant";
+import { getTenantAccess, useCurrentTenant, useIsSuperAdmin } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
@@ -13,25 +13,11 @@ import { useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app")({
-  beforeLoad: async () => {
-    const { data: userResult } = await supabase.auth.getUser();
-    if (!userResult.user) return;
+  beforeLoad: async ({ context }) => {
+    const access = await getTenantAccess(context.queryClient);
+    const hasTenant = Boolean(access.activeTenantId || access.roles.some(({ tenant_id }) => tenant_id));
 
-    const [{ data: roles }, { data: profile }] = await Promise.all([
-      supabase.from("user_roles").select("role, tenant_id").eq("user_id", userResult.user.id),
-      supabase
-        .from("profiles")
-        .select("active_tenant_id")
-        .eq("id", userResult.user.id)
-        .maybeSingle(),
-    ]);
-
-    const isSuperAdmin = roles?.some(({ role }) => role === "super_admin");
-    const hasTenant = Boolean(
-      profile?.active_tenant_id || roles?.some(({ tenant_id }) => tenant_id),
-    );
-
-    if (isSuperAdmin && !hasTenant) {
+    if (access.isSuperAdmin && !hasTenant) {
       throw redirect({ to: "/saas" });
     }
   },

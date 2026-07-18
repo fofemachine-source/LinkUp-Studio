@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components/ui/card";
-import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
+import { useCurrentTenant, useTenantAccess, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, TrendingUp, Scissors, Award, Calendar, DollarSign, UserCheck, ShieldAlert, Sparkles, Clock, Users } from "lucide-react";
 import { brl } from "@/lib/format";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip } from "recharts";
 import { format, subDays, startOfDay, endOfDay, startOfMonth } from "date-fns";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,19 +16,14 @@ export const Route = createFileRoute("/_authenticated/app/relatorios")({ compone
 
 function RelPage() {
   const tenantId = useCurrentTenant().data?.id;
+  const { data: access } = useTenantAccess();
   const { data: role } = useUserRole(tenantId);
   const isPro = role === "barber";
   const isAdmin = role === "owner" || role === "staff" || role === "super_admin";
 
   const [period, setPeriod] = useState<"today" | "month" | "30days">("30days");
   const [selectedProId, setSelectedProId] = useState<string>("all");
-  const [userId, setUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUserId(data.user?.id ?? null);
-    });
-  }, []);
+  const userId = access?.userId ?? null;
 
   // Load current professional ID if the logged-in user is a pro (barber)
   const { data: myPro } = useQuery({
@@ -78,10 +73,10 @@ function RelPage() {
 
       return {
         allAppts: allAppts ?? [],
-        commandas: commandas ?? [],
-        pros: pros ?? [],
-        services: services ?? [],
-        subscribers: subscribers ?? [],
+        commandas: (commandas ?? []) as any[],
+        pros: (pros ?? []) as any[],
+        services: (services ?? []) as any[],
+        subscribers: (subscribers ?? []) as any[],
         startDateStr,
         endDateStr,
         proFilter
