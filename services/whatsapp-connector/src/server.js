@@ -701,6 +701,24 @@ function retryDelayMs(attempts) {
   return Math.min(RETRY_MAX_MS, baseDelay + jitter);
 }
 
+function isMissingSubscriptionEnqueueRpc(error) {
+  const code = String(error?.code || "");
+  const message = [error?.message, error?.details, error?.hint].map(String).join(" ");
+  return (
+    code === "PGRST202" ||
+    code === "42883" ||
+    (/enqueue_due_subscription_whatsapp/i.test(message) &&
+      /schema cache|could not find|does not exist/i.test(message))
+  );
+}
+
+function subscriptionChargeId(row) {
+  const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+  return String(
+    row?.subscription_charge_id || payload.subscription_charge_id || payload.charge_id || "",
+  ).trim();
+}
+
 class WhatsAppQueueWorker {
   constructor(database, sessionManager) {
     this.database = database;
@@ -709,6 +727,8 @@ class WhatsAppQueueWorker {
     this.running = false;
     this.stopped = true;
     this.pollCount = 0;
+    this.lastSubscriptionEnqueueAt = 0;
+    this.subscriptionRpcMissingLogged = false;
     this.state = {
       enabled: QUEUE_ENABLED,
       running: false,
@@ -761,6 +781,8 @@ class WhatsAppQueueWorker {
     this.pollCount += 1;
 
     try {
+      await this.enqueueDueSubscriptionMessages();
+
       if (this.pollCount === 1 || this.pollCount % 20 === 0) {
         await this.recoverStaleClaims();
       }
@@ -792,6 +814,43 @@ class WhatsAppQueueWorker {
       this.running = false;
       this.state.running = false;
       this.schedule();
+    }
+  }
+
+  async enqueueDueSubscriptionMessages() {
+    const now = Date.now();
+    if (now - this.lastSubscriptionEnqueueAt < 60_000) return;
+    this.lastSubscriptionEnqueueAt = now;
+
+    const { data, error } = await this.database.rpc("enqueue_due_subscription_whatsapp");
+    if (error) {
+      if (isMissingSubscriptionEnqueueRpc(error)) {
+        if (!this.subscriptionRpcMissingLogged) {
+          logger.info(
+            "RPC enqueue_due_subscription_whatsapp ainda não está disponível; fila atual preservada",
+          );
+          this.subscriptionRpcMissingLogged = true;
+        }
+        return;
+      }
+      logger.error(
+        { error: errorMessage(error) },
+        "Falha ao gerar notificações de assinaturas; demais mensagens continuarão",
+      );
+      return;
+    }
+
+    this.subscriptionRpcMissingLogged = false;
+    const enqueued = Number(data?.enqueued || 0);
+    if (enqueued > 0) {
+      logger.info(
+        {
+          enqueued,
+          paymentReminders: Number(data?.payment_reminders || 0),
+          overdueNotices: Number(data?.overdue_notices || 0),
+        },
+        "Notificações de assinaturas adicionadas à fila",
+      );
     }
   }
 
@@ -864,6 +923,62 @@ class WhatsAppQueueWorker {
     }
   }
 
+  async validateSubscriptionQueueRow(row) {
+    const eventType = String(row?.event_type || "");
+    if (!eventType.startsWith("subscription_")) {
+      return { valid: true };
+    }
+
+    const chargeId = normalizeSessionId(subscriptionChargeId(row));
+    const tenantId = normalizeSessionId(row?.tenant_id);
+    if (!chargeId || !tenantId) {
+      return {
+        valid: false,
+        reason: "Mensagem de assinatura sem cobrança e loja válidas.",
+      };
+    }
+
+    const { data: charge, error } = await this.database
+      .from("subscription_charges")
+      .select("id,status")
+      .eq("id", chargeId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!charge) {
+      return {
+        valid: false,
+        reason: "Cobrança da assinatura não existe mais nesta loja.",
+      };
+    }
+
+    const { data: tenant, error: tenantError } = await this.database
+      .from("tenants")
+      .select("id,status")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (tenantError) throw tenantError;
+    if (!tenant || String(tenant.status || "active") === "blocked") {
+      return {
+        valid: false,
+        reason: "Mensagem cancelada porque a loja está bloqueada.",
+      };
+    }
+
+    const allowedStatuses =
+      eventType === "subscription_payment_confirmed"
+        ? new Set(["paid"])
+        : new Set(["pending", "overdue"]);
+    if (!allowedStatuses.has(String(charge.status || ""))) {
+      return {
+        valid: false,
+        reason: `Mensagem cancelada porque a cobrança está com status ${charge.status || "desconhecido"}.`,
+      };
+    }
+
+    return { valid: true };
+  }
+
   async processWithConcurrency(rows) {
     if (!rows.length) return;
     let cursor = 0;
@@ -896,6 +1011,12 @@ class WhatsAppQueueWorker {
         .maybeSingle();
       if (currentError) throw currentError;
       if (current?.status !== "processing") return;
+
+      const subscriptionValidation = await this.validateSubscriptionQueueRow(row);
+      if (!subscriptionValidation.valid) {
+        await this.cancel(row, subscriptionValidation.reason);
+        return;
+      }
 
       const { data: settings, error: settingsError } = await this.database
         .from("tenant_whatsapp_settings")

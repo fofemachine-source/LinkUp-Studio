@@ -146,16 +146,14 @@ const defaultForm: WhatsAppForm = {
   notify_professional_reschedule: true,
   reminder_enabled: true,
   reminder_minutes_before: 120,
-  client_registration_template:
-    `🎉 *Tudo pronto, {cliente}!*
+  client_registration_template: `🎉 *Tudo pronto, {cliente}!*
 
 Seu cadastro no(a) *{salao}* foi confirmado com sucesso.
 
 Agora você pode acessar com seu *CPF* e *senha* para agendar com mais rapidez.
 
 ✨ Esperamos por você em breve!`,
-  client_booking_template:
-    `🎉 *Agendamento confirmado, {cliente}!*
+  client_booking_template: `🎉 *Agendamento confirmado, {cliente}!*
 
 Seu atendimento no(a) *{salao}* está reservado.
 
@@ -165,8 +163,7 @@ Seu atendimento no(a) *{salao}* está reservado.
 💼 *Serviço:* {servico}
 
 Para cancelar: {link_cancelamento}`,
-  professional_booking_template:
-    `📅 *Olá, {profissional}! Você recebeu um novo agendamento.*
+  professional_booking_template: `📅 *Olá, {profissional}! Você recebeu um novo agendamento.*
 
 👤 *Cliente:* {cliente}
 💼 *Serviço:* {servico}
@@ -174,8 +171,7 @@ Para cancelar: {link_cancelamento}`,
 🕒 *Horário:* {hora}
 
 ✨ Desejamos um excelente atendimento!`,
-  client_reminder_template:
-    `⏰ *Olá, {cliente}! Este é um lembrete do seu agendamento.*
+  client_reminder_template: `⏰ *Olá, {cliente}! Este é um lembrete do seu agendamento.*
 
 Seu atendimento no(a) *{salao}* está se aproximando!
 
@@ -185,20 +181,17 @@ Seu atendimento no(a) *{salao}* está se aproximando!
 💼 *Serviço:* {servico}
 
 ✨ Estamos preparando tudo para receber você. Até breve!`,
-  client_cancellation_template:
-    `📢 *Olá, {cliente}.*
+  client_cancellation_template: `📢 *Olá, {cliente}.*
 
 Seu agendamento no(a) *{salao}*, previsto para *{data}* às *{hora}*, foi cancelado.
 
 Se desejar, você pode realizar um novo agendamento.`,
-  professional_cancellation_template:
-    `📅 *Olá, {profissional}.*
+  professional_cancellation_template: `📅 *Olá, {profissional}.*
 
 O agendamento de *{cliente}*, previsto para *{data}* às *{hora}*, foi cancelado.
 
 ✅ Sua agenda foi atualizada automaticamente.`,
-  client_reschedule_template:
-    `📅 *Olá, {cliente}! Seu agendamento foi atualizado.*
+  client_reschedule_template: `📅 *Olá, {cliente}! Seu agendamento foi atualizado.*
 
 Confira os novos detalhes no(a) *{salao}*:
 
@@ -206,8 +199,7 @@ Confira os novos detalhes no(a) *{salao}*:
 🕒 *Horário:* {hora}
 👤 *Profissional:* {profissional}
 💼 *Serviço:* {servico}`,
-  professional_reschedule_template:
-    `📅 *Olá, {profissional}! Houve uma atualização em sua agenda.*
+  professional_reschedule_template: `📅 *Olá, {profissional}! Houve uma atualização em sua agenda.*
 
 👤 *Cliente:* {cliente}
 💼 *Serviço:* {servico}
@@ -309,6 +301,9 @@ const eventLabels: Record<string, string> = {
   appointment_reminder: "Lembrete",
   appointment_cancelled: "Cancelamento",
   appointment_rescheduled: "Reagendamento",
+  subscription_payment_reminder: "Lembrete de assinatura",
+  subscription_payment_confirmed: "Pagamento de assinatura confirmado",
+  subscription_overdue: "Assinatura em atraso",
   test: "Teste",
 };
 
@@ -973,8 +968,17 @@ export function WhatsAppSettings({ tenantId }: { tenantId?: string }) {
             onClick={() =>
               runAction("save", "Configurações do WhatsApp salvas.", {
                 settings: {
-                  ...normalizeWhatsAppForm(form),
+                  enabled: form.enabled,
                   responsible_whatsapp: onlyDigits(form.responsible_whatsapp),
+                  notify_client_registration: form.notify_client_registration,
+                  notify_client_booking: form.notify_client_booking,
+                  notify_professional_booking: form.notify_professional_booking,
+                  notify_client_cancellation: form.notify_client_cancellation,
+                  notify_professional_cancellation: form.notify_professional_cancellation,
+                  notify_client_reschedule: form.notify_client_reschedule,
+                  notify_professional_reschedule: form.notify_professional_reschedule,
+                  reminder_enabled: form.reminder_enabled,
+                  reminder_minutes_before: form.reminder_minutes_before,
                 },
               })
             }
@@ -986,7 +990,8 @@ export function WhatsAppSettings({ tenantId }: { tenantId?: string }) {
         <CardHeader>
           <CardTitle className="text-lg">Modelos das mensagens</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Os textos são definidos pela matriz LinkUp Studio e aplicados automaticamente nesta loja.
+            Os textos são definidos pela matriz LinkUp Studio e aplicados automaticamente nesta
+            loja.
           </p>
         </CardHeader>
         <CardContent>

@@ -52,17 +52,6 @@ const editableBooleanFields = [
   "reminder_enabled",
 ] as const;
 
-const editableTemplateFields = [
-  "client_registration_template",
-  "client_booking_template",
-  "professional_booking_template",
-  "client_reminder_template",
-  "client_cancellation_template",
-  "professional_cancellation_template",
-  "client_reschedule_template",
-  "professional_reschedule_template",
-] as const;
-
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -317,6 +306,140 @@ function retryDelayIso(attemptsValue: unknown) {
   return new Date(Date.now() + baseDelay + jitter).toISOString();
 }
 
+function isMissingSubscriptionEnqueueRpc(error: unknown) {
+  const value = isRecord(error) ? error : {};
+  const code = String(value.code || "");
+  const message = [value.message, value.details, value.hint].map(String).join(" ");
+  return (
+    code === "PGRST202" ||
+    code === "42883" ||
+    (/enqueue_due_subscription_whatsapp/i.test(message) &&
+      /schema cache|could not find|does not exist/i.test(message))
+  );
+}
+
+async function enqueueDueSubscriptionWhatsApp(admin: SupabaseClient) {
+  const { data, error } = await admin.rpc("enqueue_due_subscription_whatsapp");
+  if (error) {
+    if (isMissingSubscriptionEnqueueRpc(error)) {
+      console.info(
+        "[whatsapp-connector] enqueue_due_subscription_whatsapp ainda não está disponível; fila atual preservada.",
+      );
+      return null;
+    }
+    console.error(
+      "[whatsapp-connector] falha ao gerar notificações de assinaturas; demais mensagens continuarão.",
+      error,
+    );
+    return null;
+  }
+  return data;
+}
+
+async function recoverStaleQueueClaims(admin: SupabaseClient, limit: number) {
+  const cutoff = new Date(Date.now() - 5 * 60_000).toISOString();
+  const { data: staleRows, error } = await admin
+    .from("whatsapp_message_queue")
+    .select("id,attempts,max_attempts,locked_at")
+    .eq("status", "processing")
+    .lt("locked_at", cutoff)
+    .order("locked_at", { ascending: true })
+    .limit(Math.max(1, limit));
+  if (error) throw error;
+
+  let recovered = 0;
+  for (const row of staleRows ?? []) {
+    const attempts = Math.max(0, Number(row.attempts || 0));
+    const exhausted = attempts >= Math.max(1, Number(row.max_attempts || 5));
+    const { data: updated, error: updateError } = await admin
+      .from("whatsapp_message_queue")
+      .update({
+        status: exhausted ? "failed" : "pending",
+        locked_at: null,
+        scheduled_for: exhausted ? new Date().toISOString() : retryDelayIso(attempts),
+        last_error: exhausted
+          ? "Worker interrompido e limite de tentativas atingido."
+          : "Processamento anterior foi interrompido; mensagem reagendada.",
+      })
+      .eq("id", row.id)
+      .eq("status", "processing")
+      .eq("locked_at", row.locked_at)
+      .select("id")
+      .maybeSingle();
+    if (updateError) throw updateError;
+    if (updated) recovered += 1;
+  }
+
+  if (recovered > 0) {
+    console.warn(`[whatsapp-connector] ${recovered} lock(s) abandonado(s) recuperado(s).`);
+  }
+  return recovered;
+}
+
+function subscriptionChargeId(row: Record<string, unknown>) {
+  const payload = isRecord(row.payload) ? row.payload : {};
+  return text(
+    row.subscription_charge_id || payload.subscription_charge_id || payload.charge_id,
+    100,
+  );
+}
+
+async function validateSubscriptionQueueRow(admin: SupabaseClient, row: Record<string, unknown>) {
+  const eventType = String(row.event_type || "");
+  if (!eventType.startsWith("subscription_")) {
+    return { valid: true as const };
+  }
+
+  const chargeId = subscriptionChargeId(row);
+  const tenantId = text(row.tenant_id, 100);
+  if (!isUuid(chargeId) || !isUuid(tenantId)) {
+    return {
+      valid: false as const,
+      reason: "Mensagem de assinatura sem cobrança e loja válidas.",
+    };
+  }
+
+  const { data: charge, error } = await admin
+    .from("subscription_charges")
+    .select("id,status")
+    .eq("id", chargeId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!charge) {
+    return {
+      valid: false as const,
+      reason: "Cobrança da assinatura não existe mais nesta loja.",
+    };
+  }
+
+  const { data: tenant, error: tenantError } = await admin
+    .from("tenants")
+    .select("id,status")
+    .eq("id", tenantId)
+    .maybeSingle();
+  if (tenantError) throw tenantError;
+  if (!tenant || String(tenant.status || "active") === "blocked") {
+    return {
+      valid: false as const,
+      reason: "Mensagem cancelada porque a loja está bloqueada.",
+    };
+  }
+
+  const allowedStatuses =
+    eventType === "subscription_payment_confirmed"
+      ? new Set(["paid"])
+      : new Set(["pending", "overdue"]);
+  if (!allowedStatuses.has(String(charge.status || ""))) {
+    return {
+      valid: false as const,
+      reason: `Mensagem cancelada porque a cobrança está com status ${charge.status || "desconhecido"}.`,
+    };
+  }
+
+  return { valid: true as const };
+}
+
 function isPermanentQueueError(error: unknown) {
   const value = isRecord(error) ? error : {};
   const statusCode = Number(value.statusCode || 0);
@@ -374,6 +497,9 @@ async function failOrRetryQueueRow(
 }
 
 async function processQueue(admin: SupabaseClient, limit: number, request: Request) {
+  await enqueueDueSubscriptionWhatsApp(admin);
+  await recoverStaleQueueClaims(admin, Math.max(20, limit * 2));
+
   const now = new Date().toISOString();
   const { data: candidates, error } = await admin
     .from("whatsapp_message_queue")
@@ -444,6 +570,13 @@ async function processQueue(admin: SupabaseClient, limit: number, request: Reque
         continue;
       }
 
+      const subscriptionValidation = await validateSubscriptionQueueRow(admin, row);
+      if (!subscriptionValidation.valid) {
+        await cancelQueueRow(admin, row.id, subscriptionValidation.reason);
+        summary.cancelled += 1;
+        continue;
+      }
+
       const { data: settings, error: settingsError } = await admin
         .from("tenant_whatsapp_settings")
         .select("enabled, session_id")
@@ -451,23 +584,31 @@ async function processQueue(admin: SupabaseClient, limit: number, request: Reque
         .maybeSingle();
       if (settingsError) throw settingsError;
       if (!settings?.enabled) {
-        await cancelQueueRow(admin, row.id, "AutomaÃ§Ã£o do WhatsApp estÃ¡ desativada para esta loja.");
+        await cancelQueueRow(
+          admin,
+          row.id,
+          "AutomaÃ§Ã£o do WhatsApp estÃ¡ desativada para esta loja.",
+        );
         summary.cancelled += 1;
         continue;
       }
 
       renderedMessage = renderTemplate(row.template, row.payload, appUrl);
-      const result = await connectorRequest(String(settings.session_id || row.session_id), "/send", {
-        method: "POST",
-        timeoutMs: 30_000,
-        body: {
-          phone: row.recipient_phone,
-          message: renderedMessage,
-          kind: row.event_type,
-          tenantId: row.tenant_id,
-          queueId: row.id,
+      const result = await connectorRequest(
+        String(settings.session_id || row.session_id),
+        "/send",
+        {
+          method: "POST",
+          timeoutMs: 30_000,
+          body: {
+            phone: row.recipient_phone,
+            message: renderedMessage,
+            kind: row.event_type,
+            tenantId: row.tenant_id,
+            queueId: row.id,
+          },
         },
-      });
+      );
 
       if (!result.ok || result.sent === false) {
         throw result;
@@ -490,7 +631,10 @@ async function processQueue(admin: SupabaseClient, limit: number, request: Reque
       summary.sent += 1;
     } catch (queueError) {
       await failOrRetryQueueRow(admin, row, queueError, renderedMessage);
-      if (isPermanentQueueError(queueError) || Number(row.attempts || 1) >= Number(row.max_attempts || 5)) {
+      if (
+        isPermanentQueueError(queueError) ||
+        Number(row.attempts || 1) >= Number(row.max_attempts || 5)
+      ) {
         summary.failed += 1;
       } else {
         summary.retried += 1;
@@ -635,21 +779,6 @@ Deno.serve(async (request) => {
           update[field] = incoming[field];
         }
       }
-      for (const field of editableTemplateFields) {
-        if (field in incoming) {
-          const template = text(normalizeWhatsAppFormatting(incoming[field]), 4000);
-          if (!template) {
-            return json(
-              {
-                error: "Os modelos de mensagem não podem ficar vazios.",
-              },
-              400,
-            );
-          }
-          update[field] = template;
-        }
-      }
-
       if ("responsible_whatsapp" in incoming) {
         const phone = digits(incoming.responsible_whatsapp);
         if (phone && phone.length < 10) {

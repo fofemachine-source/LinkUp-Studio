@@ -5,14 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { createTenant, setTenantStatus, getTenantOwner, updateTenant } from "@/lib/tenants.functions";
-import { ShieldCheck, Plus, Search, TrendingUp, Building2, DollarSign, Database, Terminal, Settings2, Pencil, Trash2, ExternalLink, Server, MessageCircle, Save, Send, RefreshCw } from "lucide-react";
-import { useState, useMemo, useEffect } from "react";
+import { ShieldCheck, Plus, Search, TrendingUp, Building2, DollarSign, Database, Terminal, Settings2, Pencil, Trash2, ExternalLink, Server, MessageCircle, Save, Send, RefreshCw, Clock3 } from "lucide-react";
+import { useState, useMemo, useEffect, type ReactNode } from "react";
 import { toast } from "sonner";
 import { dateBR, brl } from "@/lib/format";
 import { validateProjectPassword } from "@/lib/password-policy";
@@ -27,10 +28,31 @@ const whatsappTemplateFields = [
   { key: "professional_cancellation_template", title: "Cancelamento", label: "Mensagem para o profissional" },
   { key: "client_reschedule_template", title: "Reagendamento", label: "Mensagem para o cliente" },
   { key: "professional_reschedule_template", title: "Reagendamento", label: "Mensagem para o profissional" },
+  { key: "subscription_payment_reminder_template", title: "Assinaturas", label: "Lembrete de pagamento" },
+  { key: "subscription_payment_confirmation_template", title: "Assinaturas", label: "Pagamento confirmado" },
+  { key: "subscription_overdue_template", title: "Assinaturas", label: "Aviso de inadimplência" },
 ] as const;
 
 type WhatsappTemplateKey = (typeof whatsappTemplateFields)[number]["key"];
 type WhatsappTemplateForm = Record<WhatsappTemplateKey, string>;
+
+type WhatsappSubscriptionRules = {
+  subscription_payment_reminder_enabled: boolean;
+  subscription_payment_reminder_days_before: number[];
+  subscription_payment_confirmation_enabled: boolean;
+  subscription_overdue_enabled: boolean;
+  subscription_overdue_days_after: number[];
+  subscription_notification_time: string;
+};
+
+const defaultWhatsappSubscriptionRules: WhatsappSubscriptionRules = {
+  subscription_payment_reminder_enabled: false,
+  subscription_payment_reminder_days_before: [3, 1, 0],
+  subscription_payment_confirmation_enabled: false,
+  subscription_overdue_enabled: false,
+  subscription_overdue_days_after: [1, 3, 7],
+  subscription_notification_time: "09:00",
+};
 
 const defaultWhatsappTemplates: WhatsappTemplateForm = {
   client_registration_template:
@@ -102,11 +124,38 @@ Confira os novos detalhes no(a) *{salao}*:
 🕒 *Horário:* {hora}
 
 ✅ Sua agenda já foi atualizada automaticamente.`,
+  subscription_payment_reminder_template:
+    `🔔 *Olá, {cliente}!*
+
+Sua assinatura *{plano}* no(a) *{salao}* vence em *{vencimento}*.
+
+💳 *Valor:* {valor}
+
+Se você já realizou o pagamento, desconsidere esta mensagem.`,
+  subscription_payment_confirmation_template:
+    `✅ *Pagamento confirmado, {cliente}!*
+
+Recebemos *{valor}* referente à sua assinatura *{plano}* no(a) *{salao}*.
+
+📅 *Próximo vencimento:* {proximo_vencimento}
+
+Obrigado pela confiança!`,
+  subscription_overdue_template:
+    `⚠️ *Olá, {cliente}.*
+
+Identificamos uma pendência na assinatura *{plano}* no(a) *{salao}*.
+
+📅 *Vencimento:* {vencimento}
+💳 *Valor:* {valor}
+⏳ *Atraso:* {dias_atraso} dia(s)
+
+Entre em contato com o salão para regularizar.`,
 };
 
 const whatsappTemplateColumns = [
   "id",
   ...whatsappTemplateFields.map((field) => field.key),
+  ...Object.keys(defaultWhatsappSubscriptionRules),
   "updated_at",
 ].join(",");
 
@@ -114,6 +163,7 @@ const tenantWhatsappTemplateColumns = [
   "tenant_id",
   "message_templates_source",
   ...whatsappTemplateFields.map((field) => field.key),
+  ...Object.keys(defaultWhatsappSubscriptionRules),
 ].join(",");
 
 export const Route = createFileRoute("/saas")({
@@ -224,6 +274,48 @@ function normalizeWhatsappTemplates(row?: Record<string, unknown> | null): Whats
   return next;
 }
 
+function normalizeDayOffsets(value: unknown, minimum: number, fallback: number[], direction: "asc" | "desc") {
+  const source = Array.isArray(value) ? value : fallback;
+  const unique = Array.from(
+    new Set(source.map(Number).filter((day) => Number.isInteger(day) && day >= minimum && day <= 365)),
+  );
+  const normalized = unique.length ? unique : fallback;
+  return [...normalized].sort((left, right) => (direction === "asc" ? left - right : right - left));
+}
+
+function normalizeSubscriptionRules(row?: Record<string, unknown> | null): WhatsappSubscriptionRules {
+  const time = String(row?.subscription_notification_time ?? defaultWhatsappSubscriptionRules.subscription_notification_time).slice(0, 5);
+  return {
+    subscription_payment_reminder_enabled:
+      typeof row?.subscription_payment_reminder_enabled === "boolean"
+        ? row.subscription_payment_reminder_enabled
+        : defaultWhatsappSubscriptionRules.subscription_payment_reminder_enabled,
+    subscription_payment_reminder_days_before: normalizeDayOffsets(
+      row?.subscription_payment_reminder_days_before,
+      0,
+      defaultWhatsappSubscriptionRules.subscription_payment_reminder_days_before,
+      "desc",
+    ),
+    subscription_payment_confirmation_enabled:
+      typeof row?.subscription_payment_confirmation_enabled === "boolean"
+        ? row.subscription_payment_confirmation_enabled
+        : defaultWhatsappSubscriptionRules.subscription_payment_confirmation_enabled,
+    subscription_overdue_enabled:
+      typeof row?.subscription_overdue_enabled === "boolean"
+        ? row.subscription_overdue_enabled
+        : defaultWhatsappSubscriptionRules.subscription_overdue_enabled,
+    subscription_overdue_days_after: normalizeDayOffsets(
+      row?.subscription_overdue_days_after,
+      1,
+      defaultWhatsappSubscriptionRules.subscription_overdue_days_after,
+      "asc",
+    ),
+    subscription_notification_time: /^([01]\d|2[0-3]):[0-5]\d$/.test(time)
+      ? time
+      : defaultWhatsappSubscriptionRules.subscription_notification_time,
+  };
+}
+
 function renderWhatsappTemplate(template: string, tenant?: any) {
   const variables: Record<string, string> = {
     cliente: "Cliente Teste",
@@ -233,6 +325,15 @@ function renderWhatsappTemplate(template: string, tenant?: any) {
     data: "18/07/2026",
     hora: "09:00",
     link_cancelamento: "https://linkup.studio/cancelar/teste",
+    plano: "Plano VIP Mensal",
+    valor: "R$ 150,00",
+    vencimento: "21/07/2026",
+    proximo_vencimento: "21/08/2026",
+    data_pagamento: "18/07/2026",
+    dias_para_vencimento: "3",
+    dias_atraso: "3",
+    dias: "3",
+    validade: "21/08/2026",
   };
   return normalizeWhatsAppFormatting(
     template.replace(
@@ -253,6 +354,8 @@ function WhatsAppAdminTab() {
   const [templateSource, setTemplateSource] = useState<"global" | "custom">("global");
   const [globalForm, setGlobalForm] = useState<WhatsappTemplateForm>(defaultWhatsappTemplates);
   const [tenantForm, setTenantForm] = useState<WhatsappTemplateForm>(defaultWhatsappTemplates);
+  const [globalRules, setGlobalRules] = useState<WhatsappSubscriptionRules>(defaultWhatsappSubscriptionRules);
+  const [tenantRules, setTenantRules] = useState<WhatsappSubscriptionRules>(defaultWhatsappSubscriptionRules);
   const [testPhone, setTestPhone] = useState("");
   const [testTemplate, setTestTemplate] = useState<WhatsappTemplateKey>("professional_booking_template");
   const [testTenantId, setTestTenantId] = useState("");
@@ -313,7 +416,10 @@ function WhatsAppAdminTab() {
   const testPreview = renderWhatsappTemplate(testForm[testTemplate], testTenant);
 
   useEffect(() => {
-    if (globalQuery.data) setGlobalForm(normalizeWhatsappTemplates(globalQuery.data));
+    if (globalQuery.data) {
+      setGlobalForm(normalizeWhatsappTemplates(globalQuery.data));
+      setGlobalRules(normalizeSubscriptionRules(globalQuery.data));
+    }
   }, [globalQuery.data]);
 
   useEffect(() => {
@@ -332,19 +438,23 @@ function WhatsAppAdminTab() {
     if (!selectedTenantId) return;
     if (!tenantQuery.data) {
       setTenantForm(globalForm);
+      setTenantRules(globalRules);
       return;
     }
     setTenantForm(normalizeWhatsappTemplates({ ...globalForm, ...tenantQuery.data }));
-  }, [globalForm, selectedTenantId, tenantQuery.data]);
+    setTenantRules(normalizeSubscriptionRules({ ...globalRules, ...tenantQuery.data }));
+  }, [globalForm, globalRules, selectedTenantId, tenantQuery.data]);
 
   async function saveGlobalTemplates() {
     setBusy("global");
     try {
       const normalizedForm = normalizeWhatsappTemplates(globalForm);
+      const normalizedRules = normalizeSubscriptionRules(globalRules);
       setGlobalForm(normalizedForm);
+      setGlobalRules(normalizedRules);
       const { error } = await (supabase as any)
         .from("whatsapp_global_templates")
-        .upsert({ id: "global", ...normalizedForm }, { onConflict: "id" });
+        .upsert({ id: "global", ...normalizedForm, ...normalizedRules }, { onConflict: "id" });
       if (error) throw error;
       toast.success("Modelo global salvo para todos os salões.");
       await qc.invalidateQueries({ queryKey: ["whatsapp-global-templates"] });
@@ -366,8 +476,10 @@ function WhatsAppAdminTab() {
       };
       if (templateSource === "custom") {
         const normalizedForm = normalizeWhatsappTemplates(tenantForm);
+        const normalizedRules = normalizeSubscriptionRules(tenantRules);
         setTenantForm(normalizedForm);
-        Object.assign(payload, normalizedForm);
+        setTenantRules(normalizedRules);
+        Object.assign(payload, normalizedForm, normalizedRules);
       }
 
       const { error } = await (supabase as any)
@@ -478,6 +590,7 @@ function WhatsAppAdminTab() {
               </p>
             </div>
             <TemplateEditor form={globalForm} onChange={setGlobalForm} />
+            <SubscriptionCadenceEditor rules={globalRules} onChange={setGlobalRules} />
             <div className="flex justify-end">
               <Button
                 className="bg-indigo-600 hover:bg-indigo-700"
@@ -530,7 +643,10 @@ function WhatsAppAdminTab() {
             </div>
 
             {templateSource === "custom" ? (
-              <TemplateEditor form={tenantForm} onChange={setTenantForm} />
+              <div className="space-y-5">
+                <TemplateEditor form={tenantForm} onChange={setTenantForm} />
+                <SubscriptionCadenceEditor rules={tenantRules} onChange={setTenantRules} />
+              </div>
             ) : (
               <div className="rounded-xl border border-dashed bg-slate-50 p-5 text-sm text-slate-600">
                 Quando o modelo usado é <strong>Padrão da matriz</strong>, nenhum salão específico
@@ -624,7 +740,7 @@ function TemplateEditor({
         <div key={field.key} className="space-y-1.5">
           <Label>{field.title} · {field.label}</Label>
           <Textarea
-            rows={field.key === "professional_booking_template" ? 7 : 4}
+            rows={field.key === "professional_booking_template" || field.key.startsWith("subscription_") ? 7 : 4}
             value={form[field.key]}
             onChange={(event) => onChange({ ...form, [field.key]: event.target.value })}
             className="bg-white"
@@ -633,12 +749,162 @@ function TemplateEditor({
       ))}
       <p className="text-xs text-slate-500">
         Variáveis disponíveis: {"{cliente}, {profissional}, {salao}, {servico}, "}
-        {"{data}, {hora}, {link_cancelamento}"}.
+        {"{data}, {hora}, {link_cancelamento}, {plano}, {valor}, {vencimento}, "}
+        {"{proximo_vencimento}, {data_pagamento}, {dias_para_vencimento}, "}
+        {"{dias_atraso}, {dias}, {validade}"}.
       </p>
       <p className="text-xs text-slate-500">
         Para destacar em negrito no WhatsApp, use um asterisco de cada lado: <code>*texto*</code>.
         Se você colar <code>**texto**</code>, o sistema corrigirá automaticamente ao salvar e enviar.
       </p>
+    </div>
+  );
+}
+
+function SubscriptionCadenceEditor({ rules, onChange }: {
+  rules: WhatsappSubscriptionRules;
+  onChange: (next: WhatsappSubscriptionRules) => void;
+}) {
+  return (
+    <section className="space-y-4 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+      <div className="flex items-start gap-3">
+        <div className="rounded-lg bg-indigo-100 p-2 text-indigo-700"><Clock3 className="h-4 w-4" /></div>
+        <div>
+          <h4 className="font-semibold text-slate-900">Régua automática de Assinaturas</h4>
+          <p className="text-xs text-slate-500">
+            Defina os dias manualmente; a quantidade cadastrada determina o total de mensagens. As regras começam desativadas e só entram em operação quando você ligar cada chave.
+          </p>
+        </div>
+      </div>
+
+      <AutomationRule
+        label="Lembretes antes do vencimento"
+        description={`${rules.subscription_payment_reminder_days_before.length} envio(s) por cobrança`}
+        checked={rules.subscription_payment_reminder_enabled}
+        onCheckedChange={(subscription_payment_reminder_enabled) => onChange({ ...rules, subscription_payment_reminder_enabled })}
+      >
+        <DayOffsetsEditor
+          label="Dias antes"
+          value={rules.subscription_payment_reminder_days_before}
+          minimum={0}
+          direction="desc"
+          disabled={!rules.subscription_payment_reminder_enabled}
+          onChange={(subscription_payment_reminder_days_before) => onChange({ ...rules, subscription_payment_reminder_days_before })}
+        />
+      </AutomationRule>
+
+      <AutomationRule
+        label="Confirmação de pagamento"
+        description="1 envio imediato após a baixa ser confirmada"
+        checked={rules.subscription_payment_confirmation_enabled}
+        onCheckedChange={(subscription_payment_confirmation_enabled) => onChange({ ...rules, subscription_payment_confirmation_enabled })}
+      />
+
+      <AutomationRule
+        label="Avisos de inadimplência"
+        description={`${rules.subscription_overdue_days_after.length} envio(s) por cobrança vencida`}
+        checked={rules.subscription_overdue_enabled}
+        onCheckedChange={(subscription_overdue_enabled) => onChange({ ...rules, subscription_overdue_enabled })}
+      >
+        <DayOffsetsEditor
+          label="Dias depois"
+          value={rules.subscription_overdue_days_after}
+          minimum={1}
+          direction="asc"
+          disabled={!rules.subscription_overdue_enabled}
+          onChange={(subscription_overdue_days_after) => onChange({ ...rules, subscription_overdue_days_after })}
+        />
+      </AutomationRule>
+
+      <div className="max-w-xs space-y-1.5">
+        <Label>Horário dos lembretes e avisos</Label>
+        <Input
+          type="time"
+          value={rules.subscription_notification_time}
+          onChange={(event) => onChange({ ...rules, subscription_notification_time: event.target.value })}
+          className="bg-white"
+        />
+        <p className="text-[11px] text-slate-500">A confirmação de pagamento não espera esse horário: ela é enviada imediatamente.</p>
+      </div>
+    </section>
+  );
+}
+
+function AutomationRule({ label, description, checked, onCheckedChange, children }: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="space-y-3 rounded-lg border bg-white p-3">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-slate-900">{label}</p>
+          <p className="text-xs text-slate-500">{description}</p>
+        </div>
+        <Switch checked={checked} onCheckedChange={onCheckedChange} />
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function DayOffsetsEditor({ label, value, minimum, direction, disabled, onChange }: {
+  label: string;
+  value: number[];
+  minimum: number;
+  direction: "asc" | "desc";
+  disabled: boolean;
+  onChange: (next: number[]) => void;
+}) {
+  const normalize = (next: number[]) => normalizeDayOffsets(next, minimum, value, direction);
+  const updateAt = (index: number, raw: string) => {
+    const next = [...value];
+    next[index] = Math.min(365, Math.max(minimum, Number(raw) || minimum));
+    onChange(normalize(next));
+  };
+  const addOffset = () => {
+    const candidate = Array.from({ length: 366 - minimum }, (_, index) => index + minimum).find((day) => !value.includes(day));
+    if (candidate !== undefined) onChange(normalize([...value, candidate]));
+  };
+
+  return (
+    <div className={disabled ? "opacity-50" : ""}>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <Label className="text-xs">{label}</Label>
+        <Button type="button" variant="outline" size="sm" disabled={disabled || value.length >= 10} onClick={addOffset}>
+          <Plus className="mr-1 h-3.5 w-3.5" />Adicionar envio
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {value.map((day, index) => (
+          <div key={`${day}-${index}`} className="flex items-center rounded-md border bg-slate-50">
+            <Input
+              type="number"
+              min={minimum}
+              max={365}
+              value={day}
+              disabled={disabled}
+              onChange={(event) => updateAt(index, event.target.value)}
+              className="h-9 w-20 border-0 bg-transparent text-center shadow-none"
+            />
+            <span className="pr-2 text-xs text-slate-500">dia(s)</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-rose-600"
+              disabled={disabled || value.length === 1}
+              onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
+              aria-label={`Remover envio de ${day} dias`}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

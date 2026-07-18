@@ -2468,6 +2468,15 @@ export type Database = {
           reminder_minutes_before: number
           responsible_whatsapp: string | null
           session_id: string
+          subscription_notification_time: string
+          subscription_overdue_days_after: number[]
+          subscription_overdue_enabled: boolean
+          subscription_overdue_template: string
+          subscription_payment_confirmation_enabled: boolean
+          subscription_payment_confirmation_template: string
+          subscription_payment_reminder_days_before: number[]
+          subscription_payment_reminder_enabled: boolean
+          subscription_payment_reminder_template: string
           tenant_id: string
           updated_at: string
         }
@@ -2498,6 +2507,15 @@ export type Database = {
           reminder_minutes_before?: number
           responsible_whatsapp?: string | null
           session_id: string
+          subscription_notification_time?: string
+          subscription_overdue_days_after?: number[]
+          subscription_overdue_enabled?: boolean
+          subscription_overdue_template?: string
+          subscription_payment_confirmation_enabled?: boolean
+          subscription_payment_confirmation_template?: string
+          subscription_payment_reminder_days_before?: number[]
+          subscription_payment_reminder_enabled?: boolean
+          subscription_payment_reminder_template?: string
           tenant_id: string
           updated_at?: string
         }
@@ -2528,6 +2546,15 @@ export type Database = {
           reminder_minutes_before?: number
           responsible_whatsapp?: string | null
           session_id?: string
+          subscription_notification_time?: string
+          subscription_overdue_days_after?: number[]
+          subscription_overdue_enabled?: boolean
+          subscription_overdue_template?: string
+          subscription_payment_confirmation_enabled?: boolean
+          subscription_payment_confirmation_template?: string
+          subscription_payment_reminder_days_before?: number[]
+          subscription_payment_reminder_enabled?: boolean
+          subscription_payment_reminder_template?: string
           tenant_id?: string
           updated_at?: string
         }
@@ -2648,6 +2675,15 @@ export type Database = {
           professional_booking_template: string
           professional_cancellation_template: string
           professional_reschedule_template: string
+          subscription_notification_time: string
+          subscription_overdue_days_after: number[]
+          subscription_overdue_enabled: boolean
+          subscription_overdue_template: string
+          subscription_payment_confirmation_enabled: boolean
+          subscription_payment_confirmation_template: string
+          subscription_payment_reminder_days_before: number[]
+          subscription_payment_reminder_enabled: boolean
+          subscription_payment_reminder_template: string
           updated_at: string
         }
         Insert: {
@@ -2661,6 +2697,15 @@ export type Database = {
           professional_booking_template?: string
           professional_cancellation_template?: string
           professional_reschedule_template?: string
+          subscription_notification_time?: string
+          subscription_overdue_days_after?: number[]
+          subscription_overdue_enabled?: boolean
+          subscription_overdue_template?: string
+          subscription_payment_confirmation_enabled?: boolean
+          subscription_payment_confirmation_template?: string
+          subscription_payment_reminder_days_before?: number[]
+          subscription_payment_reminder_enabled?: boolean
+          subscription_payment_reminder_template?: string
           updated_at?: string
         }
         Update: {
@@ -2674,6 +2719,15 @@ export type Database = {
           professional_booking_template?: string
           professional_cancellation_template?: string
           professional_reschedule_template?: string
+          subscription_notification_time?: string
+          subscription_overdue_days_after?: number[]
+          subscription_overdue_enabled?: boolean
+          subscription_overdue_template?: string
+          subscription_payment_confirmation_enabled?: boolean
+          subscription_payment_confirmation_template?: string
+          subscription_payment_reminder_days_before?: number[]
+          subscription_payment_reminder_enabled?: boolean
+          subscription_payment_reminder_template?: string
           updated_at?: string
         }
         Relationships: []
@@ -2699,6 +2753,7 @@ export type Database = {
           sent_at: string | null
           session_id: string
           status: string
+          subscription_charge_id: string | null
           template: string
           tenant_id: string
           updated_at: string
@@ -2723,6 +2778,7 @@ export type Database = {
           sent_at?: string | null
           session_id: string
           status?: string
+          subscription_charge_id?: string | null
           template: string
           tenant_id: string
           updated_at?: string
@@ -2747,6 +2803,7 @@ export type Database = {
           sent_at?: string | null
           session_id?: string
           status?: string
+          subscription_charge_id?: string | null
           template?: string
           tenant_id?: string
           updated_at?: string
@@ -2758,6 +2815,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "appointments"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_queue_subscription_charge_tenant_fk"
+            columns: ["subscription_charge_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_charges"
+            referencedColumns: ["id", "tenant_id"]
           },
           {
             foreignKeyName: "whatsapp_message_queue_tenant_id_fkey"
@@ -2808,6 +2872,10 @@ export type Database = {
           p_supplier_name: string
           p_tenant_id: string
         }
+        Returns: Json
+      }
+      enqueue_due_subscription_whatsapp: {
+        Args: Record<PropertyKey, never>
         Returns: Json
       }
       finalize_commanda: {

@@ -1801,33 +1801,26 @@ function SettingsTab({
         <CardContent className="space-y-5">
           <Alert>
             <MessageCircle className="h-4 w-4" />
-            <AlertTitle>Variáveis disponíveis</AlertTitle>
+            <AlertTitle>Mensagens administradas pela matriz</AlertTitle>
             <AlertDescription>
-              {"Use {cliente}, {plano}, {vencimento}, {valor} e {validade}."}
+              Os textos, dias, quantidade de avisos e horário de envio são definidos no menu
+              WhatsApp do LinkUp Studio. Aqui o salão apenas ativa ou desativa a automação de
+              Assinaturas. As mensagens abaixo permanecem preservadas como referência.
             </AlertDescription>
           </Alert>
-          <Field label="Lembrete de cobrança">
-            <Textarea
-              rows={5}
-              value={form.billing_message}
-              onChange={(event) => setForm({ ...form, billing_message: event.target.value })}
-            />
+          <Field label="Lembrete de cobrança (somente leitura)">
+            <Textarea rows={5} value={form.billing_message} readOnly className="bg-muted/40" />
           </Field>
-          <Field label="Confirmação de pagamento">
+          <Field label="Confirmação de pagamento (somente leitura)">
             <Textarea
               rows={5}
               value={form.payment_confirmation_message}
-              onChange={(event) =>
-                setForm({ ...form, payment_confirmation_message: event.target.value })
-              }
+              readOnly
+              className="bg-muted/40"
             />
           </Field>
-          <Field label="Aviso de inadimplência">
-            <Textarea
-              rows={5}
-              value={form.overdue_message}
-              onChange={(event) => setForm({ ...form, overdue_message: event.target.value })}
-            />
+          <Field label="Aviso de inadimplência (somente leitura)">
+            <Textarea rows={5} value={form.overdue_message} readOnly className="bg-muted/40" />
           </Field>
           <Button className="w-full" onClick={() => void save()} disabled={busy}>
             {busy ? "Salvando..." : "Salvar configurações"}
