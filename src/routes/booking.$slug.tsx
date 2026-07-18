@@ -136,7 +136,7 @@ function BookingPage() {
   const [phone, setPhone] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [bookingCancelled, setBookingCancelled] = useState(false);
-  const [accessMode, setAccessMode] = useState<CustomerAccessMode>("register");
+  const [accessMode, setAccessMode] = useState<CustomerAccessMode>("login");
   const [accessName, setAccessName] = useState("");
   const [accessCpf, setAccessCpf] = useState("");
   const [accessPhone, setAccessPhone] = useState("");
@@ -635,6 +635,7 @@ function BookingPage() {
               setAccessMode(mode);
               setAccessPassword("");
               setAccessActivationCode("");
+              setWhatsappConsent(false);
             }}
             onNameChange={setAccessName}
             onCpfChange={setAccessCpf}
@@ -1449,11 +1450,23 @@ function CustomerAccessCard({
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const registering = mode === "register";
+  const cpfOk = isValidCustomerCpf(cpf);
+  const passwordOk = password.length >= 8;
+  const nameOk = name.trim().length >= 2;
+  const phoneOk = isValidCustomerWhatsapp(phone);
   const valid =
-    isValidCustomerCpf(cpf) &&
-    password.length >= 8 &&
-    (!registering ||
-      (name.trim().length >= 2 && isValidCustomerWhatsapp(phone) && whatsappConsent));
+    cpfOk &&
+    passwordOk &&
+    (!registering || (nameOk && phoneOk && whatsappConsent));
+  const disabledReason = (() => {
+    if (valid || pending) return "";
+    if (!cpfOk) return "Informe um CPF válido.";
+    if (!passwordOk) return "A senha precisa ter pelo menos 8 caracteres.";
+    if (registering && !nameOk) return "Informe seu nome completo.";
+    if (registering && !phoneOk) return "Informe um WhatsApp com DDD.";
+    if (registering && !whatsappConsent) return "Marque a autorização para mensagens.";
+    return "";
+  })();
 
   return (
     <Card className="border-white/5 bg-[#0a0a0a] text-white shadow-2xl">
@@ -1471,29 +1484,8 @@ function CustomerAccessCard({
           <p className="mt-1 text-sm leading-relaxed text-white/55">
             {registering
               ? "Seus dados ficam vinculados a este salão e o acesso permanece salvo neste aparelho."
-              : "Use o CPF e a senha escolhida no seu primeiro acesso."}
+              : "Use seu CPF e senha. Depois do acesso, o agendamento abre normalmente."}
           </p>
-        </div>
-
-        <div className="grid grid-cols-2 rounded-xl border border-white/10 bg-white/5 p-1">
-          <button
-            type="button"
-            className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-              registering ? "bg-primary text-primary-foreground" : "text-white/55 hover:text-white"
-            }`}
-            onClick={() => onModeChange("register")}
-          >
-            Criar cadastro
-          </button>
-          <button
-            type="button"
-            className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-              !registering ? "bg-primary text-primary-foreground" : "text-white/55 hover:text-white"
-            }`}
-            onClick={() => onModeChange("login")}
-          >
-            Entrar
-          </button>
         </div>
 
         <form
@@ -1623,7 +1615,28 @@ function CustomerAccessCard({
             </span>
             {!pending && <ArrowRight className="h-5 w-5" />}
           </Button>
+
+          {disabledReason && (
+            <p className="text-center text-xs font-medium text-primary/80">
+              {disabledReason}
+            </p>
+          )}
         </form>
+
+        <div className="border-t border-white/10 pt-5 text-center">
+          <p className="text-xs text-white/45">
+            {registering ? "Já possui cadastro neste salão?" : "Primeiro acesso neste salão?"}
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            className="mt-2 h-auto px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/10 hover:text-primary"
+            onClick={() => onModeChange(registering ? "login" : "register")}
+            disabled={pending}
+          >
+            {registering ? "Entrar" : "Cadastre-se"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

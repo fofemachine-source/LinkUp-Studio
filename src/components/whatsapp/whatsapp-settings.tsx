@@ -150,7 +150,14 @@ const defaultForm: WhatsAppForm = {
   client_booking_template:
     "Olá, {cliente}! Seu agendamento em {salao} está confirmado para {data} às {hora}, com {profissional}. Serviço: {servico}. Para cancelar: {link_cancelamento}",
   professional_booking_template:
-    "Olá, {profissional}! Novo agendamento: {cliente}, serviço {servico}, em {data} às {hora}.",
+    `📅 *Olá, {profissional}! Você recebeu um novo agendamento.*
+
+👤 Cliente: *{cliente}*
+💼 Serviço: *{servico}*
+📆 Data: *{data}*
+🕒 Horário: *{hora}*
+
+✨ Desejamos um excelente atendimento!`,
   client_reminder_template:
     "Olá, {cliente}! Passando para lembrar que seu atendimento em {salao} será em {data} às {hora}, com {profissional}. Serviço: {servico}.",
   client_cancellation_template:
@@ -911,6 +918,29 @@ export function WhatsAppSettings({ tenantId }: { tenantId?: string }) {
       </Card>
 
       <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Modelos das mensagens</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Os textos são definidos pela matriz LinkUp Studio e aplicados automaticamente nesta loja.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-xl border border-dashed bg-muted/20 p-5">
+            <div className="flex items-start gap-3">
+              <MessageCircle className="mt-0.5 h-5 w-5 text-primary" />
+              <div>
+                <p className="font-medium">Modelos bloqueados nesta loja</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Para alterar o texto padrão de todos os salões ou criar uma mensagem personalizada
+                  somente para esta loja, acesse a área da matriz em SaaS &gt; WhatsApp.
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="hidden">
         <CardHeader>
           <CardTitle className="text-lg">Modelos das mensagens</CardTitle>
           <p className="text-sm text-muted-foreground">

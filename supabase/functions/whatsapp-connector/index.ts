@@ -19,6 +19,7 @@ type RequestBody = {
   action?: ConnectorAction;
   tenantId?: string;
   phone?: string;
+  message?: string;
   messageId?: string;
   limit?: number;
   secret?: string;
@@ -724,11 +725,14 @@ Deno.serve(async (request) => {
           400,
         );
       }
+      const customMessage = text(body.message, 4000);
       result = await connectorRequest(sessionId, "/send", {
         method: "POST",
         body: {
           phone,
-          message: `Teste LinkUp Studio: o WhatsApp da ${tenant.name} está conectado e pronto para avisar clientes e profissionais.`,
+          message:
+            customMessage ||
+            `Teste LinkUp Studio: o WhatsApp da ${tenant.name} está conectado e pronto para avisar clientes e profissionais.`,
           kind: "salon_test",
           tenantId,
         },
