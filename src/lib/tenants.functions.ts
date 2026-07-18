@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AdminUserAttributes, SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
@@ -14,7 +14,9 @@ const ownerPasswordSchema = z
   .min(PROJECT_PASSWORD_MIN_LENGTH, PROJECT_PASSWORD_REQUIREMENT);
 
 function tenantAuthError(error: { code?: string; message?: string }) {
-  return new Error(projectPasswordAuthErrorMessage(error, "Não foi possível criar ou atualizar o acesso da loja."));
+  return new Error(
+    projectPasswordAuthErrorMessage(error, "Não foi possível criar ou atualizar o acesso da loja."),
+  );
 }
 
 function requiredOwnerPassword(password: string | undefined) {
@@ -54,14 +56,19 @@ async function assertSuperAdmin(context: AuthenticatedContext) {
 export const createTenant = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
-    z.object({
-      name: z.string().min(2),
-      slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
-      whatsapp: z.string().optional(),
-      plan: z.enum(["monthly", "yearly"]).default("monthly"),
-      owner_email: z.string().email().optional(),
-      owner_password: ownerPasswordSchema.optional(),
-    }).parse(d),
+    z
+      .object({
+        name: z.string().min(2),
+        slug: z
+          .string()
+          .min(2)
+          .regex(/^[a-z0-9-]+$/),
+        whatsapp: z.string().optional(),
+        plan: z.enum(["monthly", "yearly"]).default("monthly"),
+        owner_email: z.string().email().optional(),
+        owner_password: ownerPasswordSchema.optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
@@ -95,8 +102,13 @@ export const createTenant = createServerFn({ method: "POST" })
       });
       if (created.error) throw tenantAuthError(created.error);
       if (created.data.user) {
-        await supabaseAdmin.from("user_roles").insert({ user_id: created.data.user.id, tenant_id: t.id, role: "owner" });
-        await supabaseAdmin.from("profiles").update({ active_tenant_id: t.id }).eq("id", created.data.user.id);
+        await supabaseAdmin
+          .from("user_roles")
+          .insert({ user_id: created.data.user.id, tenant_id: t.id, role: "owner" });
+        await supabaseAdmin
+          .from("profiles")
+          .update({ active_tenant_id: t.id })
+          .eq("id", created.data.user.id);
       }
     }
     return { id: t.id };
@@ -104,11 +116,30 @@ export const createTenant = createServerFn({ method: "POST" })
 
 export const setTenantStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ id: z.string().uuid(), status: z.enum(["active","blocked"]) }).parse(d))
+  .inputValidator((d) =>
+    z.object({ id: z.string().uuid(), status: z.enum(["active", "blocked"]) }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("tenants").update({ status: data.status }).eq("id", data.id);
+    const statusPatch =
+      data.status === "blocked"
+        ? {
+            status: "blocked",
+            status_reason: "manual_admin",
+            billing_blocked_at: new Date().toISOString(),
+          }
+        : {
+            status: "active",
+            status_reason: null,
+            billing_blocked_at: null,
+          };
+    // Generated database types are updated when the new billing migration is linked.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabaseAdmin as any)
+      .from("tenants")
+      .update(statusPatch)
+      .eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -119,7 +150,12 @@ export const getTenantOwner = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: role } = await supabaseAdmin.from("user_roles").select("user_id").eq("tenant_id", data.tenantId).eq("role", "owner").maybeSingle();
+    const { data: role } = await supabaseAdmin
+      .from("user_roles")
+      .select("user_id")
+      .eq("tenant_id", data.tenantId)
+      .eq("role", "owner")
+      .maybeSingle();
     if (!role) return null;
     const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(role.user_id);
     if (!userRes.user) return null;
@@ -132,15 +168,20 @@ export const getTenantOwner = createServerFn({ method: "POST" })
 export const updateTenant = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
-    z.object({
-      id: z.string().uuid(),
-      name: z.string().min(2),
-      slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
-      whatsapp: z.string().optional(),
-      plan: z.enum(["monthly", "yearly"]),
-      owner_email: z.string().email().optional(),
-      owner_password: ownerPasswordSchema.optional(),
-    }).parse(d),
+    z
+      .object({
+        id: z.string().uuid(),
+        name: z.string().min(2),
+        slug: z
+          .string()
+          .min(2)
+          .regex(/^[a-z0-9-]+$/),
+        whatsapp: z.string().optional(),
+        plan: z.enum(["monthly", "yearly"]),
+        owner_email: z.string().email().optional(),
+        owner_password: ownerPasswordSchema.optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
@@ -193,24 +234,34 @@ export const updateTenant = createServerFn({ method: "POST" })
             if (created.error) throw tenantAuthError(created.error);
             targetUser = created.data.user!;
           } else {
-            const updateParams: any = { email_confirm: true };
+            const updateParams: AdminUserAttributes = { email_confirm: true };
             if (data.owner_password) {
               updateParams.password = data.owner_password;
             }
-            const { error: pwdErr } = await supabaseAdmin.auth.admin.updateUserById(targetUser.id, updateParams);
+            const { error: pwdErr } = await supabaseAdmin.auth.admin.updateUserById(
+              targetUser.id,
+              updateParams,
+            );
             if (pwdErr) throw tenantAuthError(pwdErr);
           }
 
-          await supabaseAdmin.from("user_roles").insert({ user_id: targetUser.id, tenant_id: data.id, role: "owner" });
-          await supabaseAdmin.from("profiles").upsert({ id: targetUser.id, active_tenant_id: data.id }, { onConflict: "id" });
+          await supabaseAdmin
+            .from("user_roles")
+            .insert({ user_id: targetUser.id, tenant_id: data.id, role: "owner" });
+          await supabaseAdmin
+            .from("profiles")
+            .upsert({ id: targetUser.id, active_tenant_id: data.id }, { onConflict: "id" });
         } else {
           const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(role.user_id);
           if (userRes.user) {
-            const updateParams: any = { email: emailLower, email_confirm: true };
+            const updateParams: AdminUserAttributes = { email: emailLower, email_confirm: true };
             if (data.owner_password) {
               updateParams.password = data.owner_password;
             }
-            const { error: uErr } = await supabaseAdmin.auth.admin.updateUserById(role.user_id, updateParams);
+            const { error: uErr } = await supabaseAdmin.auth.admin.updateUserById(
+              role.user_id,
+              updateParams,
+            );
             if (uErr) throw tenantAuthError(uErr);
           }
         }
@@ -227,16 +278,23 @@ export const updateTenant = createServerFn({ method: "POST" })
           if (created.error) throw tenantAuthError(created.error);
           targetUser = created.data.user!;
         } else {
-          const updateParams: any = { email_confirm: true };
+          const updateParams: AdminUserAttributes = { email_confirm: true };
           if (data.owner_password) {
             updateParams.password = data.owner_password;
           }
-          const { error: pwdErr } = await supabaseAdmin.auth.admin.updateUserById(targetUser.id, updateParams);
+          const { error: pwdErr } = await supabaseAdmin.auth.admin.updateUserById(
+            targetUser.id,
+            updateParams,
+          );
           if (pwdErr) throw tenantAuthError(pwdErr);
         }
 
-        await supabaseAdmin.from("user_roles").insert({ user_id: targetUser.id, tenant_id: data.id, role: "owner" });
-        await supabaseAdmin.from("profiles").upsert({ id: targetUser.id, active_tenant_id: data.id }, { onConflict: "id" });
+        await supabaseAdmin
+          .from("user_roles")
+          .insert({ user_id: targetUser.id, tenant_id: data.id, role: "owner" });
+        await supabaseAdmin
+          .from("profiles")
+          .upsert({ id: targetUser.id, active_tenant_id: data.id }, { onConflict: "id" });
       }
     }
 

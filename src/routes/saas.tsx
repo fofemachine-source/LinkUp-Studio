@@ -6,31 +6,89 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { createTenant, setTenantStatus, getTenantOwner, updateTenant } from "@/lib/tenants.functions";
-import { ShieldCheck, Plus, Search, TrendingUp, Building2, DollarSign, Database, Terminal, Settings2, Pencil, Trash2, ExternalLink, Server, MessageCircle, Save, Send, RefreshCw, Clock3 } from "lucide-react";
+import {
+  createTenant,
+  setTenantStatus,
+  getTenantOwner,
+  updateTenant,
+} from "@/lib/tenants.functions";
+import {
+  ShieldCheck,
+  Plus,
+  Search,
+  TrendingUp,
+  Building2,
+  DollarSign,
+  Database,
+  Terminal,
+  Settings2,
+  Pencil,
+  Trash2,
+  ExternalLink,
+  Server,
+  MessageCircle,
+  Save,
+  Send,
+  RefreshCw,
+  Clock3,
+} from "lucide-react";
 import { useState, useMemo, useEffect, type ReactNode } from "react";
 import { toast } from "sonner";
 import { dateBR, brl } from "@/lib/format";
 import { validateProjectPassword } from "@/lib/password-policy";
 import { normalizeWhatsAppFormatting } from "@/lib/whatsapp-format";
 import { getPublicBookingUrl } from "@/lib/public-booking-url";
+import { PlatformBillingTab } from "@/components/saas/platform-billing";
 
 const whatsappTemplateFields = [
   { key: "client_registration_template", title: "Novo cadastro", label: "Mensagem para o cliente" },
   { key: "client_booking_template", title: "Novo agendamento", label: "Mensagem para o cliente" },
-  { key: "professional_booking_template", title: "Novo agendamento", label: "Mensagem para o profissional" },
+  {
+    key: "professional_booking_template",
+    title: "Novo agendamento",
+    label: "Mensagem para o profissional",
+  },
   { key: "client_reminder_template", title: "Lembrete", label: "Mensagem para o cliente" },
   { key: "client_cancellation_template", title: "Cancelamento", label: "Mensagem para o cliente" },
-  { key: "professional_cancellation_template", title: "Cancelamento", label: "Mensagem para o profissional" },
+  {
+    key: "professional_cancellation_template",
+    title: "Cancelamento",
+    label: "Mensagem para o profissional",
+  },
   { key: "client_reschedule_template", title: "Reagendamento", label: "Mensagem para o cliente" },
-  { key: "professional_reschedule_template", title: "Reagendamento", label: "Mensagem para o profissional" },
-  { key: "subscription_payment_reminder_template", title: "Assinaturas", label: "Lembrete de pagamento" },
-  { key: "subscription_payment_confirmation_template", title: "Assinaturas", label: "Pagamento confirmado" },
+  {
+    key: "professional_reschedule_template",
+    title: "Reagendamento",
+    label: "Mensagem para o profissional",
+  },
+  {
+    key: "subscription_payment_reminder_template",
+    title: "Assinaturas",
+    label: "Lembrete de pagamento",
+  },
+  {
+    key: "subscription_payment_confirmation_template",
+    title: "Assinaturas",
+    label: "Pagamento confirmado",
+  },
   { key: "subscription_overdue_template", title: "Assinaturas", label: "Aviso de inadimplência" },
 ] as const;
 
@@ -56,16 +114,14 @@ const defaultWhatsappSubscriptionRules: WhatsappSubscriptionRules = {
 };
 
 const defaultWhatsappTemplates: WhatsappTemplateForm = {
-  client_registration_template:
-    `🎉 *Tudo pronto, {cliente}!*
+  client_registration_template: `🎉 *Tudo pronto, {cliente}!*
 
 Seu cadastro no(a) *{salao}* foi confirmado com sucesso.
 
 Agora você pode acessar com seu *CPF* e *senha* para agendar com mais rapidez.
 
 ✨ Esperamos por você em breve!`,
-  client_booking_template:
-    `🎉 *Agendamento confirmado, {cliente}!*
+  client_booking_template: `🎉 *Agendamento confirmado, {cliente}!*
 
 Seu atendimento no(a) *{salao}* está reservado.
 
@@ -75,8 +131,7 @@ Seu atendimento no(a) *{salao}* está reservado.
 💼 *Serviço:* {servico}
 
 Para cancelar: {link_cancelamento}`,
-  professional_booking_template:
-    `📅 *Olá, {profissional}! Você recebeu um novo agendamento.*
+  professional_booking_template: `📅 *Olá, {profissional}! Você recebeu um novo agendamento.*
 
 👤 *Cliente:* {cliente}
 💼 *Serviço:* {servico}
@@ -84,8 +139,7 @@ Para cancelar: {link_cancelamento}`,
 🕒 *Horário:* {hora}
 
 ✨ Desejamos um excelente atendimento!`,
-  client_reminder_template:
-    `⏰ *Olá, {cliente}! Este é um lembrete do seu agendamento.*
+  client_reminder_template: `⏰ *Olá, {cliente}! Este é um lembrete do seu agendamento.*
 
 Seu atendimento no(a) *{salao}* está se aproximando!
 
@@ -95,20 +149,17 @@ Seu atendimento no(a) *{salao}* está se aproximando!
 💼 *Serviço:* {servico}
 
 ✨ Estamos preparando tudo para receber você. Até breve!`,
-  client_cancellation_template:
-    `📢 *Olá, {cliente}.*
+  client_cancellation_template: `📢 *Olá, {cliente}.*
 
 Seu agendamento no(a) *{salao}*, previsto para *{data}* às *{hora}*, foi cancelado.
 
 Se desejar, você pode realizar um novo agendamento.`,
-  professional_cancellation_template:
-    `📅 *Olá, {profissional}.*
+  professional_cancellation_template: `📅 *Olá, {profissional}.*
 
 O agendamento de *{cliente}*, previsto para *{data}* às *{hora}*, foi cancelado.
 
 ✅ Sua agenda foi atualizada automaticamente.`,
-  client_reschedule_template:
-    `📅 *Olá, {cliente}! Seu agendamento foi atualizado.*
+  client_reschedule_template: `📅 *Olá, {cliente}! Seu agendamento foi atualizado.*
 
 Confira os novos detalhes no(a) *{salao}*:
 
@@ -116,8 +167,7 @@ Confira os novos detalhes no(a) *{salao}*:
 🕒 *Horário:* {hora}
 👤 *Profissional:* {profissional}
 💼 *Serviço:* {servico}`,
-  professional_reschedule_template:
-    `📅 *Olá, {profissional}! Houve uma atualização em sua agenda.*
+  professional_reschedule_template: `📅 *Olá, {profissional}! Houve uma atualização em sua agenda.*
 
 👤 *Cliente:* {cliente}
 💼 *Serviço:* {servico}
@@ -125,24 +175,21 @@ Confira os novos detalhes no(a) *{salao}*:
 🕒 *Horário:* {hora}
 
 ✅ Sua agenda já foi atualizada automaticamente.`,
-  subscription_payment_reminder_template:
-    `🔔 *Olá, {cliente}!*
+  subscription_payment_reminder_template: `🔔 *Olá, {cliente}!*
 
 Sua assinatura *{plano}* no(a) *{salao}* vence em *{vencimento}*.
 
 💳 *Valor:* {valor}
 
 Se você já realizou o pagamento, desconsidere esta mensagem.`,
-  subscription_payment_confirmation_template:
-    `✅ *Pagamento confirmado, {cliente}!*
+  subscription_payment_confirmation_template: `✅ *Pagamento confirmado, {cliente}!*
 
 Recebemos *{valor}* referente à sua assinatura *{plano}* no(a) *{salao}*.
 
 📅 *Próximo vencimento:* {proximo_vencimento}
 
 Obrigado pela confiança!`,
-  subscription_overdue_template:
-    `⚠️ *Olá, {cliente}.*
+  subscription_overdue_template: `⚠️ *Olá, {cliente}.*
 
 Identificamos uma pendência na assinatura *{plano}* no(a) *{salao}*.
 
@@ -172,7 +219,11 @@ export const Route = createFileRoute("/saas")({
   beforeLoad: async () => {
     const { data: userRes } = await supabase.auth.getUser();
     if (!userRes.user) throw redirect({ to: "/saas-login" });
-    const { data } = await supabase.from("user_roles").select("role").eq("user_id", userRes.user.id).eq("role", "super_admin");
+    const { data } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userRes.user.id)
+      .eq("role", "super_admin");
     if (!data || data.length === 0) throw redirect({ to: "/app" });
     return {};
   },
@@ -188,53 +239,146 @@ function SaasPanel() {
     await supabase.auth.signOut();
     nav({ to: "/saas-login" });
   }
-  const { data: user } = useQuery({ queryKey: ["saas-user"], queryFn: async () => (await supabase.auth.getUser()).data.user });
-  const displayName = (user?.user_metadata?.full_name as string) || user?.email?.split("@")[0] || "Super Admin";
+  const { data: user } = useQuery({
+    queryKey: ["saas-user"],
+    queryFn: async () => (await supabase.auth.getUser()).data.user,
+  });
+  const displayName =
+    (user?.user_metadata?.full_name as string) || user?.email?.split("@")[0] || "Super Admin";
 
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b">
-        <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center gap-4">
+        <div className="max-w-[1600px] mx-auto px-6 py-4 flex items-center gap-4">
           <div className="h-12 w-12 rounded-xl bg-indigo-100 flex items-center justify-center">
             <ShieldCheck className="h-6 w-6 text-indigo-600" />
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <h1 className="font-bold text-lg text-slate-900">SaaS Professional Console</h1>
-              <span className="text-[10px] font-bold bg-emerald-500 text-white px-2 py-0.5 rounded">PRO</span>
+              <h1 className="font-bold text-lg text-slate-900">
+                Central Administrativa LinkUp Studio
+              </h1>
+              <span className="text-[10px] font-bold bg-indigo-600 text-white px-2 py-0.5 rounded">
+                MATRIZ
+              </span>
             </div>
-            <p className="text-xs text-slate-500">Sistema de Multi-Tenant, Auditorias, White Label & Backups</p>
+            <p className="text-xs text-slate-500">
+              Gestão de clientes, cobranças e operações da plataforma
+            </p>
           </div>
           <div className="text-right">
             <div className="font-semibold text-slate-900 capitalize">{displayName}</div>
-            <span className="inline-block mt-0.5 text-[10px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded">SUPER ADMINISTRATOR</span>
+            <span className="inline-block mt-0.5 text-[10px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded">
+              SUPER ADMINISTRATOR
+            </span>
           </div>
           <div className="flex flex-col gap-1">
-            <Link to="/app" className="text-xs px-3 py-1.5 rounded-md border border-slate-300 hover:bg-slate-50 text-center">Ir para meu app</Link>
-            <button onClick={signOut} className="text-xs px-3 py-1.5 rounded-md border border-slate-300 hover:bg-slate-50">Mudar de Usuário / Sair</button>
+            <Link
+              to="/app"
+              className="text-xs px-3 py-1.5 rounded-md border border-slate-300 hover:bg-slate-50 text-center"
+            >
+              Ir para meu app
+            </Link>
+            <button
+              onClick={signOut}
+              className="text-xs px-3 py-1.5 rounded-md border border-slate-300 hover:bg-slate-50"
+            >
+              Mudar de Usuário / Sair
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-[1400px] mx-auto px-6 py-6">
-        <Tabs defaultValue="empresas">
-          <TabsList className="bg-white border shadow-sm p-1 h-auto flex-wrap justify-start gap-1">
-            <TabsTrigger value="dashboard" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-4 py-2"><TrendingUp className="h-4 w-4 mr-2"/>Dashboard SaaS</TabsTrigger>
-            <TabsTrigger value="empresas" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-4 py-2"><Building2 className="h-4 w-4 mr-2"/>Empresas / Clientes</TabsTrigger>
-            <TabsTrigger value="whatsapp" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-4 py-2"><MessageCircle className="h-4 w-4 mr-2"/>WhatsApp</TabsTrigger>
-            <TabsTrigger value="financeiro" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-4 py-2"><DollarSign className="h-4 w-4 mr-2"/>Financeiro & Cobranças</TabsTrigger>
-            <TabsTrigger value="backups" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-4 py-2"><Database className="h-4 w-4 mr-2"/>Backups de Segurança</TabsTrigger>
-            <TabsTrigger value="logs" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-4 py-2"><Terminal className="h-4 w-4 mr-2"/>Logs & Auditorias</TabsTrigger>
-            <TabsTrigger value="dev" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-4 py-2"><Settings2 className="h-4 w-4 mr-2"/>Painel Desenvolvedor</TabsTrigger>
+      <main className="max-w-[1600px] mx-auto px-6 py-6">
+        <Tabs
+          defaultValue="dashboard"
+          orientation="vertical"
+          className="grid items-start gap-6 lg:grid-cols-[250px_minmax(0,1fr)]"
+        >
+          <TabsList className="sticky top-6 grid h-auto grid-cols-2 gap-1 border bg-white p-2 shadow-sm lg:grid-cols-1">
+            <TabsTrigger
+              value="dashboard"
+              className="w-full justify-start data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-3 py-2.5"
+            >
+              <TrendingUp className="h-4 w-4 mr-2" />
+              Visão Geral
+            </TabsTrigger>
+            <TabsTrigger
+              value="empresas"
+              className="w-full justify-start data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-3 py-2.5"
+            >
+              <Building2 className="h-4 w-4 mr-2" />
+              Empresas / Clientes
+            </TabsTrigger>
+            <TabsTrigger
+              value="whatsapp"
+              className="w-full justify-start data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-3 py-2.5"
+            >
+              <MessageCircle className="h-4 w-4 mr-2" />
+              WhatsApp
+            </TabsTrigger>
+            <TabsTrigger
+              value="financeiro"
+              className="w-full justify-start data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-3 py-2.5"
+            >
+              <DollarSign className="h-4 w-4 mr-2" />
+              Financeiro & Cobranças
+            </TabsTrigger>
+            <TabsTrigger
+              value="backups"
+              className="w-full justify-start data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-3 py-2.5"
+            >
+              <Database className="h-4 w-4 mr-2" />
+              Backups de Segurança
+            </TabsTrigger>
+            <TabsTrigger
+              value="logs"
+              className="w-full justify-start data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-3 py-2.5"
+            >
+              <Terminal className="h-4 w-4 mr-2" />
+              Logs & Auditorias
+            </TabsTrigger>
+            <TabsTrigger
+              value="dev"
+              className="w-full justify-start data-[state=active]:bg-indigo-600 data-[state=active]:text-white px-3 py-2.5"
+            >
+              <Settings2 className="h-4 w-4 mr-2" />
+              Painel Desenvolvedor
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="dashboard" className="mt-6"><DashboardTab /></TabsContent>
-          <TabsContent value="empresas" className="mt-6"><EmpresasTab /></TabsContent>
-          <TabsContent value="whatsapp" className="mt-6"><WhatsAppAdminTab /></TabsContent>
-          <TabsContent value="financeiro" className="mt-6"><SimpleCard title="Financeiro & Cobranças" desc="Controle mensal/anual, inadimplência e emissão de cobranças em breve." /></TabsContent>
-          <TabsContent value="backups" className="mt-6"><SimpleCard title="Backups de Segurança" desc="Backups automáticos por tenant, exportação e restauração pontual." /></TabsContent>
-          <TabsContent value="logs" className="mt-6"><SimpleCard title="Logs & Auditorias" desc="Trilhas de auditoria de acesso, alterações e exportações por tenant." /></TabsContent>
-          <TabsContent value="dev" className="mt-6"><SimpleCard title="Painel Desenvolvedor" desc="Chaves de API, webhooks e diagnósticos técnicos por tenant." /></TabsContent>
+          <div className="min-w-0">
+            <TabsContent value="dashboard" className="m-0">
+              <DashboardTab />
+            </TabsContent>
+            <TabsContent value="empresas" className="m-0">
+              <EmpresasTab />
+            </TabsContent>
+            <TabsContent value="whatsapp" className="m-0">
+              <WhatsAppAdminTab />
+            </TabsContent>
+            <TabsContent value="financeiro" className="m-0">
+              <PlatformBillingTab />
+            </TabsContent>
+            <TabsContent value="backups" className="m-0">
+              <SimpleCard
+                title="Backups de Segurança"
+                desc="Backups automáticos por tenant, exportação e restauração pontual."
+              />
+            </TabsContent>
+            <TabsContent value="logs" className="m-0">
+              <SimpleCard
+                title="Logs & Auditorias"
+                desc="Trilhas de auditoria de acesso, alterações e exportações por tenant."
+              />
+            </TabsContent>
+            <TabsContent value="dev" className="m-0">
+              <SimpleCard
+                title="Painel Desenvolvedor"
+                desc="Chaves de API, webhooks e diagnósticos técnicos por tenant."
+              />
+            </TabsContent>
+          </div>
         </Tabs>
       </main>
     </div>
@@ -242,26 +386,147 @@ function SaasPanel() {
 }
 
 function SimpleCard({ title, desc }: any) {
-  return <Card><CardContent className="p-10 text-center"><Server className="h-10 w-10 text-slate-300 mx-auto mb-3"/><h3 className="font-semibold text-slate-900">{title}</h3><p className="text-sm text-slate-500 mt-1">{desc}</p></CardContent></Card>;
+  return (
+    <Card>
+      <CardContent className="p-10 text-center">
+        <Server className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+        <h3 className="font-semibold text-slate-900">{title}</h3>
+        <p className="text-sm text-slate-500 mt-1">{desc}</p>
+      </CardContent>
+    </Card>
+  );
 }
 
+type BillingDashboardContract = {
+  status: string;
+  amount_snapshot?: number | null;
+  amount?: number | null;
+  interval_months_snapshot?: number | null;
+  interval_months?: number | null;
+  billing_interval_months?: number | null;
+};
+
+type BillingDashboardCharge = {
+  amount?: number | null;
+  status: string;
+  confirmed_at?: string | null;
+  received_at?: string | null;
+};
+
+type BillingDashboardQueryResult = { data: unknown; error: unknown };
+type BillingDashboardQuery = PromiseLike<BillingDashboardQueryResult> & {
+  select(columns?: string): BillingDashboardQuery;
+};
+
+const billingDashboardDb = supabase as unknown as {
+  from(table: string): BillingDashboardQuery;
+};
+
 function DashboardTab() {
-  const { data: tenants } = useQuery({ queryKey: ["all-tenants"], queryFn: async () => (await supabase.from("tenants").select("*")).data ?? [] });
-  const active = (tenants ?? []).filter((t:any)=>t.status==="active").length;
-  const blocked = (tenants ?? []).filter((t:any)=>t.status!=="active").length;
+  const { data: tenants } = useQuery({
+    queryKey: ["all-tenants"],
+    queryFn: async () => (await supabase.from("tenants").select("*")).data ?? [],
+  });
+  const { data: billing } = useQuery({
+    queryKey: ["saas-billing-dashboard"],
+    queryFn: async () => {
+      const [contractsResponse, chargesResponse] = await Promise.all([
+        billingDashboardDb.from("platform_billing_contracts").select("*"),
+        billingDashboardDb
+          .from("platform_billing_charges")
+          .select("amount,status,confirmed_at,received_at"),
+      ]);
+
+      // A central continua utilizável antes da aplicação da migration, mas
+      // nunca inventa receita: a ausência das tabelas financeiras resulta em zero.
+      return {
+        contracts: contractsResponse.error
+          ? []
+          : ((contractsResponse.data as BillingDashboardContract[] | null) ?? []),
+        charges: chargesResponse.error
+          ? []
+          : ((chargesResponse.data as BillingDashboardCharge[] | null) ?? []),
+      };
+    },
+    retry: false,
+  });
+  const active = (tenants ?? []).filter((tenant) => tenant.status === "active").length;
+  const blocked = (tenants ?? []).filter((tenant) => tenant.status !== "active").length;
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const contractedMonthly = (billing?.contracts ?? [])
+    .filter((contract) => ["trialing", "active", "past_due"].includes(contract.status))
+    .reduce((total, contract) => {
+      const amount = Number(contract.amount_snapshot ?? contract.amount ?? 0);
+      const interval = Math.max(
+        1,
+        Number(
+          contract.interval_months_snapshot ??
+            contract.interval_months ??
+            contract.billing_interval_months ??
+            1,
+        ),
+      );
+      return total + amount / interval;
+    }, 0);
+  const receivedThisMonth = (billing?.charges ?? [])
+    .filter((charge) => {
+      return (
+        charge.status === "received" &&
+        charge.received_at &&
+        new Date(charge.received_at) >= monthStart
+      );
+    })
+    .reduce((total, charge) => total + Number(charge.amount ?? 0), 0);
+  const overdue = (billing?.charges ?? [])
+    .filter((charge) => charge.status === "overdue")
+    .reduce((total, charge) => total + Number(charge.amount ?? 0), 0);
   return (
-    <div className="grid md:grid-cols-4 gap-4">
-      <Metric label="Empresas ativas" value={String(active)} tone="emerald" />
-      <Metric label="Empresas bloqueadas" value={String(blocked)} tone="rose" />
-      <Metric label="Total de tenants" value={String(tenants?.length ?? 0)} tone="indigo" />
-      <Metric label="Receita estimada / mês" value={brl(active * 49.9)} tone="amber" />
+    <div className="space-y-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Empresas ativas" value={String(active)} tone="emerald" />
+        <Metric label="Empresas bloqueadas" value={String(blocked)} tone="rose" />
+        <Metric label="Receita contratada / mês" value={brl(contractedMonthly)} tone="indigo" />
+        <Metric label="Recebido no mês" value={brl(receivedThisMonth)} tone="emerald" />
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Metric
+          label="Total de salões cadastrados"
+          value={String(tenants?.length ?? 0)}
+          tone="indigo"
+        />
+        <Metric label="Cobranças vencidas" value={brl(overdue)} tone="rose" />
+      </div>
     </div>
   );
 }
 
-function Metric({ label, value, tone }: any) {
-  const tones: any = { emerald: "bg-emerald-50 text-emerald-700", rose: "bg-rose-50 text-rose-700", indigo: "bg-indigo-50 text-indigo-700", amber: "bg-amber-50 text-amber-700" };
-  return <Card><CardContent className="p-5"><div className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded inline-block ${tones[tone]}`}>{label}</div><div className="text-2xl font-bold mt-3 text-slate-900">{value}</div></CardContent></Card>;
+function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "emerald" | "rose" | "indigo" | "amber";
+}) {
+  const tones: Record<"emerald" | "rose" | "indigo" | "amber", string> = {
+    emerald: "bg-emerald-50 text-emerald-700",
+    rose: "bg-rose-50 text-rose-700",
+    indigo: "bg-indigo-50 text-indigo-700",
+    amber: "bg-amber-50 text-amber-700",
+  };
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div
+          className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded inline-block ${tones[tone]}`}
+        >
+          {label}
+        </div>
+        <div className="text-2xl font-bold mt-3 text-slate-900">{value}</div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function normalizeWhatsappTemplates(row?: Record<string, unknown> | null): WhatsappTemplateForm {
@@ -275,17 +540,29 @@ function normalizeWhatsappTemplates(row?: Record<string, unknown> | null): Whats
   return next;
 }
 
-function normalizeDayOffsets(value: unknown, minimum: number, fallback: number[], direction: "asc" | "desc") {
+function normalizeDayOffsets(
+  value: unknown,
+  minimum: number,
+  fallback: number[],
+  direction: "asc" | "desc",
+) {
   const source = Array.isArray(value) ? value : fallback;
   const unique = Array.from(
-    new Set(source.map(Number).filter((day) => Number.isInteger(day) && day >= minimum && day <= 365)),
+    new Set(
+      source.map(Number).filter((day) => Number.isInteger(day) && day >= minimum && day <= 365),
+    ),
   );
   const normalized = unique.length ? unique : fallback;
   return [...normalized].sort((left, right) => (direction === "asc" ? left - right : right - left));
 }
 
-function normalizeSubscriptionRules(row?: Record<string, unknown> | null): WhatsappSubscriptionRules {
-  const time = String(row?.subscription_notification_time ?? defaultWhatsappSubscriptionRules.subscription_notification_time).slice(0, 5);
+function normalizeSubscriptionRules(
+  row?: Record<string, unknown> | null,
+): WhatsappSubscriptionRules {
+  const time = String(
+    row?.subscription_notification_time ??
+      defaultWhatsappSubscriptionRules.subscription_notification_time,
+  ).slice(0, 5);
   return {
     subscription_payment_reminder_enabled:
       typeof row?.subscription_payment_reminder_enabled === "boolean"
@@ -355,17 +632,24 @@ function WhatsAppAdminTab() {
   const [templateSource, setTemplateSource] = useState<"global" | "custom">("global");
   const [globalForm, setGlobalForm] = useState<WhatsappTemplateForm>(defaultWhatsappTemplates);
   const [tenantForm, setTenantForm] = useState<WhatsappTemplateForm>(defaultWhatsappTemplates);
-  const [globalRules, setGlobalRules] = useState<WhatsappSubscriptionRules>(defaultWhatsappSubscriptionRules);
-  const [tenantRules, setTenantRules] = useState<WhatsappSubscriptionRules>(defaultWhatsappSubscriptionRules);
+  const [globalRules, setGlobalRules] = useState<WhatsappSubscriptionRules>(
+    defaultWhatsappSubscriptionRules,
+  );
+  const [tenantRules, setTenantRules] = useState<WhatsappSubscriptionRules>(
+    defaultWhatsappSubscriptionRules,
+  );
   const [testPhone, setTestPhone] = useState("");
-  const [testTemplate, setTestTemplate] = useState<WhatsappTemplateKey>("professional_booking_template");
+  const [testTemplate, setTestTemplate] = useState<WhatsappTemplateKey>(
+    "professional_booking_template",
+  );
   const [testTenantId, setTestTenantId] = useState("");
   const [busy, setBusy] = useState<"global" | "tenant" | "test" | null>(null);
 
   const tenantsQuery = useQuery({
     queryKey: ["all-tenants-whatsapp"],
     queryFn: async () =>
-      (await supabase.from("tenants").select("id,name,slug,whatsapp,status").order("name")).data ?? [],
+      (await supabase.from("tenants").select("id,name,slug,whatsapp,status").order("name")).data ??
+      [],
   });
 
   const globalQuery = useQuery({
@@ -402,7 +686,9 @@ function WhatsAppAdminTab() {
         .from("tenant_whatsapp_settings")
         .select(tenantWhatsappTemplateColumns);
       if (error) throw error;
-      return (data ?? []) as Array<Record<string, unknown> & { tenant_id?: string; message_templates_source?: string }>;
+      return (data ?? []) as Array<
+        Record<string, unknown> & { tenant_id?: string; message_templates_source?: string }
+      >;
     },
   });
 
@@ -492,7 +778,9 @@ function WhatsAppAdminTab() {
           ? "Mensagem personalizada salva para este salão."
           : "Este salão voltou a usar o modelo global.",
       );
-      await qc.invalidateQueries({ queryKey: ["tenant-whatsapp-template-source", selectedTenantId] });
+      await qc.invalidateQueries({
+        queryKey: ["tenant-whatsapp-template-source", selectedTenantId],
+      });
       await qc.invalidateQueries({ queryKey: ["tenant-whatsapp-template-settings"] });
     } catch (error: any) {
       toast.error(error.message || "Não foi possível salvar a personalização.");
@@ -574,7 +862,9 @@ function WhatsAppAdminTab() {
               onClick={() => void globalQuery.refetch()}
               disabled={globalQuery.isFetching}
             >
-              <RefreshCw className={`mr-2 h-4 w-4 ${globalQuery.isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${globalQuery.isFetching ? "animate-spin" : ""}`}
+              />
               Atualizar
             </Button>
           </div>
@@ -616,8 +906,13 @@ function WhatsAppAdminTab() {
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <Label>Modelo usado</Label>
-                <Select value={templateSource} onValueChange={(value) => setTemplateSource(value as "global" | "custom")}>
-                  <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                <Select
+                  value={templateSource}
+                  onValueChange={(value) => setTemplateSource(value as "global" | "custom")}
+                >
+                  <SelectTrigger className="bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="global">Padrão da matriz</SelectItem>
                     <SelectItem value="custom">Personalizado deste salão</SelectItem>
@@ -636,7 +931,9 @@ function WhatsAppAdminTab() {
                   </SelectTrigger>
                   <SelectContent>
                     {tenants.map((tenant: any) => (
-                      <SelectItem key={tenant.id} value={tenant.id}>{tenant.name}</SelectItem>
+                      <SelectItem key={tenant.id} value={tenant.id}>
+                        {tenant.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -651,7 +948,8 @@ function WhatsAppAdminTab() {
             ) : (
               <div className="rounded-xl border border-dashed bg-slate-50 p-5 text-sm text-slate-600">
                 Quando o modelo usado é <strong>Padrão da matriz</strong>, nenhum salão específico
-                precisa ser escolhido: todos os salões que não tiverem personalização herdam este texto.
+                precisa ser escolhido: todos os salões que não tiverem personalização herdam este
+                texto.
               </div>
             )}
 
@@ -659,7 +957,12 @@ function WhatsAppAdminTab() {
               <Button
                 className="bg-indigo-600 hover:bg-indigo-700"
                 onClick={() => void saveTenantTemplates()}
-                disabled={busy === "tenant" || tenantQuery.isFetching || templateSource === "global" || !selectedTenantId}
+                disabled={
+                  busy === "tenant" ||
+                  tenantQuery.isFetching ||
+                  templateSource === "global" ||
+                  !selectedTenantId
+                }
               >
                 <Save className="mr-2 h-4 w-4" />
                 Salvar personalização do salão
@@ -680,15 +983,27 @@ function WhatsAppAdminTab() {
           <div className="grid gap-3 md:grid-cols-[1fr_240px_260px_180px]">
             <div>
               <Label>Número destinatário</Label>
-              <Input value={testPhone} onChange={e=>setTestPhone(e.target.value)} placeholder="(91) 99999-9999" className="bg-white" />
+              <Input
+                value={testPhone}
+                onChange={(e) => setTestPhone(e.target.value)}
+                placeholder="(91) 99999-9999"
+                className="bg-white"
+              />
             </div>
             <div>
               <Label>Modelo para teste</Label>
-              <Select value={testTemplate} onValueChange={(value) => setTestTemplate(value as WhatsappTemplateKey)}>
-                <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+              <Select
+                value={testTemplate}
+                onValueChange={(value) => setTestTemplate(value as WhatsappTemplateKey)}
+              >
+                <SelectTrigger className="bg-white">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   {whatsappTemplateFields.map((field) => (
-                    <SelectItem key={field.key} value={field.key}>{field.title} · {field.label}</SelectItem>
+                    <SelectItem key={field.key} value={field.key}>
+                      {field.title} · {field.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -696,15 +1011,21 @@ function WhatsAppAdminTab() {
             <div>
               <Label>Loja usada no teste</Label>
               <Select value={testTenantId} onValueChange={setTestTenantId}>
-                <SelectTrigger className="bg-white"><SelectValue placeholder="Selecione uma loja" /></SelectTrigger>
+                <SelectTrigger className="bg-white">
+                  <SelectValue placeholder="Selecione uma loja" />
+                </SelectTrigger>
                 <SelectContent>
                   {tenants.map((tenant: any) => (
-                    <SelectItem key={tenant.id} value={tenant.id}>{tenant.name}</SelectItem>
+                    <SelectItem key={tenant.id} value={tenant.id}>
+                      {tenant.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="mt-1 text-[11px] text-slate-500">
-                {testUsesCustom ? "Usando texto personalizado desta loja." : "Usando padrão da matriz para esta loja."}
+                {testUsesCustom
+                  ? "Usando texto personalizado desta loja."
+                  : "Usando padrão da matriz para esta loja."}
               </p>
             </div>
             <div className="flex items-end">
@@ -720,7 +1041,12 @@ function WhatsAppAdminTab() {
           </div>
           <div>
             <Label>Prévia da mensagem</Label>
-            <Textarea rows={7} readOnly value={testPreview} className="mt-1 bg-slate-50 font-mono text-xs" />
+            <Textarea
+              rows={7}
+              readOnly
+              value={testPreview}
+              className="mt-1 bg-slate-50 font-mono text-xs"
+            />
           </div>
         </CardContent>
       </Card>
@@ -739,9 +1065,15 @@ function TemplateEditor({
     <div className="grid gap-4">
       {whatsappTemplateFields.map((field) => (
         <div key={field.key} className="space-y-1.5">
-          <Label>{field.title} · {field.label}</Label>
+          <Label>
+            {field.title} · {field.label}
+          </Label>
           <Textarea
-            rows={field.key === "professional_booking_template" || field.key.startsWith("subscription_") ? 7 : 4}
+            rows={
+              field.key === "professional_booking_template" || field.key.startsWith("subscription_")
+                ? 7
+                : 4
+            }
             value={form[field.key]}
             onChange={(event) => onChange({ ...form, [field.key]: event.target.value })}
             className="bg-white"
@@ -756,24 +1088,31 @@ function TemplateEditor({
       </p>
       <p className="text-xs text-slate-500">
         Para destacar em negrito no WhatsApp, use um asterisco de cada lado: <code>*texto*</code>.
-        Se você colar <code>**texto**</code>, o sistema corrigirá automaticamente ao salvar e enviar.
+        Se você colar <code>**texto**</code>, o sistema corrigirá automaticamente ao salvar e
+        enviar.
       </p>
     </div>
   );
 }
 
-function SubscriptionCadenceEditor({ rules, onChange }: {
+function SubscriptionCadenceEditor({
+  rules,
+  onChange,
+}: {
   rules: WhatsappSubscriptionRules;
   onChange: (next: WhatsappSubscriptionRules) => void;
 }) {
   return (
     <section className="space-y-4 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
       <div className="flex items-start gap-3">
-        <div className="rounded-lg bg-indigo-100 p-2 text-indigo-700"><Clock3 className="h-4 w-4" /></div>
+        <div className="rounded-lg bg-indigo-100 p-2 text-indigo-700">
+          <Clock3 className="h-4 w-4" />
+        </div>
         <div>
           <h4 className="font-semibold text-slate-900">Régua automática de Assinaturas</h4>
           <p className="text-xs text-slate-500">
-            Defina os dias manualmente; a quantidade cadastrada determina o total de mensagens. As regras começam desativadas e só entram em operação quando você ligar cada chave.
+            Defina os dias manualmente; a quantidade cadastrada determina o total de mensagens. As
+            regras começam desativadas e só entram em operação quando você ligar cada chave.
           </p>
         </div>
       </div>
@@ -782,7 +1121,9 @@ function SubscriptionCadenceEditor({ rules, onChange }: {
         label="Lembretes antes do vencimento"
         description={`${rules.subscription_payment_reminder_days_before.length} envio(s) por cobrança`}
         checked={rules.subscription_payment_reminder_enabled}
-        onCheckedChange={(subscription_payment_reminder_enabled) => onChange({ ...rules, subscription_payment_reminder_enabled })}
+        onCheckedChange={(subscription_payment_reminder_enabled) =>
+          onChange({ ...rules, subscription_payment_reminder_enabled })
+        }
       >
         <DayOffsetsEditor
           label="Dias antes"
@@ -790,7 +1131,9 @@ function SubscriptionCadenceEditor({ rules, onChange }: {
           minimum={0}
           direction="desc"
           disabled={!rules.subscription_payment_reminder_enabled}
-          onChange={(subscription_payment_reminder_days_before) => onChange({ ...rules, subscription_payment_reminder_days_before })}
+          onChange={(subscription_payment_reminder_days_before) =>
+            onChange({ ...rules, subscription_payment_reminder_days_before })
+          }
         />
       </AutomationRule>
 
@@ -798,14 +1141,18 @@ function SubscriptionCadenceEditor({ rules, onChange }: {
         label="Confirmação de pagamento"
         description="1 envio imediato após a baixa ser confirmada"
         checked={rules.subscription_payment_confirmation_enabled}
-        onCheckedChange={(subscription_payment_confirmation_enabled) => onChange({ ...rules, subscription_payment_confirmation_enabled })}
+        onCheckedChange={(subscription_payment_confirmation_enabled) =>
+          onChange({ ...rules, subscription_payment_confirmation_enabled })
+        }
       />
 
       <AutomationRule
         label="Avisos de inadimplência"
         description={`${rules.subscription_overdue_days_after.length} envio(s) por cobrança vencida`}
         checked={rules.subscription_overdue_enabled}
-        onCheckedChange={(subscription_overdue_enabled) => onChange({ ...rules, subscription_overdue_enabled })}
+        onCheckedChange={(subscription_overdue_enabled) =>
+          onChange({ ...rules, subscription_overdue_enabled })
+        }
       >
         <DayOffsetsEditor
           label="Dias depois"
@@ -813,7 +1160,9 @@ function SubscriptionCadenceEditor({ rules, onChange }: {
           minimum={1}
           direction="asc"
           disabled={!rules.subscription_overdue_enabled}
-          onChange={(subscription_overdue_days_after) => onChange({ ...rules, subscription_overdue_days_after })}
+          onChange={(subscription_overdue_days_after) =>
+            onChange({ ...rules, subscription_overdue_days_after })
+          }
         />
       </AutomationRule>
 
@@ -822,16 +1171,26 @@ function SubscriptionCadenceEditor({ rules, onChange }: {
         <Input
           type="time"
           value={rules.subscription_notification_time}
-          onChange={(event) => onChange({ ...rules, subscription_notification_time: event.target.value })}
+          onChange={(event) =>
+            onChange({ ...rules, subscription_notification_time: event.target.value })
+          }
           className="bg-white"
         />
-        <p className="text-[11px] text-slate-500">A confirmação de pagamento não espera esse horário: ela é enviada imediatamente.</p>
+        <p className="text-[11px] text-slate-500">
+          A confirmação de pagamento não espera esse horário: ela é enviada imediatamente.
+        </p>
       </div>
     </section>
   );
 }
 
-function AutomationRule({ label, description, checked, onCheckedChange, children }: {
+function AutomationRule({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  children,
+}: {
   label: string;
   description: string;
   checked: boolean;
@@ -852,7 +1211,14 @@ function AutomationRule({ label, description, checked, onCheckedChange, children
   );
 }
 
-function DayOffsetsEditor({ label, value, minimum, direction, disabled, onChange }: {
+function DayOffsetsEditor({
+  label,
+  value,
+  minimum,
+  direction,
+  disabled,
+  onChange,
+}: {
   label: string;
   value: number[];
   minimum: number;
@@ -867,7 +1233,9 @@ function DayOffsetsEditor({ label, value, minimum, direction, disabled, onChange
     onChange(normalize(next));
   };
   const addOffset = () => {
-    const candidate = Array.from({ length: 366 - minimum }, (_, index) => index + minimum).find((day) => !value.includes(day));
+    const candidate = Array.from({ length: 366 - minimum }, (_, index) => index + minimum).find(
+      (day) => !value.includes(day),
+    );
     if (candidate !== undefined) onChange(normalize([...value, candidate]));
   };
 
@@ -875,8 +1243,15 @@ function DayOffsetsEditor({ label, value, minimum, direction, disabled, onChange
     <div className={disabled ? "opacity-50" : ""}>
       <div className="mb-2 flex items-center justify-between gap-3">
         <Label className="text-xs">{label}</Label>
-        <Button type="button" variant="outline" size="sm" disabled={disabled || value.length >= 10} onClick={addOffset}>
-          <Plus className="mr-1 h-3.5 w-3.5" />Adicionar envio
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={disabled || value.length >= 10}
+          onClick={addOffset}
+        >
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Adicionar envio
         </Button>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -912,65 +1287,173 @@ function DayOffsetsEditor({ label, value, minimum, direction, disabled, onChange
 
 function EmpresasTab() {
   const qc = useQueryClient();
-  const create = useServerFn(createTenant); const setStatus = useServerFn(setTenantStatus);
+  const create = useServerFn(createTenant);
+  const setStatus = useServerFn(setTenantStatus);
   const [open, setOpen] = useState(false);
   const [editingTenant, setEditingTenant] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const { data: tenants } = useQuery({ queryKey: ["all-tenants"], queryFn: async () => (await supabase.from("tenants").select("*").order("created_at", { ascending: false })).data ?? [] });
+  const { data: tenants } = useQuery({
+    queryKey: ["all-tenants"],
+    queryFn: async () =>
+      (await supabase.from("tenants").select("*").order("created_at", { ascending: false })).data ??
+      [],
+  });
 
-  const filtered = useMemo(() => (tenants ?? []).filter((t:any) => {
-    const okStatus = statusFilter === "all" || t.status === statusFilter;
-    const q = search.toLowerCase().trim();
-    const okQ = !q || t.name?.toLowerCase().includes(q) || t.slug?.toLowerCase().includes(q) || t.whatsapp?.includes(q);
-    return okStatus && okQ;
-  }), [tenants, search, statusFilter]);
+  const filtered = useMemo(
+    () =>
+      (tenants ?? []).filter((t: any) => {
+        const okStatus = statusFilter === "all" || t.status === statusFilter;
+        const q = search.toLowerCase().trim();
+        const okQ =
+          !q ||
+          t.name?.toLowerCase().includes(q) ||
+          t.slug?.toLowerCase().includes(q) ||
+          t.whatsapp?.includes(q);
+        return okStatus && okQ;
+      }),
+    [tenants, search, statusFilter],
+  );
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row gap-3 md:items-center">
         <div className="flex-1 relative">
-          <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-          <Input value={search} onChange={e=>setSearch(e.target.value)} className="pl-9 bg-white" placeholder="Buscar barbearias por nome, dono, CPF..."/>
+          <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 bg-white"
+            placeholder="Buscar barbearias por nome, dono, CPF..."
+          />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[180px] bg-white"><SelectValue/></SelectTrigger>
-          <SelectContent><SelectItem value="all">Todos os Status</SelectItem><SelectItem value="active">Ativos</SelectItem><SelectItem value="blocked">Bloqueados</SelectItem></SelectContent>
+          <SelectTrigger className="w-[180px] bg-white">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os Status</SelectItem>
+            <SelectItem value="active">Ativos</SelectItem>
+            <SelectItem value="blocked">Bloqueados</SelectItem>
+          </SelectContent>
         </Select>
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button className="bg-indigo-600 hover:bg-indigo-700"><Plus className="h-4 w-4 mr-2"/>Cadastrar Empresa</Button></DialogTrigger>
-          <NewTenantDialog create={create} onDone={()=>{setOpen(false);qc.invalidateQueries({queryKey:["all-tenants"]});}}/>
+          <DialogTrigger asChild>
+            <Button className="bg-indigo-600 hover:bg-indigo-700">
+              <Plus className="h-4 w-4 mr-2" />
+              Cadastrar Empresa
+            </Button>
+          </DialogTrigger>
+          <NewTenantDialog
+            create={create}
+            onDone={() => {
+              setOpen(false);
+              qc.invalidateQueries({ queryKey: ["all-tenants"] });
+            }}
+          />
         </Dialog>
-        <Dialog open={!!editingTenant} onOpenChange={(v)=>{if(!v)setEditingTenant(null);}}>
-          {editingTenant && <EditTenantDialog tenant={editingTenant} onDone={()=>{setEditingTenant(null);qc.invalidateQueries({queryKey:["all-tenants"]});}}/>}
+        <Dialog
+          open={!!editingTenant}
+          onOpenChange={(v) => {
+            if (!v) setEditingTenant(null);
+          }}
+        >
+          {editingTenant && (
+            <EditTenantDialog
+              tenant={editingTenant}
+              onDone={() => {
+                setEditingTenant(null);
+                qc.invalidateQueries({ queryKey: ["all-tenants"] });
+              }}
+            />
+          )}
         </Dialog>
       </div>
 
       <div className="space-y-3">
-        {filtered.length === 0 && <Card><CardContent className="p-8 text-center text-sm text-slate-500">Nenhuma barbearia encontrada.</CardContent></Card>}
-        {filtered.map((t:any) => (
+        {filtered.length === 0 && (
+          <Card>
+            <CardContent className="p-8 text-center text-sm text-slate-500">
+              Nenhuma barbearia encontrada.
+            </CardContent>
+          </Card>
+        )}
+        {filtered.map((t: any) => (
           <div key={t.id} className="bg-slate-900 text-white rounded-xl p-5">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-3">
                   <h3 className="font-bold text-lg">{t.name}</h3>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${t.status==="active"?"bg-emerald-500":"bg-amber-500"} text-white`}>{t.status==="active"?"Ativo":"Bloqueado"}</span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${t.status === "active" ? "bg-emerald-500" : "bg-amber-500"} text-white`}
+                  >
+                    {t.status === "active" ? "Ativo" : "Bloqueado"}
+                  </span>
                 </div>
-                <p className="text-xs text-slate-300 mt-1">Slug: <span className="font-mono">{t.slug}</span>{t.whatsapp && ` • ${t.whatsapp}`}</p>
+                <p className="text-xs text-slate-300 mt-1">
+                  Slug: <span className="font-mono">{t.slug}</span>
+                  {t.whatsapp && ` • ${t.whatsapp}`}
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <a href={getPublicBookingUrl(t.slug)} target="_blank" rel="noreferrer" className="text-xs px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 flex items-center gap-1">Link reservas <ExternalLink className="h-3 w-3"/></a>
-                <button onClick={async()=>{await setStatus({data:{id:t.id,status:t.status==="active"?"blocked":"active"}});qc.invalidateQueries({queryKey:["all-tenants"]});}} className="text-xs px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white font-semibold">{t.status==="active"?"Bloquear":"Liberar Acesso"}</button>
-                <button className="text-xs px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 flex items-center gap-1"><Database className="h-3 w-3"/> Backup</button>
-                <button onClick={()=>setEditingTenant(t)} className="h-8 w-8 rounded-md bg-white/10 hover:bg-white/20 flex items-center justify-center"><Pencil className="h-3.5 w-3.5"/></button>
-                <button className="h-8 w-8 rounded-md bg-rose-500/80 hover:bg-rose-50 flex items-center justify-center"><Trash2 className="h-3.5 w-3.5"/></button>
+                <a
+                  href={getPublicBookingUrl(t.slug)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 flex items-center gap-1"
+                >
+                  Link reservas <ExternalLink className="h-3 w-3" />
+                </a>
+                <button
+                  onClick={async () => {
+                    await setStatus({
+                      data: { id: t.id, status: t.status === "active" ? "blocked" : "active" },
+                    });
+                    qc.invalidateQueries({ queryKey: ["all-tenants"] });
+                  }}
+                  className="text-xs px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white font-semibold"
+                >
+                  {t.status === "active" ? "Bloquear" : "Liberar Acesso"}
+                </button>
+                <button className="text-xs px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 flex items-center gap-1">
+                  <Database className="h-3 w-3" /> Backup
+                </button>
+                <button
+                  onClick={() => setEditingTenant(t)}
+                  className="h-8 w-8 rounded-md bg-white/10 hover:bg-white/20 flex items-center justify-center"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button className="h-8 w-8 rounded-md bg-rose-500/80 hover:bg-rose-50 flex items-center justify-center">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5 pt-4 border-t border-white/10">
-              <div><div className="text-[10px] font-bold uppercase text-slate-400">Plano contratado</div><div className="text-sm font-semibold mt-1">{t.plan === "yearly" ? "Anual (R$ 49,90/ano)" : "Mensal (R$ 49,90/mês)"}</div></div>
-              <div><div className="text-[10px] font-bold uppercase text-slate-400">Vencimento</div><div className="text-sm font-semibold mt-1">{t.plan_expires_at ? dateBR(t.plan_expires_at) : "—"}</div></div>
-              <div><div className="text-[10px] font-bold uppercase text-slate-400">Limites</div><div className="text-sm font-semibold mt-1">Ilimitado</div></div>
-              <div><div className="text-[10px] font-bold uppercase text-slate-400">White Label</div><div className="text-sm font-semibold mt-1 text-indigo-300">Ativado (Logo, Cores)</div></div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">
+                  Plano contratado
+                </div>
+                <div className="text-sm font-semibold mt-1">
+                  {t.plan === "yearly" ? "Anual (R$ 49,90/ano)" : "Mensal (R$ 49,90/mês)"}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Vencimento</div>
+                <div className="text-sm font-semibold mt-1">
+                  {t.plan_expires_at ? dateBR(t.plan_expires_at) : "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Limites</div>
+                <div className="text-sm font-semibold mt-1">Ilimitado</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase text-slate-400">White Label</div>
+                <div className="text-sm font-semibold mt-1 text-indigo-300">
+                  Ativado (Logo, Cores)
+                </div>
+              </div>
             </div>
           </div>
         ))}
@@ -988,7 +1471,7 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
     whatsapp: tenant.whatsapp ?? "",
     plan: tenant.plan ?? "monthly",
     owner_email: "",
-    owner_password: ""
+    owner_password: "",
   });
   const [loadingOwner, setLoadingOwner] = useState(true);
 
@@ -996,7 +1479,7 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
     getOwner({ data: { tenantId: tenant.id } })
       .then((res) => {
         if (res) {
-          setF(prev => ({ ...prev, owner_email: res.email }));
+          setF((prev) => ({ ...prev, owner_email: res.email }));
         }
       })
       .finally(() => setLoadingOwner(false));
@@ -1017,7 +1500,7 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
           plan: f.plan as "monthly" | "yearly",
           owner_email: f.owner_email || undefined,
           owner_password: f.owner_password || undefined,
-        }
+        },
       });
       toast.success("Empresa atualizada com sucesso!");
       onDone();
@@ -1034,21 +1517,38 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
       <div className="space-y-3 py-2">
         <div>
           <Label>Nome da barbearia</Label>
-          <Input value={f.name} onChange={e=>setF({...f,name:e.target.value,slug:e.target.value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"")})}/>
+          <Input
+            value={f.name}
+            onChange={(e) =>
+              setF({
+                ...f,
+                name: e.target.value,
+                slug: e.target.value
+                  .toLowerCase()
+                  .normalize("NFD")
+                  .replace(/[\u0300-\u036f]/g, "")
+                  .replace(/[^a-z0-9]/g, "-")
+                  .replace(/-+/g, "-")
+                  .replace(/^-|-$/g, ""),
+              })
+            }
+          />
         </div>
         <div>
           <Label>Slug (URL do agendamento)</Label>
-          <Input value={f.slug} onChange={e=>setF({...f,slug:e.target.value})}/>
+          <Input value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>WhatsApp</Label>
-            <Input value={f.whatsapp} onChange={e=>setF({...f,whatsapp:e.target.value})}/>
+            <Input value={f.whatsapp} onChange={(e) => setF({ ...f, whatsapp: e.target.value })} />
           </div>
           <div>
             <Label>Plano</Label>
-            <Select value={f.plan} onValueChange={v=>setF({...f,plan:v})}>
-              <SelectTrigger><SelectValue/></SelectTrigger>
+            <Select value={f.plan} onValueChange={(v) => setF({ ...f, plan: v })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="monthly">Mensal</SelectItem>
                 <SelectItem value="yearly">Anual</SelectItem>
@@ -1057,24 +1557,47 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
           </div>
           <div>
             <Label>Email do dono</Label>
-            <Input type="email" disabled={loadingOwner} placeholder={loadingOwner ? "Carregando..." : "Email de acesso"} value={f.owner_email} onChange={e=>setF({...f,owner_email:e.target.value})}/>
+            <Input
+              type="email"
+              disabled={loadingOwner}
+              placeholder={loadingOwner ? "Carregando..." : "Email de acesso"}
+              value={f.owner_email}
+              onChange={(e) => setF({ ...f, owner_email: e.target.value })}
+            />
           </div>
           <div>
             <Label>Nova senha (deixe vazio se não mudar)</Label>
-            <Input type="password" autoComplete="new-password" placeholder="Mínimo de 8 caracteres" value={f.owner_password} onChange={e=>setF({...f,owner_password:e.target.value})}/>
-            <p className="mt-1 text-[10px] text-slate-500">A única exigência é ter no mínimo 8 caracteres.</p>
+            <Input
+              type="password"
+              autoComplete="new-password"
+              placeholder="Mínimo de 8 caracteres"
+              value={f.owner_password}
+              onChange={(e) => setF({ ...f, owner_password: e.target.value })}
+            />
+            <p className="mt-1 text-[10px] text-slate-500">
+              A única exigência é ter no mínimo 8 caracteres.
+            </p>
           </div>
         </div>
       </div>
       <DialogFooter>
-        <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={save}>Salvar Alterações</Button>
+        <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={save}>
+          Salvar Alterações
+        </Button>
       </DialogFooter>
     </DialogContent>
   );
 }
 
 function NewTenantDialog({ create, onDone }: any) {
-  const [f, setF] = useState({ name: "", slug: "", whatsapp: "", plan: "monthly", owner_email: "", owner_password: "" });
+  const [f, setF] = useState({
+    name: "",
+    slug: "",
+    whatsapp: "",
+    plan: "monthly",
+    owner_email: "",
+    owner_password: "",
+  });
   async function save() {
     if (!f.owner_email.trim()) return toast.error("Informe o e-mail do proprietário.");
     const passwordError = validateProjectPassword(f.owner_password);
@@ -1087,21 +1610,80 @@ function NewTenantDialog({ create, onDone }: any) {
       toast.error(e.message || "Erro ao cadastrar empresa");
     }
   }
-  return (<DialogContent><DialogHeader><DialogTitle>Cadastrar nova empresa</DialogTitle></DialogHeader>
-    <div className="space-y-3">
-      <div><Label>Nome da barbearia</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value,slug:e.target.value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"")})}/></div>
-      <div><Label>Slug (URL do agendamento)</Label><Input value={f.slug} onChange={e=>setF({...f,slug:e.target.value})}/></div>
-      <div className="grid grid-cols-2 gap-3">
-        <div><Label>WhatsApp</Label><Input value={f.whatsapp} onChange={e=>setF({...f,whatsapp:e.target.value})}/></div>
-        <div><Label>Plano</Label><Select value={f.plan} onValueChange={v=>setF({...f,plan:v})}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="monthly">Mensal</SelectItem><SelectItem value="yearly">Anual</SelectItem></SelectContent></Select></div>
-        <div><Label>Email do dono</Label><Input type="email" value={f.owner_email} onChange={e=>setF({...f,owner_email:e.target.value})}/></div>
+  return (
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>Cadastrar nova empresa</DialogTitle>
+      </DialogHeader>
+      <div className="space-y-3">
         <div>
-          <Label>Senha inicial</Label>
-          <Input type="password" autoComplete="new-password" placeholder="Mínimo de 8 caracteres" value={f.owner_password} onChange={e=>setF({...f,owner_password:e.target.value})}/>
-          <p className="mt-1 text-[10px] text-slate-500">A única exigência é ter no mínimo 8 caracteres.</p>
+          <Label>Nome da barbearia</Label>
+          <Input
+            value={f.name}
+            onChange={(e) =>
+              setF({
+                ...f,
+                name: e.target.value,
+                slug: e.target.value
+                  .toLowerCase()
+                  .normalize("NFD")
+                  .replace(/[\u0300-\u036f]/g, "")
+                  .replace(/[^a-z0-9]/g, "-")
+                  .replace(/-+/g, "-")
+                  .replace(/^-|-$/g, ""),
+              })
+            }
+          />
+        </div>
+        <div>
+          <Label>Slug (URL do agendamento)</Label>
+          <Input value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>WhatsApp</Label>
+            <Input value={f.whatsapp} onChange={(e) => setF({ ...f, whatsapp: e.target.value })} />
+          </div>
+          <div>
+            <Label>Plano</Label>
+            <Select value={f.plan} onValueChange={(v) => setF({ ...f, plan: v })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="monthly">Mensal</SelectItem>
+                <SelectItem value="yearly">Anual</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Email do dono</Label>
+            <Input
+              type="email"
+              value={f.owner_email}
+              onChange={(e) => setF({ ...f, owner_email: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label>Senha inicial</Label>
+            <Input
+              type="password"
+              autoComplete="new-password"
+              placeholder="Mínimo de 8 caracteres"
+              value={f.owner_password}
+              onChange={(e) => setF({ ...f, owner_password: e.target.value })}
+            />
+            <p className="mt-1 text-[10px] text-slate-500">
+              A única exigência é ter no mínimo 8 caracteres.
+            </p>
+          </div>
         </div>
       </div>
-    </div>
-    <DialogFooter><Button className="bg-indigo-600 hover:bg-indigo-700" onClick={save}>Cadastrar Empresa</Button></DialogFooter>
-  </DialogContent>);
+      <DialogFooter>
+        <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={save}>
+          Cadastrar Empresa
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
 }
