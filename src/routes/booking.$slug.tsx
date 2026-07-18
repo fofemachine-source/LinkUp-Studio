@@ -66,9 +66,9 @@ import {
 } from "@/lib/booking-branding";
 import {
   bookingWeekdayFromDate,
-  DEFAULT_BOOKING_VIP_DAYS,
   DEFAULT_BOOKING_WORK_DAYS,
   includesBookingWeekday,
+  isVipExclusiveBookingDay,
 } from "@/lib/booking-weekdays";
 
 export const Route = createFileRoute("/booking/$slug")({
@@ -1188,7 +1188,7 @@ function BookingPage() {
                         if (
                           vipMode === "strict" &&
                           !isVip &&
-                          includesBookingWeekday(settings?.vip_days, normalizedDay, DEFAULT_BOOKING_VIP_DAYS)
+                          isVipExclusiveBookingDay(settings?.work_days, settings?.vip_days, normalizedDay)
                         ) {
                           return true;
                         }

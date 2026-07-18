@@ -1,6 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { syncAppointmentComanda } from "@/lib/commandas";
 import { z } from "zod";
+import {
+  includesBookingWeekday,
+  isVipExclusiveBookingDay,
+} from "@/lib/booking-weekdays";
 
 async function pub() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -117,11 +121,6 @@ function configuredTimeMinutes(value: unknown, fallbackHour: number) {
     if (Number.isFinite(parsed)) return parsed;
   }
   return fallbackHour * 60;
-}
-
-function includesBookingWeekday(days: unknown, weekday: number) {
-  if (!Array.isArray(days) || days.length === 0) return true;
-  return days.some((day) => Number(day) === weekday || (weekday === 7 && Number(day) === 0));
 }
 
 async function findOpenSubscriptionCharge(db: any, contract: any) {
@@ -1277,9 +1276,12 @@ export const createBooking = createServerFn({ method: "POST" })
       throw new Error("O horário escolhido coincide com o intervalo de almoço.");
     }
 
-    const vipDays: number[] = (settings?.vip_days as number[] | null) ?? [1,2,3,4];
     const vipMode = (settings as any)?.vip_mode ?? "strict";
-    if (vipMode === "strict" && vipDays.includes(dow) && !data.isVip) {
+    if (
+      vipMode === "strict" &&
+      !data.isVip &&
+      isVipExclusiveBookingDay(settings?.work_days, settings?.vip_days, dow)
+    ) {
       throw new Error("Este dia é reservado para assinantes VIP. Escolha outro dia ou torne-se assinante.");
     }
 

@@ -39,3 +39,26 @@ export function includesBookingWeekday(
   if (normalizedWeekday === null) return false;
   return normalizeBookingWeekdays(days, fallback).includes(normalizedWeekday);
 }
+
+export function isVipExclusiveBookingDay(
+  workDays: unknown,
+  vipDays: unknown,
+  weekday: number,
+) {
+  const normalizedWeekday = normalizeBookingWeekday(weekday);
+  if (normalizedWeekday === null) return false;
+
+  const normalizedVipDays = normalizeBookingWeekdays(vipDays, DEFAULT_BOOKING_VIP_DAYS);
+  if (!normalizedVipDays.includes(normalizedWeekday)) return false;
+
+  const normalizedWorkDays = normalizeBookingWeekdays(workDays, DEFAULT_BOOKING_WORK_DAYS);
+  const vipCoversEveryWorkDay =
+    normalizedWorkDays.length > 0 &&
+    normalizedWorkDays.every((workDay) => normalizedVipDays.includes(workDay));
+
+  // Avoid locking the entire public showcase when every working day was marked as VIP.
+  // In this scenario, VIP remains a highlight/benefit, but normal booking must stay possible.
+  if (vipCoversEveryWorkDay) return false;
+
+  return true;
+}
