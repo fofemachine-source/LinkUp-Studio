@@ -65,7 +65,7 @@ function RelPage() {
         { data: subscribers }
       ] = await Promise.all([
         supabase.from("appointments").select("*, services(id,name,price,duration_min), clients(id,full_name,is_subscriber)").eq("tenant_id", tenantId!).eq("status", "completed"),
-        supabase.from("commandas").select("*, commanda_items(*)").eq("tenant_id", tenantId!).eq("status", "closed").gte("closed_at", startDateStr).lte("closed_at", endDateStr),
+        supabase.from("commandas").select("*, commanda_items:commanda_items!commanda_items_commanda_tenant_fk(*)").eq("tenant_id", tenantId!).eq("status", "closed").gte("closed_at", startDateStr).lte("closed_at", endDateStr),
         supabase.from("professionals").select("*").eq("tenant_id", tenantId!),
         supabase.from("services").select("*").eq("tenant_id", tenantId!),
         supabase.from("subscribers").select("*").eq("tenant_id", tenantId!)

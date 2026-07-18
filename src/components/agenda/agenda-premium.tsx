@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { addDays, differenceInMinutes, format, isSameDay, isToday, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -772,6 +772,64 @@ function DayTimeline({
   const nowMinutes = now.getHours() * 60 + now.getMinutes() - openHour * 60;
   const nowTop = (nowMinutes / slotMinutes) * SLOT_HEIGHT;
   const showNowLine = isToday(date) && nowMinutes >= 0 && nowMinutes <= totalMinutes;
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollSignature = useMemo(
+    () =>
+      [
+        format(date, "yyyy-MM-dd"),
+        openHour,
+        closeHour,
+        slotMinutes,
+        professionals.map((professional) => professional.id).join(","),
+        appointments
+          .map((appointment) => `${appointment.id}:${appointment.start_at}:${appointment.end_at}:${appointment.status}`)
+          .join("|"),
+      ].join("::"),
+    [appointments, closeHour, date, openHour, professionals, slotMinutes],
+  );
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const timer = window.setTimeout(() => {
+      if (!isToday(date)) {
+        container.scrollTo({ top: 0, behavior: "auto" });
+        return;
+      }
+
+      const operationalAppointments = appointments
+        .filter((appointment) => appointment.status !== "cancelled" && appointment.status !== "no_show")
+        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+
+      const activeAppointment = operationalAppointments.find((appointment) => {
+        const start = new Date(appointment.start_at);
+        const end = new Date(appointment.end_at);
+        return now >= start && now < end;
+      });
+      const nextAppointment = operationalAppointments.find(
+        (appointment) => new Date(appointment.start_at) >= now,
+      );
+
+      const targetDate = activeAppointment
+        ? new Date(activeAppointment.start_at)
+        : nextAppointment
+          ? new Date(nextAppointment.start_at)
+          : now;
+      const targetMinutes = targetDate.getHours() * 60 + targetDate.getMinutes() - openHour * 60;
+      const targetTop = (Math.max(0, targetMinutes) / slotMinutes) * SLOT_HEIGHT;
+      const comfortableOffset = Math.max(SLOT_HEIGHT * 2, 120);
+
+      container.scrollTo({
+        top: Math.max(0, targetTop - comfortableOffset),
+        behavior: "smooth",
+      });
+    }, 80);
+
+    return () => window.clearTimeout(timer);
+  // A rolagem inicial usa o "agora" da abertura da tela, mas não acompanha cada minuto
+  // para não roubar a rolagem manual do usuário enquanto ele trabalha na agenda.
+  }, [appointments, date, openHour, scrollSignature, slotMinutes]);
 
   if (!professionals.length) {
     return (
@@ -785,7 +843,7 @@ function DayTimeline({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_18px_55px_-45px_rgba(15,23,42,0.45)]">
-      <div className="overflow-x-auto">
+      <div ref={scrollRef} className="max-h-[calc(100vh-230px)] overflow-auto scroll-smooth">
         <div style={{ minWidth: 72 + professionals.length * 258 }}>
           <div
             className="sticky top-0 z-30 grid border-b bg-card/95 backdrop-blur"
@@ -876,6 +934,7 @@ function DayTimeline({
                   {professionalAppointments.map((appointment) => {
                     const start = new Date(appointment.start_at);
                     const end = new Date(appointment.end_at);
+                    const activeNow = isToday(date) && now >= start && now < end;
                     const startMinutes = start.getHours() * 60 + start.getMinutes() - openHour * 60;
                     const duration = Math.max(slotMinutes, differenceInMinutes(end, start));
                     const top = Math.max(0, (startMinutes / slotMinutes) * SLOT_HEIGHT) + 4;
@@ -891,6 +950,7 @@ function DayTimeline({
                         height={height}
                         dragging={draggedAppointmentId === appointment.id}
                         moving={movingAppointmentId === appointment.id}
+                        activeNow={activeNow}
                         onDragStart={() => onDragStart(appointment.id)}
                         onDragEnd={() => onDragStart(null)}
                         onEdit={() => onEditAppointment(appointment)}
@@ -1019,6 +1079,7 @@ function AppointmentCard({
   height,
   dragging,
   moving,
+  activeNow,
   onDragStart,
   onDragEnd,
   onEdit,
@@ -1032,6 +1093,7 @@ function AppointmentCard({
   height: number;
   dragging: boolean;
   moving: boolean;
+  activeNow: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
   onEdit: () => void;
@@ -1091,7 +1153,7 @@ function AppointmentCard({
           animate={{ opacity: moving ? 0.55 : dragging ? 0.5 : 1, scale: dragging ? 0.98 : 1 }}
           exit={{ opacity: 0, scale: 0.98 }}
           whileHover={{ y: -1 }}
-          className={`group absolute left-1.5 right-1.5 z-10 overflow-hidden rounded-xl border border-l-[3px] ${status.border} ${isCancelled ? "border-rose-200 bg-rose-50/90 dark:border-rose-500/30 dark:bg-rose-500/10" : "border-border/75 bg-card"} p-2.5 text-left shadow-[0_10px_26px_-20px_rgba(15,23,42,0.55)] transition-shadow hover:z-20 hover:shadow-[0_16px_34px_-18px_rgba(15,23,42,0.45)]`}
+          className={`group absolute left-1.5 right-1.5 z-10 overflow-hidden rounded-xl border border-l-[3px] ${status.border} ${isCancelled ? "border-rose-200 bg-rose-50/90 dark:border-rose-500/30 dark:bg-rose-500/10" : "border-border/75 bg-card"} ${activeNow ? "ring-2 ring-primary/55 shadow-[0_18px_40px_-18px_rgba(245,158,11,0.55)]" : "shadow-[0_10px_26px_-20px_rgba(15,23,42,0.55)]"} p-2.5 text-left transition-shadow hover:z-20 hover:shadow-[0_16px_34px_-18px_rgba(15,23,42,0.45)]`}
           style={{ top, height }}
         >
           <div className="flex items-start justify-between gap-2">

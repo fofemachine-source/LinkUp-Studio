@@ -202,7 +202,7 @@ function FrenteDeCaixaPage() {
     refetchOnWindowFocus: true,
     queryFn: async () => {
       const selection =
-        "*, appointments(start_at,end_at,status), commanda_items(*, professionals(full_name)), clients(is_subscriber, whatsapp)";
+        "*, appointments(start_at,end_at,status), commanda_items:commanda_items!commanda_items_commanda_tenant_fk(*, professionals(full_name)), clients(is_subscriber, whatsapp)";
 
       const fetchCommandas = async () => {
         const [pendingResult, closedResult, canceledResult] = await Promise.all([

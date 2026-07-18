@@ -324,7 +324,7 @@ function FinanceiroPage() {
         (rangeFrom, rangeTo) =>
           supabase
             .from("commandas")
-            .select("*, commanda_items(*, professionals(full_name)), commanda_payments(id,method,amount,received_amount,created_at)")
+            .select("*, commanda_items:commanda_items!commanda_items_commanda_tenant_fk(*, professionals(full_name)), commanda_payments:commanda_payments!commanda_payments_commanda_tenant_fk(id,method,amount,received_amount,created_at)")
             .eq("tenant_id", tenantId!)
             .eq("status", "closed")
             .gte("closed_at", bounds.start)
