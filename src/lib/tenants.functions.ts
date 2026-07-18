@@ -13,6 +13,26 @@ const ownerPasswordSchema = z
   .string()
   .min(PROJECT_PASSWORD_MIN_LENGTH, PROJECT_PASSWORD_REQUIREMENT);
 
+const billingCustomerSchema = z
+  .object({
+    legalName: z.string().min(2).optional(),
+    cpfCnpj: z.string().optional(),
+    email: z.string().email().optional(),
+    phone: z.string().optional(),
+    postalCode: z.string().optional(),
+    address: z.string().optional(),
+    addressNumber: z.string().optional(),
+    complement: z.string().optional(),
+    province: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    preferredBillingType: z.enum(["UNDEFINED", "PIX", "BOLETO", "CREDIT_CARD"]).default("UNDEFINED"),
+    notificationDisabled: z.boolean().default(true),
+  })
+  .optional();
+
+type BillingCustomerInput = z.infer<typeof billingCustomerSchema>;
+
 function tenantAuthError(error: { code?: string; message?: string }) {
   return new Error(
     projectPasswordAuthErrorMessage(error, "Não foi possível criar ou atualizar o acesso da loja."),
@@ -22,6 +42,89 @@ function tenantAuthError(error: { code?: string; message?: string }) {
 function requiredOwnerPassword(password: string | undefined) {
   if (!password) throw new Error(PROJECT_PASSWORD_REQUIREMENT);
   return password;
+}
+
+function digits(value: string | null | undefined) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+function validateCpfCnpj(value: string | null | undefined) {
+  const clean = digits(value);
+  if (clean && ![11, 14].includes(clean.length)) {
+    throw new Error("Informe um CPF ou CNPJ válido.");
+  }
+  return clean;
+}
+
+function validatePhone(value: string | null | undefined) {
+  const clean = digits(value);
+  if (clean && clean.length < 10) throw new Error("Informe um WhatsApp válido.");
+  return clean;
+}
+
+function validatePostalCode(value: string | null | undefined) {
+  const clean = digits(value);
+  if (clean && clean.length !== 8) throw new Error("Informe um CEP válido com 8 dígitos.");
+  return clean;
+}
+
+function customerReference(tenantId: string) {
+  return `linkupstudio:b2b:v1:tenant:${tenantId}`;
+}
+
+async function upsertBillingCustomer(
+  supabaseAdmin: SupabaseClient<Database>,
+  tenantId: string,
+  tenantName: string,
+  input: BillingCustomerInput,
+  actorUserId: string,
+) {
+  if (!input) return;
+
+  const cpfCnpj = validateCpfCnpj(input.cpfCnpj);
+  const phone = validatePhone(input.phone);
+  const postalCode = validatePostalCode(input.postalCode);
+  const legalName = input.legalName?.trim() || tenantName.trim();
+
+  const commonCustomer = {
+    provider: "asaas",
+    external_reference: customerReference(tenantId),
+    legal_name: legalName,
+    cpf_cnpj: cpfCnpj || null,
+    email: input.email?.toLowerCase().trim() || null,
+    phone: phone || null,
+    address: input.address?.trim() || null,
+    address_number: input.addressNumber?.trim() || null,
+    complement: input.complement?.trim() || null,
+    province: input.province?.trim() || null,
+    postal_code: postalCode || null,
+    city: input.city?.trim() || null,
+    state: input.state?.trim().toUpperCase() || null,
+    preferred_billing_type: input.preferredBillingType ?? "UNDEFINED",
+    notification_disabled: input.notificationDisabled ?? true,
+    sync_status: "pending",
+    last_error: null,
+    updated_by: actorUserId,
+  };
+
+  const { error } = await supabaseAdmin.from("tenant_billing_provider_customers").upsert(
+    [
+      {
+        ...commonCustomer,
+        tenant_id: tenantId,
+        environment: "sandbox",
+        created_by: actorUserId,
+      },
+      {
+        ...commonCustomer,
+        tenant_id: tenantId,
+        environment: "production",
+        created_by: actorUserId,
+      },
+    ],
+    { onConflict: "tenant_id,provider,environment" },
+  );
+  if (error) throw new Error(error.message);
 }
 
 type AuthenticatedContext = {
@@ -67,6 +170,7 @@ export const createTenant = createServerFn({ method: "POST" })
         plan: z.enum(["monthly", "yearly"]).default("monthly"),
         owner_email: z.string().email().optional(),
         owner_password: ownerPasswordSchema.optional(),
+        billing_customer: billingCustomerSchema,
       })
       .parse(d),
   )
@@ -111,6 +215,13 @@ export const createTenant = createServerFn({ method: "POST" })
           .eq("id", created.data.user.id);
       }
     }
+    await upsertBillingCustomer(
+      supabaseAdmin,
+      t.id,
+      data.name,
+      data.billing_customer,
+      context.userId,
+    );
     return { id: t.id };
   });
 
@@ -180,6 +291,7 @@ export const updateTenant = createServerFn({ method: "POST" })
         plan: z.enum(["monthly", "yearly"]),
         owner_email: z.string().email().optional(),
         owner_password: ownerPasswordSchema.optional(),
+        billing_customer: billingCustomerSchema,
       })
       .parse(d),
   )
@@ -297,6 +409,14 @@ export const updateTenant = createServerFn({ method: "POST" })
           .upsert({ id: targetUser.id, active_tenant_id: data.id }, { onConflict: "id" });
       }
     }
+
+    await upsertBillingCustomer(
+      supabaseAdmin,
+      data.id,
+      data.name,
+      data.billing_customer,
+      context.userId,
+    );
 
     return { ok: true };
   });

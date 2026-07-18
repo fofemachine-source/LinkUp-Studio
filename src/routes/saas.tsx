@@ -1465,6 +1465,189 @@ function EmpresasTab() {
   );
 }
 
+type TenantBillingCustomerForm = {
+  legalName: string;
+  cpfCnpj: string;
+  email: string;
+  phone: string;
+  postalCode: string;
+  address: string;
+  addressNumber: string;
+  complement: string;
+  province: string;
+  city: string;
+  state: string;
+};
+
+const emptyTenantBillingCustomer: TenantBillingCustomerForm = {
+  legalName: "",
+  cpfCnpj: "",
+  email: "",
+  phone: "",
+  postalCode: "",
+  address: "",
+  addressNumber: "",
+  complement: "",
+  province: "",
+  city: "",
+  state: "",
+};
+
+function onlyDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function tenantBillingCustomerPayload(form: TenantBillingCustomerForm) {
+  return {
+    legalName: form.legalName.trim(),
+    cpfCnpj: onlyDigits(form.cpfCnpj),
+    email: form.email.toLowerCase().trim(),
+    phone: onlyDigits(form.phone),
+    postalCode: onlyDigits(form.postalCode),
+    address: form.address.trim(),
+    addressNumber: form.addressNumber.trim(),
+    complement: form.complement.trim(),
+    province: form.province.trim(),
+    city: form.city.trim(),
+    state: form.state.trim().toUpperCase(),
+    preferredBillingType: "UNDEFINED" as const,
+    notificationDisabled: true,
+  };
+}
+
+function tenantBillingMissingFields(form: TenantBillingCustomerForm) {
+  const missing: string[] = [];
+  const cpfCnpj = onlyDigits(form.cpfCnpj);
+  const phone = onlyDigits(form.phone);
+  const postalCode = onlyDigits(form.postalCode);
+  if (!form.legalName.trim()) missing.push("razão social/nome fiscal");
+  if (![11, 14].includes(cpfCnpj.length)) missing.push("CPF/CNPJ");
+  if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) missing.push("e-mail financeiro");
+  if (phone.length < 10) missing.push("WhatsApp financeiro");
+  if (postalCode.length !== 8) missing.push("CEP");
+  if (!form.address.trim()) missing.push("endereço");
+  if (!form.addressNumber.trim()) missing.push("número");
+  if (!form.province.trim()) missing.push("bairro");
+  if (!form.city.trim()) missing.push("cidade");
+  if (form.state.trim().length !== 2) missing.push("UF");
+  return missing;
+}
+
+function tenantBillingCustomerFromRow(row: any, fallbackName: string): TenantBillingCustomerForm {
+  return {
+    legalName: row?.legal_name ?? fallbackName,
+    cpfCnpj: row?.cpf_cnpj ?? "",
+    email: row?.email ?? "",
+    phone: row?.phone ?? "",
+    postalCode: row?.postal_code ?? "",
+    address: row?.address ?? "",
+    addressNumber: row?.address_number ?? "",
+    complement: row?.complement ?? "",
+    province: row?.province ?? "",
+    city: row?.city ?? "",
+    state: row?.state ?? "",
+  };
+}
+
+function TenantBillingFields({
+  value,
+  onChange,
+}: {
+  value: TenantBillingCustomerForm;
+  onChange: (next: TenantBillingCustomerForm) => void;
+}) {
+  const update = (patch: Partial<TenantBillingCustomerForm>) => onChange({ ...value, ...patch });
+  return (
+    <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+      <div className="mb-4">
+        <div className="text-xs font-bold uppercase tracking-wide text-indigo-600">
+          Dados fiscais / Asaas
+        </div>
+        <p className="mt-1 text-xs text-slate-500">
+          Estes dados preparam o cliente para checkout e cobranças da LinkUp Studio.
+        </p>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <Label>Razão social / nome fiscal *</Label>
+          <Input
+            value={value.legalName}
+            onChange={(event) => update({ legalName: event.target.value })}
+          />
+        </div>
+        <div>
+          <Label>CPF / CNPJ *</Label>
+          <Input
+            value={value.cpfCnpj}
+            onChange={(event) => update({ cpfCnpj: event.target.value })}
+          />
+        </div>
+        <div>
+          <Label>E-mail financeiro *</Label>
+          <Input
+            type="email"
+            value={value.email}
+            onChange={(event) => update({ email: event.target.value })}
+          />
+        </div>
+        <div>
+          <Label>WhatsApp financeiro *</Label>
+          <Input value={value.phone} onChange={(event) => update({ phone: event.target.value })} />
+        </div>
+        <div>
+          <Label>CEP *</Label>
+          <Input
+            value={value.postalCode}
+            onChange={(event) => update({ postalCode: event.target.value })}
+          />
+        </div>
+        <div>
+          <Label>Endereço *</Label>
+          <Input
+            value={value.address}
+            onChange={(event) => update({ address: event.target.value })}
+          />
+        </div>
+        <div>
+          <Label>Número *</Label>
+          <Input
+            value={value.addressNumber}
+            onChange={(event) => update({ addressNumber: event.target.value })}
+          />
+        </div>
+        <div>
+          <Label>Complemento</Label>
+          <Input
+            value={value.complement}
+            onChange={(event) => update({ complement: event.target.value })}
+          />
+        </div>
+        <div>
+          <Label>Bairro *</Label>
+          <Input
+            value={value.province}
+            onChange={(event) => update({ province: event.target.value })}
+          />
+        </div>
+        <div className="grid grid-cols-[1fr_82px] gap-2">
+          <div>
+            <Label>Cidade *</Label>
+            <Input value={value.city} onChange={(event) => update({ city: event.target.value })} />
+          </div>
+          <div>
+            <Label>UF *</Label>
+            <Input
+              maxLength={2}
+              value={value.state}
+              onChange={(event) => update({ state: event.target.value.toUpperCase().slice(0, 2) })}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void }) {
   const getOwner = useServerFn(getTenantOwner);
   const update = useServerFn(updateTenant);
@@ -1475,6 +1658,7 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
     plan: tenant.plan ?? "monthly",
     owner_email: "",
     owner_password: "",
+    billing_customer: { ...emptyTenantBillingCustomer, legalName: tenant.name },
   });
   const [loadingOwner, setLoadingOwner] = useState(true);
 
@@ -1488,11 +1672,37 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
       .finally(() => setLoadingOwner(false));
   }, [tenant.id]);
 
+  useEffect(() => {
+    let active = true;
+    supabase
+      .from("tenant_billing_provider_customers")
+      .select("*")
+      .eq("tenant_id", tenant.id)
+      .eq("provider", "asaas")
+      .order("environment", { ascending: false })
+      .then(({ data }) => {
+        if (!active) return;
+        const rows = data ?? [];
+        const row = rows.find((item: any) => item.environment === "production") ?? rows[0];
+        setF((prev) => ({
+          ...prev,
+          billing_customer: tenantBillingCustomerFromRow(row, tenant.name),
+        }));
+      });
+    return () => {
+      active = false;
+    };
+  }, [tenant.id, tenant.name]);
+
   async function save() {
     try {
       if (f.owner_password) {
         const passwordError = validateProjectPassword(f.owner_password);
         if (passwordError) return toast.error(passwordError);
+      }
+      const missingBilling = tenantBillingMissingFields(f.billing_customer);
+      if (missingBilling.length) {
+        return toast.error(`Complete os dados fiscais: ${missingBilling.join(", ")}.`);
       }
       await update({
         data: {
@@ -1503,6 +1713,7 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
           plan: f.plan as "monthly" | "yearly",
           owner_email: f.owner_email || undefined,
           owner_password: f.owner_password || undefined,
+          billing_customer: tenantBillingCustomerPayload(f.billing_customer),
         },
       });
       toast.success("Empresa atualizada com sucesso!");
@@ -1513,7 +1724,7 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
   }
 
   return (
-    <DialogContent className="sm:max-w-lg">
+    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle>Editar Barbearia: {tenant.name}</DialogTitle>
       </DialogHeader>
@@ -1526,6 +1737,9 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
               setF({
                 ...f,
                 name: e.target.value,
+                billing_customer: f.billing_customer.legalName
+                  ? f.billing_customer
+                  : { ...f.billing_customer, legalName: e.target.value },
                 slug: e.target.value
                   .toLowerCase()
                   .normalize("NFD")
@@ -1582,6 +1796,10 @@ function EditTenantDialog({ tenant, onDone }: { tenant: any; onDone: () => void 
             </p>
           </div>
         </div>
+        <TenantBillingFields
+          value={f.billing_customer}
+          onChange={(billing_customer) => setF({ ...f, billing_customer })}
+        />
       </div>
       <DialogFooter>
         <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={save}>
@@ -1600,13 +1818,24 @@ function NewTenantDialog({ create, onDone }: any) {
     plan: "monthly",
     owner_email: "",
     owner_password: "",
+    billing_customer: { ...emptyTenantBillingCustomer },
   });
   async function save() {
     if (!f.owner_email.trim()) return toast.error("Informe o e-mail do proprietário.");
     const passwordError = validateProjectPassword(f.owner_password);
     if (passwordError) return toast.error(passwordError);
+    const missingBilling = tenantBillingMissingFields(f.billing_customer);
+    if (missingBilling.length) {
+      return toast.error(`Complete os dados fiscais: ${missingBilling.join(", ")}.`);
+    }
     try {
-      await create({ data: { ...f, owner_email: f.owner_email.trim() } as any });
+      await create({
+        data: {
+          ...f,
+          owner_email: f.owner_email.trim(),
+          billing_customer: tenantBillingCustomerPayload(f.billing_customer),
+        } as any,
+      });
       toast.success("Empresa cadastrada");
       onDone();
     } catch (e: any) {
@@ -1614,7 +1843,7 @@ function NewTenantDialog({ create, onDone }: any) {
     }
   }
   return (
-    <DialogContent>
+    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle>Cadastrar nova empresa</DialogTitle>
       </DialogHeader>
@@ -1627,6 +1856,9 @@ function NewTenantDialog({ create, onDone }: any) {
               setF({
                 ...f,
                 name: e.target.value,
+                billing_customer: f.billing_customer.legalName
+                  ? f.billing_customer
+                  : { ...f.billing_customer, legalName: e.target.value },
                 slug: e.target.value
                   .toLowerCase()
                   .normalize("NFD")
@@ -1681,6 +1913,10 @@ function NewTenantDialog({ create, onDone }: any) {
             </p>
           </div>
         </div>
+        <TenantBillingFields
+          value={f.billing_customer}
+          onChange={(billing_customer) => setF({ ...f, billing_customer })}
+        />
       </div>
       <DialogFooter>
         <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={save}>
