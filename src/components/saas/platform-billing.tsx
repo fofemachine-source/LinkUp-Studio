@@ -62,6 +62,9 @@ import { Textarea } from "@/components/ui/textarea";
 
 type BillingType = "UNDEFINED" | "PIX" | "BOLETO" | "CREDIT_CARD";
 type BillingEnvironment = "sandbox" | "production";
+type PromotionalDiscountType = "none" | "percentage" | "fixed";
+type PromotionalDiscountDuration =
+  "none" | "1_month" | "2_months" | "3_months" | "6_months" | "12_months" | "custom";
 type BillingQueryResult = { data: unknown; error: unknown };
 type BillingQuery = PromiseLike<BillingQueryResult> & {
   select(columns?: string): BillingQuery;
@@ -199,6 +202,11 @@ type BillingContract = {
   next_due_date?: string | null;
   trial_starts_on?: string | null;
   trial_ends_on?: string | null;
+  promotional_discount_type?: PromotionalDiscountType | null;
+  promotional_discount_value?: number | null;
+  promotional_discount_duration?: PromotionalDiscountDuration | null;
+  promotional_discount_starts_on?: string | null;
+  promotional_discount_ends_on?: string | null;
   auto_renew: boolean;
   cancel_at_period_end: boolean;
 };
@@ -365,6 +373,68 @@ function addDaysIso(dateValue: string, days: number) {
   const date = new Date(`${dateValue}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function addMonthsMinusDayIso(dateValue: string, months: number) {
+  const source = new Date(`${dateValue}T00:00:00.000Z`);
+  const targetMonth = source.getUTCMonth() + Math.max(1, Math.floor(months));
+  const targetYear = source.getUTCFullYear() + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const lastTargetDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+  const clampedDay = Math.min(source.getUTCDate(), lastTargetDay);
+  const nextPeriod = new Date(Date.UTC(targetYear, normalizedMonth, clampedDay));
+  nextPeriod.setUTCDate(nextPeriod.getUTCDate() - 1);
+  return nextPeriod.toISOString().slice(0, 10);
+}
+
+const promotionalDurationMonths: Record<PromotionalDiscountDuration, number> = {
+  none: 0,
+  "1_month": 1,
+  "2_months": 2,
+  "3_months": 3,
+  "6_months": 6,
+  "12_months": 12,
+  custom: 0,
+};
+
+const promotionalDurationLabels: Record<PromotionalDiscountDuration, string> = {
+  none: "Sem vigência",
+  "1_month": "1 mês",
+  "2_months": "2 meses",
+  "3_months": "3 meses",
+  "6_months": "6 meses",
+  "12_months": "12 meses",
+  custom: "Personalizado",
+};
+
+function promotionalDiscountEnd(startsOn: string, duration: PromotionalDiscountDuration) {
+  const months = promotionalDurationMonths[duration] ?? 0;
+  return months > 0 ? addMonthsMinusDayIso(startsOn, months) : "";
+}
+
+function effectivePromotionalAmount(
+  baseAmount: number,
+  type: PromotionalDiscountType,
+  value: number,
+  startsOn: string,
+  endsOn: string,
+  referenceDate: string,
+) {
+  if (
+    type === "none" ||
+    value <= 0 ||
+    !startsOn ||
+    !endsOn ||
+    referenceDate < startsOn ||
+    referenceDate > endsOn
+  ) {
+    return baseAmount;
+  }
+  const discounted =
+    type === "percentage"
+      ? baseAmount - (baseAmount * Math.min(value, 100)) / 100
+      : baseAmount - value;
+  return Math.max(0, Math.round(discounted * 100) / 100);
 }
 
 function errorMessage(error: unknown, fallback = "Não foi possível concluir a operação.") {
@@ -591,10 +661,16 @@ export function PlatformBillingTab() {
     const mrr = contracts
       .filter((contract) => ["trialing", "active", "past_due"].includes(contract.status))
       .reduce((total, contract) => {
+        const effectiveAmount = effectivePromotionalAmount(
+          numberValue(contract.amount_snapshot),
+          contract.promotional_discount_type ?? "none",
+          numberValue(contract.promotional_discount_value),
+          contract.promotional_discount_starts_on ?? "",
+          contract.promotional_discount_ends_on ?? "",
+          now.toISOString().slice(0, 10),
+        );
         return (
-          total +
-          numberValue(contract.amount_snapshot) /
-            Math.max(1, numberValue(contract.interval_months_snapshot))
+          total + effectiveAmount / Math.max(1, numberValue(contract.interval_months_snapshot))
         );
       }, 0);
     return { received, awaiting, overdue, mrr };
@@ -621,6 +697,23 @@ export function PlatformBillingTab() {
       } else {
         toast.success(action === "cancel-charge" ? "Cobrança cancelada." : "Cobrança atualizada.");
       }
+      await refreshBilling();
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deletePlan(plan: BillingPlan) {
+    const confirmed = window.confirm(
+      `Excluir o plano "${plan.name}"?\n\nSó será permitido se nenhum contrato estiver usando este plano.`,
+    );
+    if (!confirmed) return;
+    setBusy(`delete-plan:${plan.id}`);
+    try {
+      await invokeAsaas("delete-plan", { planId: plan.id });
+      toast.success("Plano excluído.");
       await refreshBilling();
     } catch (error) {
       toast.error(errorMessage(error));
@@ -759,7 +852,7 @@ export function PlatformBillingTab() {
           </TabsContent>
 
           <TabsContent value="plans" className="m-0">
-            <PlansPanel plans={plans} onEdit={setPlanDialog} />
+            <PlansPanel plans={plans} busy={busy} onEdit={setPlanDialog} onDelete={deletePlan} />
           </TabsContent>
 
           <TabsContent value="integration" className="m-0">
@@ -1085,6 +1178,24 @@ function ClientsPanel({
             {filtered.map((client) => {
               const { tenant, contract, customer } = client;
               const plan = plans.find((item) => item.id === contract?.plan_id);
+              const today = new Date().toISOString().slice(0, 10);
+              const contractAmount = contract
+                ? effectivePromotionalAmount(
+                    numberValue(contract.amount_snapshot),
+                    contract.promotional_discount_type ?? "none",
+                    numberValue(contract.promotional_discount_value),
+                    contract.promotional_discount_starts_on ?? "",
+                    contract.promotional_discount_ends_on ?? "",
+                    today,
+                  )
+                : 0;
+              const promoActive = Boolean(
+                contract &&
+                contract.promotional_discount_type !== "none" &&
+                numberValue(contract.promotional_discount_value) > 0 &&
+                (contract.promotional_discount_starts_on ?? "") <= today &&
+                today <= (contract.promotional_discount_ends_on ?? ""),
+              );
               const active =
                 contract && ["trialing", "active", "past_due"].includes(contract.status);
               const statusClass =
@@ -1102,8 +1213,13 @@ function ClientsPanel({
                   <TableCell>
                     {plan?.name ?? "Sem plano"}
                     <div className="text-xs text-slate-500">
-                      {contract ? brl(contract.amount_snapshot) : "Sem contrato"}
+                      {contract ? brl(contractAmount) : "Sem contrato"}
                     </div>
+                    {promoActive && (
+                      <div className="text-xs text-emerald-700">
+                        Promo até {localDate(contract.promotional_discount_ends_on)}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     {localDate(contract?.next_due_date)}
@@ -1153,10 +1269,14 @@ function ClientsPanel({
 
 function PlansPanel({
   plans,
+  busy,
   onEdit,
+  onDelete,
 }: {
   plans: BillingPlan[];
+  busy: string | null;
   onEdit: (plan: BillingPlan | "new") => void;
+  onDelete: (plan: BillingPlan) => void;
 }) {
   return (
     <Card>
@@ -1192,9 +1312,25 @@ function PlansPanel({
                     {plan.description || "Sem descrição"}
                   </p>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => onEdit(plan)}>
-                  <Pencil className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="icon" onClick={() => onEdit(plan)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                    disabled={busy === `delete-plan:${plan.id}`}
+                    onClick={() => onDelete(plan)}
+                    title="Excluir plano"
+                  >
+                    {busy === `delete-plan:${plan.id}` ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
               </div>
               <div className="mt-5 flex items-end justify-between">
                 <div>
@@ -1356,11 +1492,7 @@ function IntegrationPanel({
             label="Chave da API"
             detail={configured ? "Configurada com segurança" : "Secret ASAAS_API_KEY ausente"}
           />
-          <StatusTile
-            ok={webhookToken}
-            label="Token do webhook"
-            detail={webhookTokenDetail}
-          />
+          <StatusTile ok={webhookToken} label="Token do webhook" detail={webhookTokenDetail} />
           <StatusTile
             ok={workerProtection}
             label="Proteção do motor"
@@ -1551,7 +1683,6 @@ function IntegrationPanel({
                 </p>
               </div>
             </div>
-
 
             <div className="grid gap-4 xl:grid-cols-2">
               <MessageRuleCard
@@ -1877,11 +2008,20 @@ function CreateChargeDialog({
     if (!selected?.contract) return;
     const { contract, customer } = selected;
     const plan = plans.find((item) => item.id === contract.plan_id);
+    const dueDate = contract.next_due_date ?? "";
+    const effectiveAmount = effectivePromotionalAmount(
+      numberValue(contract.amount_snapshot ?? plan?.amount),
+      contract.promotional_discount_type ?? "none",
+      numberValue(contract.promotional_discount_value),
+      contract.promotional_discount_starts_on ?? "",
+      contract.promotional_discount_ends_on ?? "",
+      dueDate || new Date().toISOString().slice(0, 10),
+    );
     setForm((current) => ({
       ...current,
-      amount: String(contract.amount_snapshot ?? plan?.amount ?? ""),
+      amount: String(effectiveAmount || ""),
       billingType: contract.billing_type ?? customer?.preferred_billing_type ?? "UNDEFINED",
-      dueDate: contract.next_due_date ?? "",
+      dueDate,
     }));
   }, [plans, selected]);
   async function create() {
@@ -2012,6 +2152,11 @@ type ClientContractForm = {
   nextDueDate: string;
   trialStartsOn: string;
   trialEndsOn: string;
+  promotionalDiscountType: PromotionalDiscountType;
+  promotionalDiscountValue: number;
+  promotionalDiscountDuration: PromotionalDiscountDuration;
+  promotionalDiscountStartsOn: string;
+  promotionalDiscountEndsOn: string;
   autoRenew: boolean;
   cancelAtPeriodEnd: boolean;
   legalName: string;
@@ -2059,6 +2204,11 @@ function clientForm(client: BillingClient, plans: BillingPlan[]): ClientContract
     nextDueDate: client.contract?.next_due_date ?? "",
     trialStartsOn,
     trialEndsOn,
+    promotionalDiscountType: client.contract?.promotional_discount_type ?? "none",
+    promotionalDiscountValue: numberValue(client.contract?.promotional_discount_value),
+    promotionalDiscountDuration: client.contract?.promotional_discount_duration ?? "none",
+    promotionalDiscountStartsOn: client.contract?.promotional_discount_starts_on ?? today,
+    promotionalDiscountEndsOn: client.contract?.promotional_discount_ends_on ?? "",
     autoRenew: client.contract?.auto_renew ?? true,
     cancelAtPeriodEnd: client.contract?.cancel_at_period_end ?? false,
     legalName: client.customer?.legal_name ?? client.tenant.name,
@@ -2097,6 +2247,29 @@ function ClientContractDialog({
   useEffect(() => setForm(client ? clientForm(client, plans) : null), [client, plans]);
   if (!form || !client) return null;
   const suspended = client.contract?.status === "suspended";
+  const selectedPlan = plans.find((item) => item.id === form.planId);
+  const normalPlanAmount = numberValue(selectedPlan?.amount ?? form.amountSnapshot);
+  const discountReferenceDate = new Date().toISOString().slice(0, 10);
+  const promotionalFinalAmount = effectivePromotionalAmount(
+    normalPlanAmount,
+    form.promotionalDiscountType,
+    form.promotionalDiscountValue,
+    form.promotionalDiscountStartsOn,
+    form.promotionalDiscountEndsOn,
+    discountReferenceDate,
+  );
+  const promotionalDiscountActive = Boolean(
+    form.promotionalDiscountType !== "none" &&
+    form.promotionalDiscountValue > 0 &&
+    form.promotionalDiscountStartsOn &&
+    form.promotionalDiscountEndsOn,
+  );
+  const promotionalDiscountText =
+    form.promotionalDiscountType === "percentage"
+      ? `${form.promotionalDiscountValue}%`
+      : form.promotionalDiscountType === "fixed"
+        ? brl(form.promotionalDiscountValue)
+        : "Sem desconto";
 
   async function persist(syncAfter: boolean) {
     if (!form) return;
@@ -2104,8 +2277,24 @@ function ClientContractDialog({
     const cpfCnpj = currentForm.cpfCnpj.replace(/\D/g, "");
     if (cpfCnpj && ![11, 14].includes(cpfCnpj.length))
       return toast.error("Informe um CPF ou CNPJ válido.");
-    if (!currentForm.planId || currentForm.amountSnapshot < 0)
-      return toast.error("Selecione um plano e informe um valor válido.");
+    if (!currentForm.planId) return toast.error("Selecione um plano.");
+    if (currentForm.promotionalDiscountType !== "none") {
+      if (!(currentForm.promotionalDiscountValue > 0)) {
+        return toast.error("Informe um desconto promocional maior que zero.");
+      }
+      if (
+        currentForm.promotionalDiscountType === "percentage" &&
+        currentForm.promotionalDiscountValue > 100
+      ) {
+        return toast.error("O desconto percentual não pode passar de 100%.");
+      }
+      if (!currentForm.promotionalDiscountStartsOn || !currentForm.promotionalDiscountEndsOn) {
+        return toast.error("Informe a vigência do desconto promocional.");
+      }
+      if (currentForm.promotionalDiscountEndsOn < currentForm.promotionalDiscountStartsOn) {
+        return toast.error("O fim do desconto precisa ser igual ou posterior ao início.");
+      }
+    }
     if (currentForm.status === "trialing") {
       if (!currentForm.trialStartsOn || !currentForm.trialEndsOn) {
         return toast.error("Informe o início e o fim do teste grátis.");
@@ -2127,6 +2316,17 @@ function ClientContractDialog({
           status: currentForm.status,
           amountSnapshot: currentForm.amountSnapshot,
           intervalMonthsSnapshot: currentForm.intervalMonthsSnapshot,
+          promotionalDiscountType: currentForm.promotionalDiscountType,
+          promotionalDiscountValue: currentForm.promotionalDiscountValue,
+          promotionalDiscountDuration: currentForm.promotionalDiscountDuration,
+          promotionalDiscountStartsOn:
+            currentForm.promotionalDiscountType === "none"
+              ? null
+              : currentForm.promotionalDiscountStartsOn,
+          promotionalDiscountEndsOn:
+            currentForm.promotionalDiscountType === "none"
+              ? null
+              : currentForm.promotionalDiscountEndsOn,
           billingType: currentForm.billingType,
           dueDay: currentForm.dueDay,
           startsOn: currentForm.startsOn,
@@ -2184,8 +2384,10 @@ function ClientContractDialog({
                 setForm({
                   ...form,
                   planId,
-                  amountSnapshot: plan?.amount ?? form.amountSnapshot,
-                  intervalMonthsSnapshot: plan?.interval_months ?? form.intervalMonthsSnapshot,
+                  amountSnapshot: numberValue(plan?.amount ?? form.amountSnapshot),
+                  intervalMonthsSnapshot: numberValue(
+                    plan?.interval_months ?? form.intervalMonthsSnapshot,
+                  ),
                 });
               }}
             >
@@ -2244,29 +2446,179 @@ function ClientContractDialog({
               </p>
             )}
           </div>
-          <div>
-            <Label>Valor contratado</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.amountSnapshot}
-              onChange={(event) =>
-                setForm({ ...form, amountSnapshot: numberValue(event.target.value) })
-              }
-            />
+          <div className="md:col-span-2 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+            <div className="mb-4">
+              <Label>Desconto promocional</Label>
+              <p className="text-xs text-slate-500">
+                Configure um abatimento temporário. Ao fim da vigência, o contrato volta
+                automaticamente para o valor normal do plano.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <Label>Tipo de desconto</Label>
+                <Select
+                  value={form.promotionalDiscountType}
+                  onValueChange={(value) => {
+                    const promotionalDiscountType = value as PromotionalDiscountType;
+                    const start =
+                      form.promotionalDiscountStartsOn || new Date().toISOString().slice(0, 10);
+                    const duration =
+                      promotionalDiscountType === "none"
+                        ? "none"
+                        : form.promotionalDiscountDuration === "none"
+                          ? "1_month"
+                          : form.promotionalDiscountDuration;
+                    setForm({
+                      ...form,
+                      promotionalDiscountType,
+                      promotionalDiscountValue:
+                        promotionalDiscountType === "none" ? 0 : form.promotionalDiscountValue,
+                      promotionalDiscountDuration: duration,
+                      promotionalDiscountStartsOn:
+                        promotionalDiscountType === "none" ? start : start,
+                      promotionalDiscountEndsOn:
+                        promotionalDiscountType === "none"
+                          ? ""
+                          : duration === "custom"
+                            ? form.promotionalDiscountEndsOn
+                            : promotionalDiscountEnd(start, duration),
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem desconto</SelectItem>
+                    <SelectItem value="percentage">Porcentagem</SelectItem>
+                    <SelectItem value="fixed">Valor fixo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Valor do desconto</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max={form.promotionalDiscountType === "percentage" ? 100 : undefined}
+                  step="0.01"
+                  disabled={form.promotionalDiscountType === "none"}
+                  value={form.promotionalDiscountValue}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      promotionalDiscountValue: numberValue(event.target.value),
+                    })
+                  }
+                />
+              </div>
+              <div>
+                <Label>Vigência</Label>
+                <Select
+                  value={form.promotionalDiscountDuration}
+                  disabled={form.promotionalDiscountType === "none"}
+                  onValueChange={(value) => {
+                    const promotionalDiscountDuration = value as PromotionalDiscountDuration;
+                    const start =
+                      form.promotionalDiscountStartsOn || new Date().toISOString().slice(0, 10);
+                    setForm({
+                      ...form,
+                      promotionalDiscountDuration,
+                      promotionalDiscountStartsOn: start,
+                      promotionalDiscountEndsOn:
+                        promotionalDiscountDuration === "custom"
+                          ? form.promotionalDiscountEndsOn
+                          : promotionalDiscountEnd(start, promotionalDiscountDuration),
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem vigência</SelectItem>
+                    <SelectItem value="1_month">1 mês</SelectItem>
+                    <SelectItem value="2_months">2 meses</SelectItem>
+                    <SelectItem value="3_months">3 meses</SelectItem>
+                    <SelectItem value="6_months">6 meses</SelectItem>
+                    <SelectItem value="12_months">12 meses</SelectItem>
+                    <SelectItem value="custom">Personalizado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {form.promotionalDiscountType !== "none" && (
+                <>
+                  <div>
+                    <Label>Início</Label>
+                    <Input
+                      type="date"
+                      value={form.promotionalDiscountStartsOn}
+                      onChange={(event) => {
+                        const promotionalDiscountStartsOn = event.target.value;
+                        setForm({
+                          ...form,
+                          promotionalDiscountStartsOn,
+                          promotionalDiscountEndsOn:
+                            form.promotionalDiscountDuration === "custom"
+                              ? form.promotionalDiscountEndsOn
+                              : promotionalDiscountEnd(
+                                  promotionalDiscountStartsOn,
+                                  form.promotionalDiscountDuration,
+                                ),
+                        });
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <Label>Fim</Label>
+                    <Input
+                      type="date"
+                      disabled={form.promotionalDiscountDuration !== "custom"}
+                      value={form.promotionalDiscountEndsOn}
+                      onChange={(event) =>
+                        setForm({ ...form, promotionalDiscountEndsOn: event.target.value })
+                      }
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="mt-4 rounded-xl border border-indigo-100 bg-white p-4 text-sm">
+              <div className="grid gap-3 md:grid-cols-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase text-slate-500">Valor do plano</p>
+                  <p className="font-bold text-slate-950">{brl(normalPlanAmount)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase text-slate-500">Desconto</p>
+                  <p className="font-bold text-slate-950">{promotionalDiscountText}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase text-slate-500">Valor final</p>
+                  <p className="font-bold text-emerald-700">{brl(promotionalFinalAmount)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase text-slate-500">Duração</p>
+                  <p className="font-bold text-slate-950">
+                    {promotionalDiscountActive
+                      ? `${promotionalDurationLabels[form.promotionalDiscountDuration]} · ${localDate(form.promotionalDiscountStartsOn)} a ${localDate(form.promotionalDiscountEndsOn)}`
+                      : "Sem desconto promocional"}
+                  </p>
+                </div>
+              </div>
+              {promotionalDiscountActive && (
+                <p className="mt-3 text-xs text-slate-500">
+                  Depois de {localDate(form.promotionalDiscountEndsOn)}, o contrato volta para{" "}
+                  <strong>{brl(normalPlanAmount)}</strong> automaticamente.
+                </p>
+              )}
+            </div>
           </div>
           <div>
             <Label>Periodicidade (meses)</Label>
-            <Input
-              type="number"
-              min="1"
-              max="120"
-              value={form.intervalMonthsSnapshot}
-              onChange={(event) =>
-                setForm({ ...form, intervalMonthsSnapshot: numberValue(event.target.value) })
-              }
-            />
+            <Input type="number" min="1" max="120" disabled value={form.intervalMonthsSnapshot} />
+            <p className="mt-1 text-xs text-slate-500">Definida automaticamente pelo plano.</p>
           </div>
           <div>
             <Label>Dia de vencimento</Label>

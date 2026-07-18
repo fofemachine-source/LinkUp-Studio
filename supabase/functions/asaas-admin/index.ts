@@ -34,10 +34,14 @@ const webhookEvents = [
 
 type BillingEnvironment = "sandbox" | "production";
 type BillingType = "UNDEFINED" | "PIX" | "BOLETO" | "CREDIT_CARD";
+type PromotionalDiscountType = "none" | "percentage" | "fixed";
+type PromotionalDiscountDuration =
+  "none" | "1_month" | "2_months" | "3_months" | "6_months" | "12_months" | "custom";
 type AdminAction =
   | "status"
   | "save-settings"
   | "save-plan"
+  | "delete-plan"
   | "save-contract"
   | "test-connection"
   | "configure-webhook"
@@ -53,6 +57,7 @@ type RequestBody = {
   contractId?: string;
   status?: string;
   chargeId?: string;
+  planId?: string;
   idempotencyKey?: string;
   amount?: number | string;
   dueDate?: string;
@@ -241,6 +246,7 @@ function normalizeAction(value: unknown): AdminAction | null {
     "configuration-status": "status",
     "save-settings": "save-settings",
     "save-plan": "save-plan",
+    "delete-plan": "delete-plan",
     "save-contract": "save-contract",
     "test-connection": "test-connection",
     "configure-webhook": "configure-webhook",
@@ -554,6 +560,28 @@ async function savePlan(admin: SupabaseClient, input: Record<string, unknown>, u
   return data;
 }
 
+async function deletePlan(admin: SupabaseClient, input: Record<string, unknown>) {
+  const planId = text(input.planId ?? input.plan_id ?? input.id, 80);
+  if (!isUuid(planId)) throw new AsaasRequestError("Plano inválido.", 400, null);
+
+  const { count, error: usageError } = await admin
+    .from("platform_billing_contracts")
+    .select("id", { count: "exact", head: true })
+    .eq("plan_id", planId);
+  if (usageError) throw usageError;
+  if ((count ?? 0) > 0) {
+    throw new AsaasRequestError(
+      "Este plano possui contratos vinculados e não pode ser excluído. Inative o plano ou troque os contratos antes de excluir.",
+      409,
+      null,
+    );
+  }
+
+  const { error } = await admin.from("platform_billing_plans").delete().eq("id", planId);
+  if (error) throw error;
+  return { deleted: true, planId };
+}
+
 function optionalDate(value: unknown, fieldLabel: string) {
   const normalized = text(value, 10);
   if (!normalized) return null;
@@ -573,6 +601,130 @@ function addMonthsMinusDay(dateValue: string, months: number) {
   const nextPeriod = new Date(Date.UTC(targetYear, normalizedMonth, clampedDay));
   nextPeriod.setUTCDate(nextPeriod.getUTCDate() - 1);
   return nextPeriod.toISOString().slice(0, 10);
+}
+
+function promotionalDiscountType(value: unknown): PromotionalDiscountType {
+  const normalized = text(value, 30);
+  return new Set(["none", "percentage", "fixed"]).has(normalized)
+    ? (normalized as PromotionalDiscountType)
+    : "none";
+}
+
+function promotionalDiscountDuration(value: unknown): PromotionalDiscountDuration {
+  const normalized = text(value, 30);
+  return new Set([
+    "none",
+    "1_month",
+    "2_months",
+    "3_months",
+    "6_months",
+    "12_months",
+    "custom",
+  ]).has(normalized)
+    ? (normalized as PromotionalDiscountDuration)
+    : "none";
+}
+
+function promotionalDurationMonths(duration: PromotionalDiscountDuration) {
+  const months: Record<PromotionalDiscountDuration, number> = {
+    none: 0,
+    "1_month": 1,
+    "2_months": 2,
+    "3_months": 3,
+    "6_months": 6,
+    "12_months": 12,
+    custom: 0,
+  };
+  return months[duration] ?? 0;
+}
+
+function normalizePromotionalDiscount(input: Record<string, unknown>, startsOn: string) {
+  const type = promotionalDiscountType(
+    input.promotionalDiscountType ?? input.promotional_discount_type,
+  );
+  if (type === "none") {
+    return {
+      promotional_discount_type: "none" as const,
+      promotional_discount_value: 0,
+      promotional_discount_duration: "none" as const,
+      promotional_discount_starts_on: null,
+      promotional_discount_ends_on: null,
+    };
+  }
+
+  const value =
+    Math.round(
+      numberValue(input.promotionalDiscountValue ?? input.promotional_discount_value, 0) * 100,
+    ) / 100;
+  if (!(value > 0)) {
+    throw new AsaasRequestError("Informe um desconto promocional maior que zero.", 400, null);
+  }
+  if (type === "percentage" && value > 100) {
+    throw new AsaasRequestError("O desconto percentual não pode passar de 100%.", 400, null);
+  }
+
+  const duration = promotionalDiscountDuration(
+    input.promotionalDiscountDuration ?? input.promotional_discount_duration,
+  );
+  if (duration === "none") {
+    throw new AsaasRequestError("Informe a vigência do desconto promocional.", 400, null);
+  }
+
+  const discountStartsOn =
+    optionalDate(
+      input.promotionalDiscountStartsOn ?? input.promotional_discount_starts_on,
+      "início do desconto promocional",
+    ) || startsOn;
+  const months = promotionalDurationMonths(duration);
+  const discountEndsOn =
+    duration === "custom"
+      ? optionalDate(
+          input.promotionalDiscountEndsOn ?? input.promotional_discount_ends_on,
+          "fim do desconto promocional",
+        )
+      : addMonthsMinusDay(discountStartsOn, months);
+
+  if (!discountEndsOn) {
+    throw new AsaasRequestError("Informe o fim do desconto promocional.", 400, null);
+  }
+  if (discountEndsOn < discountStartsOn) {
+    throw new AsaasRequestError(
+      "O fim do desconto precisa ser igual ou posterior ao início.",
+      400,
+      null,
+    );
+  }
+
+  return {
+    promotional_discount_type: type,
+    promotional_discount_value: value,
+    promotional_discount_duration: duration,
+    promotional_discount_starts_on: discountStartsOn,
+    promotional_discount_ends_on: discountEndsOn,
+  };
+}
+
+function effectiveContractAmount(contract: Record<string, unknown>, referenceDate: string) {
+  const baseAmount = numberValue(contract.amount_snapshot, 0);
+  const type = promotionalDiscountType(contract.promotional_discount_type);
+  const value = numberValue(contract.promotional_discount_value, 0);
+  const startsOn = text(contract.promotional_discount_starts_on, 10);
+  const endsOn = text(contract.promotional_discount_ends_on, 10);
+  if (
+    type === "none" ||
+    value <= 0 ||
+    !startsOn ||
+    !endsOn ||
+    referenceDate < startsOn ||
+    referenceDate > endsOn
+  ) {
+    return baseAmount;
+  }
+  const discounted =
+    type === "percentage"
+      ? baseAmount - (baseAmount * Math.min(value, 100)) / 100
+      : baseAmount - value;
+  return Math.max(0, Math.round(discounted * 100) / 100);
 }
 
 async function saveContract(
@@ -650,16 +802,8 @@ async function saveContract(
   const { data: customer, error: customerError } = await customerQuery.select("*").single();
   if (customerError) throw customerError;
 
-  const amount = numberValue(
-    input.amountSnapshot ?? input.amount_snapshot,
-    numberValue(plan.amount),
-  );
-  const intervalMonths = Math.floor(
-    numberValue(
-      input.intervalMonthsSnapshot ?? input.interval_months_snapshot,
-      numberValue(plan.interval_months, 1),
-    ),
-  );
+  const amount = numberValue(plan.amount);
+  const intervalMonths = Math.floor(numberValue(plan.interval_months, 1));
   const dueDay = Math.floor(numberValue(input.dueDay ?? input.due_day, 10));
   if (!(amount >= 0)) throw new AsaasRequestError("Valor contratual inválido.", 400, null);
   if (intervalMonths < 1 || intervalMonths > 120) {
@@ -671,6 +815,7 @@ async function saveContract(
 
   const today = new Date().toISOString().slice(0, 10);
   const startsOn = optionalDate(input.startsOn ?? input.starts_on, "início") || today;
+  const promotionalDiscount = normalizePromotionalDiscount(input, startsOn);
   const periodStart =
     optionalDate(input.currentPeriodStart ?? input.current_period_start, "início do período") ||
     startsOn;
@@ -738,6 +883,7 @@ async function saveContract(
     status,
     amount_snapshot: amount,
     interval_months_snapshot: intervalMonths,
+    ...promotionalDiscount,
     billing_type: billingType(
       input.billingType ?? input.billing_type,
       customer.preferred_billing_type || settings.default_billing_type,
@@ -1194,9 +1340,12 @@ async function createCharge(
     input.dueDate ?? input.due_date ?? body.dueDate ?? contract.next_due_date,
     10,
   );
-  const amount = numberValue(input.amount ?? body.amount, numberValue(contract.amount_snapshot));
   if (!isIsoDate(dueDate))
     throw new AsaasRequestError("Informe uma data de vencimento válida.", 400, null);
+  const amount = numberValue(
+    input.amount ?? body.amount,
+    effectiveContractAmount(contract, dueDate),
+  );
   if (!(amount > 0))
     throw new AsaasRequestError("Informe um valor de cobrança maior que zero.", 400, null);
 
@@ -1573,6 +1722,10 @@ Deno.serve(async (request) => {
     if (action === "save-plan") {
       if (!isRecord(body.plan)) return json({ ok: false, error: "Plano inválido." }, 400);
       return json({ ok: true, plan: await savePlan(admin, body.plan, caller.user.id) });
+    }
+
+    if (action === "delete-plan") {
+      return json({ ok: true, ...(await deletePlan(admin, body)) });
     }
 
     if (action === "save-contract") {

@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 const externalReferencePrefix = "linkupstudio:b2b:v1";
 
 type BillingEnvironment = "sandbox" | "production";
+type PromotionalDiscountType = "none" | "percentage" | "fixed";
 type BillingSettings = {
   enabled: boolean;
   environment: BillingEnvironment;
@@ -88,6 +89,36 @@ function digits(value: unknown) {
 function numberValue(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function promotionalDiscountType(value: unknown): PromotionalDiscountType {
+  const normalized = text(value, 30);
+  return new Set(["none", "percentage", "fixed"]).has(normalized)
+    ? (normalized as PromotionalDiscountType)
+    : "none";
+}
+
+function effectiveContractAmount(contract: JsonRecord, referenceDate: string) {
+  const baseAmount = numberValue(contract.amount_snapshot, 0);
+  const type = promotionalDiscountType(contract.promotional_discount_type);
+  const value = numberValue(contract.promotional_discount_value, 0);
+  const startsOn = text(contract.promotional_discount_starts_on, 10);
+  const endsOn = text(contract.promotional_discount_ends_on, 10);
+  if (
+    type === "none" ||
+    value <= 0 ||
+    !startsOn ||
+    !endsOn ||
+    referenceDate < startsOn ||
+    referenceDate > endsOn
+  ) {
+    return baseAmount;
+  }
+  const discounted =
+    type === "percentage"
+      ? baseAmount - (baseAmount * Math.min(value, 100)) / 100
+      : baseAmount - value;
+  return Math.max(0, Math.round(discounted * 100) / 100);
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -642,7 +673,7 @@ async function generateCharges(
           idempotency_key: idempotencyKey,
           source: "automatic",
           billing_type: contract.billing_type || settings.default_billing_type,
-          amount: contract.amount_snapshot,
+          amount: effectiveContractAmount(contract, dueDate),
           due_date: dueDate,
           coverage_start: coverageStart,
           coverage_end: coverageEnd,
