@@ -318,6 +318,18 @@ function isMissingSubscriptionEnqueueRpc(error: unknown) {
   );
 }
 
+function isMissingPlatformBillingEnqueueRpc(error: unknown) {
+  const value = isRecord(error) ? error : {};
+  const code = String(value.code || "");
+  const message = [value.message, value.details, value.hint].map(String).join(" ");
+  return (
+    code === "PGRST202" ||
+    code === "42883" ||
+    (/enqueue_due_platform_billing_whatsapp/i.test(message) &&
+      /schema cache|could not find|does not exist/i.test(message))
+  );
+}
+
 async function enqueueDueSubscriptionWhatsApp(admin: SupabaseClient) {
   const { data, error } = await admin.rpc("enqueue_due_subscription_whatsapp");
   if (error) {
@@ -329,6 +341,24 @@ async function enqueueDueSubscriptionWhatsApp(admin: SupabaseClient) {
     }
     console.error(
       "[whatsapp-connector] falha ao gerar notificações de assinaturas; demais mensagens continuarão.",
+      error,
+    );
+    return null;
+  }
+  return data;
+}
+
+async function enqueueDuePlatformBillingWhatsApp(admin: SupabaseClient) {
+  const { data, error } = await admin.rpc("enqueue_due_platform_billing_whatsapp");
+  if (error) {
+    if (isMissingPlatformBillingEnqueueRpc(error)) {
+      console.info(
+        "[whatsapp-connector] enqueue_due_platform_billing_whatsapp ainda não está disponível; fila atual preservada.",
+      );
+      return null;
+    }
+    console.error(
+      "[whatsapp-connector] falha ao gerar avisos B2B da plataforma; demais mensagens continuarão.",
       error,
     );
     return null;
@@ -440,6 +470,126 @@ async function validateSubscriptionQueueRow(admin: SupabaseClient, row: Record<s
   return { valid: true as const };
 }
 
+function platformBillingContractId(row: Record<string, unknown>) {
+  const payload = isRecord(row.payload) ? row.payload : {};
+  return text(
+    row.platform_billing_contract_id || payload.platform_billing_contract_id || payload.contract_id,
+    100,
+  );
+}
+
+function platformBillingChargeId(row: Record<string, unknown>) {
+  const payload = isRecord(row.payload) ? row.payload : {};
+  return text(
+    row.platform_billing_charge_id || payload.platform_billing_charge_id || payload.charge_id,
+    100,
+  );
+}
+
+function billedTenantId(row: Record<string, unknown>) {
+  const payload = isRecord(row.payload) ? row.payload : {};
+  return text(payload.tenant_id || payload.billed_tenant_id, 100);
+}
+
+async function validateBilledTenantIsActive(admin: SupabaseClient, tenantId: string) {
+  if (!isUuid(tenantId)) {
+    return {
+      valid: false as const,
+      reason: "Mensagem B2B sem salão válido no payload.",
+    };
+  }
+
+  const { data: tenant, error } = await admin
+    .from("tenants")
+    .select("id,status")
+    .eq("id", tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!tenant || String(tenant.status || "active") === "blocked") {
+    return {
+      valid: false as const,
+      reason: "Mensagem B2B cancelada porque o salão está bloqueado.",
+    };
+  }
+
+  return { valid: true as const };
+}
+
+async function validatePlatformBillingQueueRow(
+  admin: SupabaseClient,
+  row: Record<string, unknown>,
+) {
+  const eventType = String(row.event_type || "");
+  if (!eventType.startsWith("platform_")) {
+    return { valid: true as const };
+  }
+
+  const tenantValidation = await validateBilledTenantIsActive(admin, billedTenantId(row));
+  if (!tenantValidation.valid) return tenantValidation;
+
+  if (eventType === "platform_trial_reminder") {
+    const contractId = platformBillingContractId(row);
+    if (!isUuid(contractId)) {
+      return {
+        valid: false as const,
+        reason: "Aviso de teste grátis sem contrato válido.",
+      };
+    }
+
+    const { data: contract, error } = await admin
+      .from("platform_billing_contracts")
+      .select("id,status,trial_ends_on")
+      .eq("id", contractId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!contract || String(contract.status || "") !== "trialing") {
+      return {
+        valid: false as const,
+        reason: "Aviso de teste grátis cancelado porque o contrato não está mais em teste.",
+      };
+    }
+
+    return { valid: true as const };
+  }
+
+  const chargeId = platformBillingChargeId(row);
+  if (!isUuid(chargeId)) {
+    return {
+      valid: false as const,
+      reason: "Mensagem B2B sem cobrança válida.",
+    };
+  }
+
+  const { data: charge, error } = await admin
+    .from("platform_billing_charges")
+    .select("id,status")
+    .eq("id", chargeId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!charge) {
+    return {
+      valid: false as const,
+      reason: "Cobrança B2B não existe mais.",
+    };
+  }
+
+  const allowedStatuses =
+    eventType === "platform_billing_payment_confirmed"
+      ? new Set(["confirmed", "received"])
+      : eventType === "platform_billing_overdue"
+        ? new Set(["overdue"])
+        : new Set(["pending"]);
+
+  if (!allowedStatuses.has(String(charge.status || ""))) {
+    return {
+      valid: false as const,
+      reason: `Mensagem B2B cancelada porque a cobrança está com status ${charge.status || "desconhecido"}.`,
+    };
+  }
+
+  return { valid: true as const };
+}
+
 function isPermanentQueueError(error: unknown) {
   const value = isRecord(error) ? error : {};
   const statusCode = Number(value.statusCode || 0);
@@ -498,6 +648,7 @@ async function failOrRetryQueueRow(
 
 async function processQueue(admin: SupabaseClient, limit: number, request: Request) {
   await enqueueDueSubscriptionWhatsApp(admin);
+  await enqueueDuePlatformBillingWhatsApp(admin);
   await recoverStaleQueueClaims(admin, Math.max(20, limit * 2));
 
   const now = new Date().toISOString();
@@ -573,6 +724,13 @@ async function processQueue(admin: SupabaseClient, limit: number, request: Reque
       const subscriptionValidation = await validateSubscriptionQueueRow(admin, row);
       if (!subscriptionValidation.valid) {
         await cancelQueueRow(admin, row.id, subscriptionValidation.reason);
+        summary.cancelled += 1;
+        continue;
+      }
+
+      const platformBillingValidation = await validatePlatformBillingQueueRow(admin, row);
+      if (!platformBillingValidation.valid) {
+        await cancelQueueRow(admin, row.id, platformBillingValidation.reason);
         summary.cancelled += 1;
         continue;
       }

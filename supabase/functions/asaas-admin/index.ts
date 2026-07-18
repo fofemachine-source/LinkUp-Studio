@@ -71,11 +71,28 @@ type BillingSettings = {
   enabled: boolean;
   environment: BillingEnvironment;
   default_billing_type: BillingType;
+  issue_days_before: number;
+  grace_days: number;
+  auto_suspend: boolean;
   fine_percentage: number | string;
   interest_percentage: number | string;
   discount_percentage: number | string;
   discount_due_days: number;
   notification_disabled: boolean;
+  whatsapp_enabled?: boolean;
+  whatsapp_sender_tenant_id?: string | null;
+  platform_trial_reminder_enabled?: boolean;
+  platform_trial_reminder_days_before?: number[];
+  platform_payment_reminder_enabled?: boolean;
+  platform_payment_reminder_days_before?: number[];
+  platform_payment_confirmation_enabled?: boolean;
+  platform_overdue_enabled?: boolean;
+  platform_overdue_days_after?: number[];
+  platform_notification_time?: string;
+  platform_trial_reminder_template?: string;
+  platform_payment_reminder_template?: string;
+  platform_payment_confirmation_template?: string;
+  platform_overdue_template?: string;
   webhook_id: string | null;
   webhook_environment: BillingEnvironment | null;
   webhook_status: string;
@@ -161,6 +178,61 @@ function billingType(value: unknown, fallback: BillingType = "UNDEFINED"): Billi
   return new Set(["UNDEFINED", "PIX", "BOLETO", "CREDIT_CARD"]).has(normalized)
     ? (normalized as BillingType)
     : fallback;
+}
+
+function inputValue(input: Record<string, unknown>, snakeName: string, camelName: string) {
+  if (Object.prototype.hasOwnProperty.call(input, snakeName)) return input[snakeName];
+  if (Object.prototype.hasOwnProperty.call(input, camelName)) return input[camelName];
+  return undefined;
+}
+
+function dayOffsets(
+  value: unknown,
+  fieldLabel: string,
+  minimum: number,
+  direction: "asc" | "desc",
+) {
+  if (!Array.isArray(value)) {
+    throw new AsaasRequestError(`Informe os dias de ${fieldLabel}.`, 400, null);
+  }
+  const normalized = Array.from(
+    new Set(
+      value
+        .map((entry) => Math.floor(numberValue(entry, Number.NaN)))
+        .filter((entry) => Number.isInteger(entry)),
+    ),
+  );
+  if (
+    normalized.length < 1 ||
+    normalized.length > 10 ||
+    normalized.some((entry) => entry < minimum || entry > 365)
+  ) {
+    throw new AsaasRequestError(
+      `Os dias de ${fieldLabel} precisam ter entre 1 e 10 valores de ${minimum} a 365.`,
+      400,
+      null,
+    );
+  }
+  normalized.sort((left, right) => (direction === "asc" ? left - right : right - left));
+  return normalized;
+}
+
+function notificationTime(value: unknown) {
+  const normalized = text(value || "09:00", 5);
+  if (!/^\d{2}:\d{2}$/.test(normalized)) {
+    throw new AsaasRequestError("Informe um horário válido para os avisos.", 400, null);
+  }
+  const [hours, minutes] = normalized.split(":").map(Number);
+  if (hours > 23 || minutes > 59) {
+    throw new AsaasRequestError("Informe um horário válido para os avisos.", 400, null);
+  }
+  return normalized;
+}
+
+function messageTemplate(value: unknown, fieldLabel: string) {
+  const normalized = text(value, 3900);
+  if (!normalized) throw new AsaasRequestError(`Informe o modelo de ${fieldLabel}.`, 400, null);
+  return normalized;
 }
 
 function normalizeAction(value: unknown): AdminAction | null {
@@ -366,6 +438,100 @@ async function saveSettings(admin: SupabaseClient, input: Record<string, unknown
     if (rawValue !== undefined) patch[field] = Boolean(rawValue);
   }
 
+  for (const [snakeName, camelName] of [
+    ["whatsapp_enabled", "whatsappEnabled"],
+    ["platform_trial_reminder_enabled", "platformTrialReminderEnabled"],
+    ["platform_payment_reminder_enabled", "platformPaymentReminderEnabled"],
+    ["platform_payment_confirmation_enabled", "platformPaymentConfirmationEnabled"],
+    ["platform_overdue_enabled", "platformOverdueEnabled"],
+  ] as const) {
+    const rawValue = inputValue(input, snakeName, camelName);
+    if (rawValue !== undefined) patch[snakeName] = Boolean(rawValue);
+  }
+
+  const whatsappSenderTenantId = inputValue(
+    input,
+    "whatsapp_sender_tenant_id",
+    "whatsappSenderTenantId",
+  );
+  if (whatsappSenderTenantId !== undefined) {
+    const senderTenantId = text(whatsappSenderTenantId, 80);
+    if (senderTenantId && !isUuid(senderTenantId)) {
+      throw new AsaasRequestError("Selecione um WhatsApp remetente válido.", 400, null);
+    }
+    patch.whatsapp_sender_tenant_id = senderTenantId || null;
+  }
+
+  const notificationTimeValue = inputValue(
+    input,
+    "platform_notification_time",
+    "platformNotificationTime",
+  );
+  if (notificationTimeValue !== undefined) {
+    patch.platform_notification_time = notificationTime(notificationTimeValue);
+  }
+
+  const trialDays = inputValue(
+    input,
+    "platform_trial_reminder_days_before",
+    "platformTrialReminderDaysBefore",
+  );
+  if (trialDays !== undefined) {
+    patch.platform_trial_reminder_days_before = dayOffsets(
+      trialDays,
+      "aviso de teste grátis",
+      0,
+      "desc",
+    );
+  }
+  const paymentReminderDays = inputValue(
+    input,
+    "platform_payment_reminder_days_before",
+    "platformPaymentReminderDaysBefore",
+  );
+  if (paymentReminderDays !== undefined) {
+    patch.platform_payment_reminder_days_before = dayOffsets(
+      paymentReminderDays,
+      "lembrete de mensalidade",
+      0,
+      "desc",
+    );
+  }
+  const overdueDays = inputValue(input, "platform_overdue_days_after", "platformOverdueDaysAfter");
+  if (overdueDays !== undefined) {
+    patch.platform_overdue_days_after = dayOffsets(overdueDays, "inadimplência", 1, "asc");
+  }
+
+  for (const [snakeName, camelName, label] of [
+    ["platform_trial_reminder_template", "platformTrialReminderTemplate", "teste grátis"],
+    ["platform_payment_reminder_template", "platformPaymentReminderTemplate", "mensalidade"],
+    [
+      "platform_payment_confirmation_template",
+      "platformPaymentConfirmationTemplate",
+      "pagamento confirmado",
+    ],
+    ["platform_overdue_template", "platformOverdueTemplate", "inadimplência"],
+  ] as const) {
+    const rawValue = inputValue(input, snakeName, camelName);
+    if (rawValue !== undefined) patch[snakeName] = messageTemplate(rawValue, label);
+  }
+
+  const currentSettingsForWhatsapp = await getSettings(admin);
+  const nextWhatsappEnabled = Boolean(
+    patch.whatsapp_enabled ?? currentSettingsForWhatsapp.whatsapp_enabled,
+  );
+  const nextSenderTenantId =
+    patch.whatsapp_sender_tenant_id !== undefined
+      ? patch.whatsapp_sender_tenant_id
+      : currentSettingsForWhatsapp.whatsapp_sender_tenant_id;
+  if (nextWhatsappEnabled && !nextSenderTenantId) {
+    throw new AsaasRequestError(
+      "Selecione qual conexão WhatsApp da matriz enviará os avisos.",
+      400,
+      null,
+    );
+  }
+
   const { data, error } = await admin
     .from("platform_billing_settings")
     .update(patch)
@@ -536,12 +702,44 @@ async function saveContract(
   const periodEnd =
     optionalDate(input.currentPeriodEnd ?? input.current_period_end, "fim do período") ||
     addMonthsMinusDay(periodStart, intervalMonths);
-  const nextDueDate =
-    optionalDate(input.nextDueDate ?? input.next_due_date, "próximo vencimento") || periodStart;
   const status = text(input.status, 30) || "active";
   if (!new Set(["trialing", "active", "past_due", "suspended", "cancelled"]).has(status)) {
     throw new AsaasRequestError("Status contratual inválido.", 400, null);
   }
+  const requestedNextDueDate = optionalDate(
+    input.nextDueDate ?? input.next_due_date,
+    "próximo vencimento",
+  );
+  const requestedTrialStartsOn = optionalDate(
+    input.trialStartsOn ?? input.trial_starts_on,
+    "início do teste",
+  );
+  const requestedTrialEndsOn = optionalDate(
+    input.trialEndsOn ?? input.trial_ends_on,
+    "fim do teste",
+  );
+  const trialStartsOn =
+    status === "trialing" ? requestedTrialStartsOn || startsOn : requestedTrialStartsOn;
+  const trialEndsOn =
+    status === "trialing"
+      ? requestedTrialEndsOn || requestedNextDueDate || periodEnd
+      : requestedTrialEndsOn;
+  if (status === "trialing") {
+    if (!trialStartsOn || !trialEndsOn) {
+      throw new AsaasRequestError("Informe o início e o fim do teste grátis.", 400, null);
+    }
+    if (trialEndsOn < trialStartsOn) {
+      throw new AsaasRequestError(
+        "O fim do teste precisa ser igual ou posterior ao início.",
+        400,
+        null,
+      );
+    }
+  }
+  const nextDueDate =
+    status === "trialing"
+      ? requestedNextDueDate || trialEndsOn || periodStart
+      : requestedNextDueDate || periodStart;
 
   const contractId = text(input.id, 80);
   if (contractId && !isUuid(contractId)) {
@@ -574,6 +772,8 @@ async function saveContract(
     current_period_start: periodStart,
     current_period_end: periodEnd,
     next_due_date: nextDueDate,
+    trial_starts_on: trialStartsOn,
+    trial_ends_on: trialEndsOn,
     auto_renew: input.autoRenew ?? input.auto_renew ?? true,
     cancel_at_period_end: input.cancelAtPeriodEnd ?? input.cancel_at_period_end ?? false,
     updated_by: userId,

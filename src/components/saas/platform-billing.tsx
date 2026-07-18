@@ -12,6 +12,7 @@ import {
   FileText,
   Link2,
   Loader2,
+  MessageCircle,
   Pencil,
   Plus,
   QrCode,
@@ -118,6 +119,20 @@ type BillingSettings = {
   discount_percentage: number;
   discount_due_days: number;
   notification_disabled: boolean;
+  whatsapp_enabled: boolean;
+  whatsapp_sender_tenant_id?: string | null;
+  platform_trial_reminder_enabled: boolean;
+  platform_trial_reminder_days_before: number[];
+  platform_payment_reminder_enabled: boolean;
+  platform_payment_reminder_days_before: number[];
+  platform_payment_confirmation_enabled: boolean;
+  platform_overdue_enabled: boolean;
+  platform_overdue_days_after: number[];
+  platform_notification_time: string;
+  platform_trial_reminder_template: string;
+  platform_payment_reminder_template: string;
+  platform_payment_confirmation_template: string;
+  platform_overdue_template: string;
   webhook_id?: string | null;
   webhook_status: string;
   webhook_last_synced_at?: string | null;
@@ -181,6 +196,8 @@ type BillingContract = {
   current_period_start?: string | null;
   current_period_end?: string | null;
   next_due_date?: string | null;
+  trial_starts_on?: string | null;
+  trial_ends_on?: string | null;
   auto_renew: boolean;
   cancel_at_period_end: boolean;
 };
@@ -228,6 +245,46 @@ const settingsFallback: BillingSettings = {
   discount_percentage: 0,
   discount_due_days: 0,
   notification_disabled: true,
+  whatsapp_enabled: false,
+  whatsapp_sender_tenant_id: null,
+  platform_trial_reminder_enabled: false,
+  platform_trial_reminder_days_before: [3, 1, 0],
+  platform_payment_reminder_enabled: false,
+  platform_payment_reminder_days_before: [3, 1, 0],
+  platform_payment_confirmation_enabled: false,
+  platform_overdue_enabled: false,
+  platform_overdue_days_after: [1, 3, 7],
+  platform_notification_time: "09:00",
+  platform_trial_reminder_template: `⏳ *Olá, {cliente}!* Seu teste grátis da *{plataforma}* termina em *{vencimento}*.
+
+Para evitar a suspensão do acesso ao seu salão, regularize sua assinatura até essa data.
+
+💳 Plano: *{plano}*
+💰 Valor: *{valor}*`,
+  platform_payment_reminder_template: `🔔 *Olá, {cliente}!*
+
+Sua mensalidade da *{plataforma}* vence em *{vencimento}*.
+
+💳 Plano: *{plano}*
+💰 Valor: *{valor}*
+
+Se o pagamento já foi realizado, desconsidere esta mensagem.`,
+  platform_payment_confirmation_template: `✅ *Pagamento confirmado, {cliente}!*
+
+Recebemos *{valor}* referente ao plano *{plano}* da *{plataforma}*.
+
+📅 Próximo vencimento: *{proximo_vencimento}*
+
+Seu acesso permanece ativo. Obrigado pela confiança!`,
+  platform_overdue_template: `⚠️ *Olá, {cliente}.*
+
+Identificamos uma pendência na mensalidade da *{plataforma}*.
+
+📅 Vencimento: *{vencimento}*
+💰 Valor: *{valor}*
+⏳ Atraso: *{dias_atraso} dia(s)*
+
+Regularize para evitar a suspensão do acesso ao seu salão.`,
   webhook_status: "not_configured",
 };
 
@@ -279,6 +336,37 @@ function numberValue(value: unknown) {
   return Number.isFinite(result) ? result : 0;
 }
 
+function arrayValue(value: unknown, fallback: number[]) {
+  if (!Array.isArray(value)) return fallback;
+  return value.map(Number).filter((item) => Number.isInteger(item));
+}
+
+function normalizeDayList(value: number[], minimum: number, direction: "asc" | "desc") {
+  const normalized = Array.from(
+    new Set(
+      value
+        .map((item) => Math.floor(Number(item)))
+        .filter((item) => Number.isInteger(item) && item >= minimum && item <= 365),
+    ),
+  );
+  normalized.sort((left, right) => (direction === "asc" ? left - right : right - left));
+  return normalized.slice(0, 10);
+}
+
+function dayListEquals(left: number[], right: number[]) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function timeField(value?: string | null) {
+  return String(value || "09:00").slice(0, 5);
+}
+
+function addDaysIso(dateValue: string, days: number) {
+  const date = new Date(`${dateValue}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 function errorMessage(error: unknown, fallback = "Não foi possível concluir a operação.") {
   if (error instanceof Error) return error.message;
   if (typeof error === "object" && error && "message" in error) return String(error.message);
@@ -314,7 +402,33 @@ export function PlatformBillingTab() {
         .eq("id", "global")
         .maybeSingle();
       if (error) throw error;
-      return { ...settingsFallback, ...((data as Partial<BillingSettings> | null) ?? {}) };
+      const row = (data as Partial<BillingSettings> | null) ?? {};
+      return {
+        ...settingsFallback,
+        ...row,
+        platform_trial_reminder_days_before: normalizeDayList(
+          arrayValue(
+            row.platform_trial_reminder_days_before,
+            settingsFallback.platform_trial_reminder_days_before,
+          ),
+          0,
+          "desc",
+        ),
+        platform_payment_reminder_days_before: normalizeDayList(
+          arrayValue(
+            row.platform_payment_reminder_days_before,
+            settingsFallback.platform_payment_reminder_days_before,
+          ),
+          0,
+          "desc",
+        ),
+        platform_overdue_days_after: normalizeDayList(
+          arrayValue(row.platform_overdue_days_after, settingsFallback.platform_overdue_days_after),
+          1,
+          "asc",
+        ),
+        platform_notification_time: timeField(row.platform_notification_time),
+      };
     },
   });
 
@@ -629,6 +743,7 @@ export function PlatformBillingTab() {
           <TabsContent value="integration" className="m-0">
             <IntegrationPanel
               settings={settings}
+              tenants={billingTenantsQuery.data ?? []}
               status={integrationQuery.data}
               statusError={integrationQuery.error}
               busy={busy}
@@ -950,6 +1065,12 @@ function ClientsPanel({
               const plan = plans.find((item) => item.id === contract?.plan_id);
               const active =
                 contract && ["trialing", "active", "past_due"].includes(contract.status);
+              const statusClass =
+                contract?.status === "trialing"
+                  ? "bg-amber-100 text-amber-700"
+                  : active
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-slate-100 text-slate-600";
               return (
                 <TableRow key={tenant.id}>
                   <TableCell>
@@ -962,7 +1083,14 @@ function ClientsPanel({
                       {contract ? brl(contract.amount_snapshot) : "Sem contrato"}
                     </div>
                   </TableCell>
-                  <TableCell>{localDate(contract?.next_due_date)}</TableCell>
+                  <TableCell>
+                    {localDate(contract?.next_due_date)}
+                    {contract?.status === "trialing" && (
+                      <div className="text-xs text-amber-700">
+                        Teste até {localDate(contract.trial_ends_on)}
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {customer?.provider_customer_id ? (
                       <BadgeCheck className="h-5 w-5 text-emerald-600" />
@@ -971,19 +1099,16 @@ function ClientsPanel({
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant="secondary"
-                      className={
-                        active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"
-                      }
-                    >
+                    <Badge variant="secondary" className={statusClass}>
                       {contract?.status === "past_due"
                         ? "Em atraso"
                         : contract?.status === "suspended"
                           ? "Suspenso"
-                          : active
-                            ? "Ativo"
-                            : "Sem contrato"}
+                          : contract?.status === "trialing"
+                            ? "Em teste"
+                            : active
+                              ? "Ativo"
+                              : "Sem contrato"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
@@ -1069,6 +1194,7 @@ function PlansPanel({
 
 function IntegrationPanel({
   settings,
+  tenants,
   status,
   statusError,
   busy,
@@ -1076,6 +1202,7 @@ function IntegrationPanel({
   onSaved,
 }: {
   settings: BillingSettings;
+  tenants: TenantSummary[];
   status: AsaasAdminStatusResponse | undefined;
   statusError: unknown;
   busy: string | null;
@@ -1101,7 +1228,28 @@ function IntegrationPanel({
     form.interest_percentage !== settings.interest_percentage ||
     form.discount_percentage !== settings.discount_percentage ||
     form.discount_due_days !== settings.discount_due_days ||
-    form.notification_disabled !== settings.notification_disabled;
+    form.notification_disabled !== settings.notification_disabled ||
+    form.whatsapp_enabled !== settings.whatsapp_enabled ||
+    form.whatsapp_sender_tenant_id !== settings.whatsapp_sender_tenant_id ||
+    form.platform_trial_reminder_enabled !== settings.platform_trial_reminder_enabled ||
+    !dayListEquals(
+      form.platform_trial_reminder_days_before,
+      settings.platform_trial_reminder_days_before,
+    ) ||
+    form.platform_payment_reminder_enabled !== settings.platform_payment_reminder_enabled ||
+    !dayListEquals(
+      form.platform_payment_reminder_days_before,
+      settings.platform_payment_reminder_days_before,
+    ) ||
+    form.platform_payment_confirmation_enabled !== settings.platform_payment_confirmation_enabled ||
+    form.platform_overdue_enabled !== settings.platform_overdue_enabled ||
+    !dayListEquals(form.platform_overdue_days_after, settings.platform_overdue_days_after) ||
+    timeField(form.platform_notification_time) !== timeField(settings.platform_notification_time) ||
+    form.platform_trial_reminder_template !== settings.platform_trial_reminder_template ||
+    form.platform_payment_reminder_template !== settings.platform_payment_reminder_template ||
+    form.platform_payment_confirmation_template !==
+      settings.platform_payment_confirmation_template ||
+    form.platform_overdue_template !== settings.platform_overdue_template;
   const workerDetail = !workerProtection
     ? "Secret ASAAS_WORKER_SECRET ausente"
     : !workerStatus?.schedulerConfigured
@@ -1127,6 +1275,20 @@ function IntegrationPanel({
           discountPercentage: form.discount_percentage,
           discountDueDays: form.discount_due_days,
           notificationDisabled: form.notification_disabled,
+          whatsappEnabled: form.whatsapp_enabled,
+          whatsappSenderTenantId: form.whatsapp_sender_tenant_id || null,
+          platformTrialReminderEnabled: form.platform_trial_reminder_enabled,
+          platformTrialReminderDaysBefore: form.platform_trial_reminder_days_before,
+          platformPaymentReminderEnabled: form.platform_payment_reminder_enabled,
+          platformPaymentReminderDaysBefore: form.platform_payment_reminder_days_before,
+          platformPaymentConfirmationEnabled: form.platform_payment_confirmation_enabled,
+          platformOverdueEnabled: form.platform_overdue_enabled,
+          platformOverdueDaysAfter: form.platform_overdue_days_after,
+          platformNotificationTime: timeField(form.platform_notification_time),
+          platformTrialReminderTemplate: form.platform_trial_reminder_template,
+          platformPaymentReminderTemplate: form.platform_payment_reminder_template,
+          platformPaymentConfirmationTemplate: form.platform_payment_confirmation_template,
+          platformOverdueTemplate: form.platform_overdue_template,
         },
       });
       toast.success("Configuração financeira salva.");
@@ -1313,6 +1475,173 @@ function IntegrationPanel({
               }
             />
           </div>
+
+          <section className="space-y-4 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div className="flex gap-3">
+                <span className="mt-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
+                  <MessageCircle className="h-4 w-4" />
+                </span>
+                <div>
+                  <h3 className="font-semibold text-slate-900">Avisos automáticos por WhatsApp</h3>
+                  <p className="max-w-2xl text-sm text-slate-600">
+                    Mensagens B2B enviadas pela matriz para os salões clientes: teste grátis,
+                    vencimentos, pagamento confirmado e inadimplência.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 rounded-lg border bg-white px-4 py-3">
+                <div className="text-right">
+                  <Label>Avisos ativos</Label>
+                  <p className="text-xs text-slate-500">Usa a conexão WhatsApp escolhida abaixo.</p>
+                </div>
+                <Switch
+                  checked={form.whatsapp_enabled}
+                  onCheckedChange={(whatsapp_enabled) => setForm({ ...form, whatsapp_enabled })}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label>WhatsApp remetente da matriz</Label>
+                <Select
+                  value={form.whatsapp_sender_tenant_id || "none"}
+                  disabled={!form.whatsapp_enabled}
+                  onValueChange={(value) =>
+                    setForm({
+                      ...form,
+                      whatsapp_sender_tenant_id: value === "none" ? null : value,
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Escolha a loja/conexão que envia" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Selecione uma conexão WhatsApp</SelectItem>
+                    {tenants.map((tenant) => (
+                      <SelectItem key={tenant.id} value={tenant.id}>
+                        {tenant.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-xs text-slate-500">
+                  Precisa ser uma loja com WhatsApp conectado. Ela será usada como emissora da
+                  matriz.
+                </p>
+              </div>
+              <div>
+                <Label>Enviar a partir de</Label>
+                <Input
+                  type="time"
+                  disabled={!form.whatsapp_enabled}
+                  value={timeField(form.platform_notification_time)}
+                  onChange={(event) =>
+                    setForm({ ...form, platform_notification_time: event.target.value })
+                  }
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  O robô roda a cada minuto, mas só enfileira esses avisos depois desse horário.
+                </p>
+              </div>
+            </div>
+
+            {form.whatsapp_enabled && !form.whatsapp_sender_tenant_id && (
+              <Alert className="border-amber-200 bg-amber-50">
+                <AlertCircle className="h-4 w-4 text-amber-600" />
+                <AlertTitle>Escolha quem envia</AlertTitle>
+                <AlertDescription>
+                  Para ativar os avisos B2B, selecione a loja/conexão WhatsApp que representa a
+                  matriz.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              <MessageRuleCard
+                title="Teste grátis perto do fim"
+                description="Avise antes do fim do teste para o salão pagar antes da suspensão."
+                checked={form.platform_trial_reminder_enabled}
+                onCheckedChange={(platform_trial_reminder_enabled) =>
+                  setForm({ ...form, platform_trial_reminder_enabled })
+                }
+                disabled={!form.whatsapp_enabled}
+                daysLabel="Dias antes do fim do teste"
+                days={form.platform_trial_reminder_days_before}
+                daysMinimum={0}
+                daysDirection="desc"
+                onDaysChange={(platform_trial_reminder_days_before) =>
+                  setForm({ ...form, platform_trial_reminder_days_before })
+                }
+                template={form.platform_trial_reminder_template}
+                onTemplateChange={(platform_trial_reminder_template) =>
+                  setForm({ ...form, platform_trial_reminder_template })
+                }
+              />
+              <MessageRuleCard
+                title="Mensalidade perto do vencimento"
+                description="Lembrete de mensalidade ainda em aberto, antes ou no dia do vencimento."
+                checked={form.platform_payment_reminder_enabled}
+                onCheckedChange={(platform_payment_reminder_enabled) =>
+                  setForm({ ...form, platform_payment_reminder_enabled })
+                }
+                disabled={!form.whatsapp_enabled}
+                daysLabel="Dias antes do vencimento"
+                days={form.platform_payment_reminder_days_before}
+                daysMinimum={0}
+                daysDirection="desc"
+                onDaysChange={(platform_payment_reminder_days_before) =>
+                  setForm({ ...form, platform_payment_reminder_days_before })
+                }
+                template={form.platform_payment_reminder_template}
+                onTemplateChange={(platform_payment_reminder_template) =>
+                  setForm({ ...form, platform_payment_reminder_template })
+                }
+              />
+              <MessageRuleCard
+                title="Pagamento confirmado"
+                description="Mensagem enviada quando o webhook/worker marca a cobrança como paga."
+                checked={form.platform_payment_confirmation_enabled}
+                onCheckedChange={(platform_payment_confirmation_enabled) =>
+                  setForm({ ...form, platform_payment_confirmation_enabled })
+                }
+                disabled={!form.whatsapp_enabled}
+                template={form.platform_payment_confirmation_template}
+                onTemplateChange={(platform_payment_confirmation_template) =>
+                  setForm({ ...form, platform_payment_confirmation_template })
+                }
+              />
+              <MessageRuleCard
+                title="Inadimplência"
+                description="Avisos depois do vencimento enquanto a cobrança continuar em aberto."
+                checked={form.platform_overdue_enabled}
+                onCheckedChange={(platform_overdue_enabled) =>
+                  setForm({ ...form, platform_overdue_enabled })
+                }
+                disabled={!form.whatsapp_enabled}
+                daysLabel="Dias após o vencimento"
+                days={form.platform_overdue_days_after}
+                daysMinimum={1}
+                daysDirection="asc"
+                onDaysChange={(platform_overdue_days_after) =>
+                  setForm({ ...form, platform_overdue_days_after })
+                }
+                template={form.platform_overdue_template}
+                onTemplateChange={(platform_overdue_template) =>
+                  setForm({ ...form, platform_overdue_template })
+                }
+              />
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600">
+              Variáveis aceitas: {"{cliente}"}, {"{salao}"}, {"{plataforma}"}, {"{plano}"},{" "}
+              {"{valor}"}, {"{vencimento}"}, {"{dias}"}, {"{dias_para_vencimento}"},{" "}
+              {"{dias_atraso}"}, {"{data_pagamento}"} e {"{proximo_vencimento}"}.
+            </div>
+          </section>
+
           <div className="flex flex-wrap gap-2">
             <Button
               className="bg-indigo-600 hover:bg-indigo-700"
@@ -1351,6 +1680,103 @@ function IntegrationPanel({
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function DayListField({
+  label,
+  value,
+  minimum,
+  direction,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: number[];
+  minimum: number;
+  direction: "asc" | "desc";
+  disabled?: boolean;
+  onChange: (value: number[]) => void;
+}) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <Input
+        disabled={disabled}
+        value={value.join(", ")}
+        placeholder={minimum === 0 ? "Ex: 7, 3, 1, 0" : "Ex: 1, 3, 7"}
+        onChange={(event) => {
+          const parsed = event.target.value
+            .split(/[\s,;]+/)
+            .map((part) => Number(part))
+            .filter((part) => Number.isInteger(part));
+          onChange(normalizeDayList(parsed, minimum, direction));
+        }}
+      />
+      <p className="mt-1 text-xs text-slate-500">
+        Separe por vírgula. Use 0 para enviar no próprio dia.
+      </p>
+    </div>
+  );
+}
+
+function MessageRuleCard({
+  title,
+  description,
+  checked,
+  onCheckedChange,
+  disabled,
+  daysLabel,
+  days,
+  daysMinimum = 0,
+  daysDirection = "desc",
+  onDaysChange,
+  template,
+  onTemplateChange,
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  onCheckedChange: (value: boolean) => void;
+  disabled?: boolean;
+  daysLabel?: string;
+  days?: number[];
+  daysMinimum?: number;
+  daysDirection?: "asc" | "desc";
+  onDaysChange?: (value: number[]) => void;
+  template: string;
+  onTemplateChange: (value: string) => void;
+}) {
+  const ruleDisabled = Boolean(disabled || !checked);
+  return (
+    <div className="space-y-3 rounded-xl border bg-white p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h4 className="font-semibold text-slate-900">{title}</h4>
+          <p className="text-xs text-slate-500">{description}</p>
+        </div>
+        <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
+      </div>
+      {days && onDaysChange && daysLabel && (
+        <DayListField
+          label={daysLabel}
+          value={days}
+          minimum={daysMinimum}
+          direction={daysDirection}
+          disabled={ruleDisabled}
+          onChange={onDaysChange}
+        />
+      )}
+      <div>
+        <Label>Modelo da mensagem</Label>
+        <Textarea
+          rows={7}
+          disabled={ruleDisabled}
+          value={template}
+          onChange={(event) => onTemplateChange(event.target.value)}
+        />
+      </div>
     </div>
   );
 }
@@ -1590,6 +2016,8 @@ type ClientContractForm = {
   currentPeriodStart: string;
   currentPeriodEnd: string;
   nextDueDate: string;
+  trialStartsOn: string;
+  trialEndsOn: string;
   autoRenew: boolean;
   cancelAtPeriodEnd: boolean;
   legalName: string;
@@ -1610,6 +2038,16 @@ type ClientContractForm = {
 function clientForm(client: BillingClient, plans: BillingPlan[]): ClientContractForm {
   const plan = plans.find((item) => item.id === client.contract?.plan_id) ?? plans[0];
   const today = new Date().toISOString().slice(0, 10);
+  const trialStartsOn =
+    client.contract?.trial_starts_on ??
+    (client.contract?.status === "trialing"
+      ? client.contract.starts_on || client.contract.current_period_start || today
+      : "");
+  const trialEndsOn =
+    client.contract?.trial_ends_on ??
+    (client.contract?.status === "trialing"
+      ? client.contract.next_due_date || client.contract.current_period_end || addDaysIso(today, 7)
+      : "");
   return {
     tenantId: client.tenant.id,
     planId: client.contract?.plan_id ?? plan?.id ?? "",
@@ -1625,6 +2063,8 @@ function clientForm(client: BillingClient, plans: BillingPlan[]): ClientContract
     currentPeriodStart: client.contract?.current_period_start ?? "",
     currentPeriodEnd: client.contract?.current_period_end ?? "",
     nextDueDate: client.contract?.next_due_date ?? "",
+    trialStartsOn,
+    trialEndsOn,
     autoRenew: client.contract?.auto_renew ?? true,
     cancelAtPeriodEnd: client.contract?.cancel_at_period_end ?? false,
     legalName: client.customer?.legal_name ?? client.tenant.name,
@@ -1672,8 +2112,20 @@ function ClientContractDialog({
       return toast.error("Informe um CPF ou CNPJ válido.");
     if (!currentForm.planId || currentForm.amountSnapshot < 0)
       return toast.error("Selecione um plano e informe um valor válido.");
+    if (currentForm.status === "trialing") {
+      if (!currentForm.trialStartsOn || !currentForm.trialEndsOn) {
+        return toast.error("Informe o início e o fim do teste grátis.");
+      }
+      if (currentForm.trialEndsOn < currentForm.trialStartsOn) {
+        return toast.error("O fim do teste precisa ser igual ou posterior ao início.");
+      }
+    }
     setBusy(syncAfter ? "sync" : "save");
     try {
+      const effectiveNextDueDate =
+        currentForm.status === "trialing"
+          ? currentForm.nextDueDate || currentForm.trialEndsOn
+          : currentForm.nextDueDate || null;
       await invokeAsaas("save-contract", {
         contract: {
           tenantId: currentForm.tenantId,
@@ -1686,7 +2138,9 @@ function ClientContractDialog({
           startsOn: currentForm.startsOn,
           currentPeriodStart: currentForm.currentPeriodStart || null,
           currentPeriodEnd: currentForm.currentPeriodEnd || null,
-          nextDueDate: currentForm.nextDueDate || null,
+          nextDueDate: effectiveNextDueDate,
+          trialStartsOn: currentForm.trialStartsOn || null,
+          trialEndsOn: currentForm.trialEndsOn || null,
           autoRenew: currentForm.autoRenew,
           cancelAtPeriodEnd: currentForm.cancelAtPeriodEnd,
         },
@@ -1758,9 +2212,23 @@ function ClientContractDialog({
             <Select
               value={form.status}
               disabled={suspended}
-              onValueChange={(status) =>
-                setForm({ ...form, status: status as BillingContract["status"] })
-              }
+              onValueChange={(status) => {
+                const nextStatus = status as BillingContract["status"];
+                if (nextStatus !== "trialing") {
+                  setForm({ ...form, status: nextStatus });
+                  return;
+                }
+                const start =
+                  form.trialStartsOn || form.startsOn || new Date().toISOString().slice(0, 10);
+                const end = form.trialEndsOn || form.nextDueDate || addDaysIso(start, 7);
+                setForm({
+                  ...form,
+                  status: nextStatus,
+                  trialStartsOn: start,
+                  trialEndsOn: end,
+                  nextDueDate: form.nextDueDate || end,
+                });
+              }}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -1824,6 +2292,45 @@ function ClientContractDialog({
               onChange={(event) => setForm({ ...form, nextDueDate: event.target.value })}
             />
           </div>
+          {form.status === "trialing" && (
+            <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <Label>Início do teste grátis</Label>
+                  <Input
+                    type="date"
+                    value={form.trialStartsOn}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        trialStartsOn: event.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Fim do teste grátis</Label>
+                  <Input
+                    type="date"
+                    value={form.trialEndsOn}
+                    onChange={(event) => {
+                      const trialEndsOn = event.target.value;
+                      setForm({
+                        ...form,
+                        trialEndsOn,
+                        nextDueDate: form.nextDueDate || trialEndsOn,
+                      });
+                    }}
+                  />
+                </div>
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-amber-800">
+                No teste grátis, o fim do teste também vira a data-base para cobrança e lembretes.
+                Se a data passar sem pagamento confirmado, o worker financeiro suspende o contrato e
+                bloqueia o acesso do salão.
+              </p>
+            </div>
+          )}
           <div className="md:col-span-2">
             <Label>Forma de pagamento</Label>
             <BillingTypeSelect
