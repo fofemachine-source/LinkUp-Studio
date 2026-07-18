@@ -384,6 +384,23 @@ function digitsOnly(value: string) {
   return value.replace(/\D/g, "");
 }
 
+function formatPostalCode(value: string) {
+  const digits = digitsOnly(value).slice(0, 8);
+  return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
+}
+
+type CepLookupStatus = "idle" | "loading" | "found" | "not_found" | "error";
+
+type ViaCepResponse = {
+  cep?: string;
+  logradouro?: string;
+  complemento?: string;
+  bairro?: string;
+  localidade?: string;
+  uf?: string;
+  erro?: boolean;
+};
+
 function updateSignupField<K extends keyof TenantSignupForm>(
   form: TenantSignupForm,
   key: K,
@@ -409,6 +426,51 @@ function SignupForm({
   const [form, setForm] = useState<TenantSignupForm>(emptySignupForm);
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [cepStatus, setCepStatus] = useState<CepLookupStatus>("idle");
+
+  useEffect(() => {
+    const cep = digitsOnly(form.postalCode);
+    if (cep.length !== 8) {
+      setCepStatus("idle");
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setCepStatus("loading");
+      try {
+        const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("CEP indisponível");
+        const data = (await response.json()) as ViaCepResponse;
+        if (data.erro) {
+          setCepStatus("not_found");
+          return;
+        }
+
+        setForm((current) => {
+          if (digitsOnly(current.postalCode) !== cep) return current;
+          return {
+            ...current,
+            address: data.logradouro || current.address,
+            complement: current.complement || data.complemento || "",
+            province: data.bairro || current.province,
+            city: data.localidade || current.city,
+            state: (data.uf || current.state).toUpperCase().slice(0, 2),
+          };
+        });
+        setCepStatus("found");
+      } catch (error) {
+        if (!controller.signal.aborted) setCepStatus("error");
+      }
+    }, 350);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [form.postalCode]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -430,7 +492,7 @@ function SignupForm({
           billingCustomer: {
             legalName: (form.legalName || form.name).trim(),
             cpfCnpj: digitsOnly(form.cpfCnpj),
-            email: (form.billingEmail || ownerEmail).toLowerCase().trim(),
+            email: form.billingEmail.toLowerCase().trim(),
             phone: digitsOnly(form.billingPhone || form.whatsapp),
             postalCode: digitsOnly(form.postalCode),
             address: form.address.trim(),
@@ -531,12 +593,12 @@ function SignupForm({
 
         <SectionTitle
           icon={<CreditCard className="h-4 w-4" />}
-          title="Dados fiscais para cobrança"
-          description="Usados para preparar cliente e checkout no Asaas."
+          title="Dados da empresa"
+          description="Complete as informações principais do cadastro."
           className="md:col-span-2"
         />
         <Field
-          label="Razão social / nome fiscal"
+          label="Razão social / nome completo"
           value={form.legalName}
           onChange={(value) => setField("legalName", value)}
           required
@@ -548,14 +610,14 @@ function SignupForm({
           required
         />
         <Field
-          label="E-mail financeiro"
+          label="E-mail de contato"
           type="email"
           value={form.billingEmail}
           onChange={(value) => setField("billingEmail", value)}
           required
         />
         <Field
-          label="WhatsApp financeiro"
+          label="WhatsApp de contato"
           value={form.billingPhone}
           onChange={(value) => setField("billingPhone", value)}
           required
@@ -568,8 +630,21 @@ function SignupForm({
         <Field
           label="CEP"
           value={form.postalCode}
-          onChange={(value) => setField("postalCode", value)}
+          onChange={(value) => setField("postalCode", formatPostalCode(value))}
           required
+          placeholder="00000-000"
+          maxLength={9}
+          hint={
+            cepStatus === "loading"
+              ? "Buscando endereço pelo CEP..."
+              : cepStatus === "found"
+                ? "Endereço preenchido automaticamente. Você pode editar se precisar."
+                : cepStatus === "not_found"
+                  ? "CEP não encontrado. Preencha o endereço manualmente."
+                  : cepStatus === "error"
+                    ? "Não foi possível consultar o CEP agora. Preencha manualmente."
+                    : "Digite o CEP para preencher o endereço automaticamente."
+          }
         />
         <Field
           label="Endereço"
@@ -674,6 +749,7 @@ function Field({
   prefix,
   autoFocus,
   maxLength,
+  hint,
 }: {
   label: string;
   value: string;
@@ -684,6 +760,7 @@ function Field({
   prefix?: string;
   autoFocus?: boolean;
   maxLength?: number;
+  hint?: string;
 }) {
   return (
     <div className="space-y-2">
@@ -708,6 +785,7 @@ function Field({
           className={`h-11 rounded-2xl bg-white/85 ${prefix ? "pl-[5.6rem]" : ""}`}
         />
       </div>
+      {hint && <p className="text-xs leading-5 text-slate-500">{hint}</p>}
     </div>
   );
 }

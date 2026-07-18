@@ -25,7 +25,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
-import { makeLocalDateTime } from "@/lib/commandas";
+import { makeLocalDateTime, syncAppointmentComanda } from "@/lib/commandas";
 import { brl, dateBR, timeBR } from "@/lib/format";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { addDays, endOfDay, format, isToday, startOfDay } from "date-fns";
@@ -119,6 +119,101 @@ function professionalsOf(cmd: any) {
   ) as string[];
 }
 
+async function repairMissingAppointmentCommandas(
+  tenantId: string,
+  date: Date,
+  existingCommandas: any[],
+) {
+  const dayStart = startOfDay(date).toISOString();
+  const dayEnd = endOfDay(date).toISOString();
+  const existingAppointmentIds = new Set(
+    existingCommandas.map((cmd) => cmd.appointment_id).filter(Boolean),
+  );
+
+  const { data: appointments, error: appointmentsError } = await supabase
+    .from("appointments")
+    .select(
+      "id,tenant_id,client_id,client_name,professional_id,service_id,start_at,status,source,subscription_id",
+    )
+    .eq("tenant_id", tenantId)
+    .gte("start_at", dayStart)
+    .lte("start_at", dayEnd)
+    .not("status", "in", "(cancelled,canceled,no_show,noshow,completed)");
+
+  if (appointmentsError) throw appointmentsError;
+
+  const candidateAppointments = (appointments ?? []).filter(
+    (appointment: any) =>
+      appointment.id &&
+      appointment.service_id &&
+      appointment.professional_id &&
+      !existingAppointmentIds.has(appointment.id),
+  );
+
+  const candidateIds = candidateAppointments.map((appointment: any) => appointment.id);
+  if (candidateIds.length === 0) return false;
+
+  const { data: relatedCommandas, error: relatedCommandasError } = await supabase
+    .from("commandas")
+    .select("appointment_id")
+    .eq("tenant_id", tenantId)
+    .in("appointment_id", candidateIds);
+
+  if (relatedCommandasError) throw relatedCommandasError;
+  relatedCommandas?.forEach((cmd: any) => {
+    if (cmd.appointment_id) existingAppointmentIds.add(cmd.appointment_id);
+  });
+
+  const missingAppointments = candidateAppointments.filter(
+    (appointment: any) => !existingAppointmentIds.has(appointment.id),
+  );
+  if (missingAppointments.length === 0) return false;
+
+  const serviceIds = Array.from(new Set(missingAppointments.map((item: any) => item.service_id)));
+  const professionalIds = Array.from(
+    new Set(missingAppointments.map((item: any) => item.professional_id)),
+  );
+
+  const [{ data: services, error: servicesError }, { data: professionals, error: professionalsError }] =
+    await Promise.all([
+      supabase
+        .from("services")
+        .select("id,name,price,cost_price")
+        .eq("tenant_id", tenantId)
+        .in("id", serviceIds),
+      supabase
+        .from("professionals")
+        .select("id,commission_pct")
+        .eq("tenant_id", tenantId)
+        .in("id", professionalIds),
+    ]);
+
+  if (servicesError) throw servicesError;
+  if (professionalsError) throw professionalsError;
+
+  for (const appointment of missingAppointments) {
+    const service = (services ?? []).find((item: any) => item.id === appointment.service_id);
+    if (!service) continue;
+
+    await syncAppointmentComanda(supabase as any, {
+      appointmentId: appointment.id,
+      tenantId,
+      subscriptionId: appointment.subscription_id ?? null,
+      clientId: appointment.client_id ?? null,
+      clientName: appointment.client_name ?? "Cliente",
+      professionalId: appointment.professional_id,
+      serviceIds: [appointment.service_id],
+      services: [service],
+      professionals: professionals ?? [],
+      scheduledAt: appointment.start_at,
+      status: appointment.status,
+      source: appointment.source === "online" ? "online" : "manual",
+    });
+  }
+
+  return true;
+}
+
 function statusMeta(cmd: any) {
   if (cmd.status === "closed") {
     return {
@@ -170,46 +265,55 @@ function FrenteDeCaixaPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
   const [selected, setSelected] = useState<{ cmd: any; checkout: boolean } | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const dateKey = format(date, "yyyy-MM-dd");
 
   const { data: allCommandas = [], isLoading } = useQuery({
-    queryKey: ["pos-commandas", tenantId],
+    queryKey: ["pos-commandas", tenantId, dateKey],
     enabled: !!tenantId,
     refetchInterval: 15_000,
     refetchOnWindowFocus: true,
     queryFn: async () => {
       const selection =
         "*, commanda_items(*, professionals(full_name)), clients(is_subscriber, whatsapp)";
-      const [pendingResult, closedResult, canceledResult] = await Promise.all([
-        supabase
-          .from("commandas")
-          .select(selection)
-          .eq("tenant_id", tenantId!)
-          .in("status", ["open", "awaiting_payment"])
-          .order("scheduled_at", { ascending: true, nullsFirst: false })
-          .limit(300),
-        supabase
-          .from("commandas")
-          .select(selection)
-          .eq("tenant_id", tenantId!)
-          .eq("status", "closed")
-          .order("closed_at", { ascending: false })
-          .limit(300),
-        supabase
-          .from("commandas")
-          .select(selection)
-          .eq("tenant_id", tenantId!)
-          .in("status", ["canceled", "no_show"])
-          .order("scheduled_at", { ascending: false, nullsFirst: false })
-          .limit(300),
-      ]);
 
-      const error = pendingResult.error ?? closedResult.error ?? canceledResult.error;
-      if (error) throw error;
-      return [
-        ...(pendingResult.data ?? []),
-        ...(closedResult.data ?? []),
-        ...(canceledResult.data ?? []),
-      ];
+      const fetchCommandas = async () => {
+        const [pendingResult, closedResult, canceledResult] = await Promise.all([
+          supabase
+            .from("commandas")
+            .select(selection)
+            .eq("tenant_id", tenantId!)
+            .in("status", ["open", "awaiting_payment"])
+            .order("scheduled_at", { ascending: true, nullsFirst: false })
+            .limit(300),
+          supabase
+            .from("commandas")
+            .select(selection)
+            .eq("tenant_id", tenantId!)
+            .eq("status", "closed")
+            .order("closed_at", { ascending: false })
+            .limit(300),
+          supabase
+            .from("commandas")
+            .select(selection)
+            .eq("tenant_id", tenantId!)
+            .in("status", ["canceled", "no_show"])
+            .order("scheduled_at", { ascending: false, nullsFirst: false })
+            .limit(300),
+        ]);
+
+        const error = pendingResult.error ?? closedResult.error ?? canceledResult.error;
+        if (error) throw error;
+        return [
+          ...(pendingResult.data ?? []),
+          ...(closedResult.data ?? []),
+          ...(canceledResult.data ?? []),
+        ];
+      };
+
+      let commandas = await fetchCommandas();
+      const repaired = await repairMissingAppointmentCommandas(tenantId!, date, commandas);
+      if (repaired) commandas = await fetchCommandas();
+      return commandas;
     },
   });
 

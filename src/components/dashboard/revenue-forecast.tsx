@@ -27,6 +27,7 @@ export type RevenueForecastDay = {
 };
 
 export type RevenueForecastData = {
+  periodLabel?: string;
   total: number;
   appointmentRevenue: number;
   subscriptionRevenue: number;
@@ -57,6 +58,7 @@ const emptyForecast: RevenueForecastData = {
 
 export function RevenueForecast({ data, loading = false }: RevenueForecastProps) {
   const forecast = data ?? emptyForecast;
+  const periodLabel = forecast.periodLabel ?? "Próximos 7 dias";
   const hasDailyForecast = forecast.days.some((day) => day.total > 0);
 
   return (
@@ -66,7 +68,7 @@ export function RevenueForecast({ data, loading = false }: RevenueForecastProps)
           <div>
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-primary">
               <CalendarDays className="h-4 w-4" />
-              Próximos 7 dias
+              {periodLabel}
             </div>
             <h2 className="mt-2 text-xl font-semibold">Previsão de faturamento</h2>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -159,7 +161,7 @@ export function RevenueForecast({ data, loading = false }: RevenueForecastProps)
               <div>
                 <CalendarDays className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
                 <p className="text-sm font-medium">
-                  Nenhum valor previsto para os próximos 7 dias.
+                  Nenhum valor previsto para {periodLabel.toLocaleLowerCase("pt-BR")}.
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Novos agendamentos e recebíveis aparecerão aqui automaticamente.

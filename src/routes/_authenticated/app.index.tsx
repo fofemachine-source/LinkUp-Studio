@@ -646,8 +646,12 @@ async function loadDashboardData(
   const minStart = new Date(
     Math.min(range.previousStart.getTime(), subDays(now, 60).getTime(), monthStart.getTime()),
   );
-  const forecastEnd = endOfDay(addDays(now, 6));
-  const receivableEnd = new Date(Math.max(monthEnd.getTime(), forecastEnd.getTime()));
+  const fallbackForecastEnd = endOfDay(addDays(now, 6));
+  const forecastStart = new Date(Math.max(todayStart.getTime(), range.start.getTime()));
+  const forecastEnd = range.end >= todayStart ? range.end : fallbackForecastEnd;
+  const receivableEnd = new Date(
+    Math.max(monthEnd.getTime(), fallbackForecastEnd.getTime(), forecastEnd.getTime()),
+  );
   const historicalEnd = new Date(
     Math.max(range.end.getTime(), monthEnd.getTime(), tomorrowEnd.getTime()),
   );
@@ -1078,7 +1082,28 @@ async function loadDashboardData(
   );
   const noShow = buildNoShowStats(periodAppointments, previousAppointments, filteredAppointments);
 
-  const forecast = buildRevenueForecast(
+  const forecast = {
+    ...buildRevenueForecast(
+      filteredFutureCommandas,
+      filteredAppointments,
+      subscriptionCharges,
+      filteredCashMovements,
+      matchingClientIds,
+      filters,
+      forecastStart,
+      forecastEnd,
+    ),
+    periodLabel:
+      filters.period === "today"
+        ? "Hoje"
+        : filters.period === "thisMonth"
+          ? "Este mês"
+          : filters.period === "thisYear"
+            ? "Este ano"
+            : "Período selecionado",
+  };
+  const receivableToday = forecast.days[0]?.total ?? 0;
+  const receivableWeek = calculateForecastTotal(
     filteredFutureCommandas,
     filteredAppointments,
     subscriptionCharges,
@@ -1086,10 +1111,8 @@ async function loadDashboardData(
     matchingClientIds,
     filters,
     todayStart,
-    forecastEnd,
+    fallbackForecastEnd,
   );
-  const receivableToday = forecast.days[0]?.total ?? 0;
-  const receivableWeek = forecast.total;
   const receivableMonth = calculateForecastTotal(
     filteredFutureCommandas,
     filteredAppointments,
