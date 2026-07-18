@@ -320,6 +320,7 @@ function BookingPage() {
 
   const proofMut = useMutation({
     mutationFn: async () => {
+      if (!tenantId) throw new Error("Salão indisponível no momento.");
       const renewal = (vipInfo as any)?.renewal;
       if (!renewal?.payment_token) {
         throw new Error("Cobrança de renovação não encontrada. Valide seus dados novamente.");
@@ -340,6 +341,7 @@ function BookingPage() {
 
       const prepared = await prepareProofUpload({
         data: {
+          tenantId,
           paymentToken: renewal.payment_token,
           fileName: proofFile.name,
           contentType: proofFile.type as
@@ -353,6 +355,7 @@ function BookingPage() {
       const submitCurrentProof = () =>
         submitProof({
           data: {
+            tenantId,
             paymentToken: renewal.payment_token,
             chargeId: prepared.chargeId,
             storagePath: prepared.path,

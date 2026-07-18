@@ -1,5 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { Database } from "@/integrations/supabase/types";
 import {
   PROJECT_PASSWORD_MIN_LENGTH,
   PROJECT_PASSWORD_REQUIREMENT,
@@ -19,8 +22,37 @@ function requiredOwnerPassword(password: string | undefined) {
   return password;
 }
 
+type AuthenticatedContext = {
+  supabase: SupabaseClient<Database>;
+  userId: string;
+  accessToken: string;
+};
+
+async function assertSuperAdmin(context: AuthenticatedContext) {
+  // These endpoints can change credentials and tenant state. Revalidate the
+  // token against Supabase Auth so a revoked session cannot keep using them.
+  const { data: authResult, error: authError } = await context.supabase.auth.getUser(
+    context.accessToken,
+  );
+  if (authError || !authResult.user || authResult.user.id !== context.userId) {
+    throw new Error("Sessão inválida ou expirada.");
+  }
+
+  const { data: role, error } = await context.supabase
+    .from("user_roles")
+    .select("id")
+    .eq("user_id", context.userId)
+    .eq("role", "super_admin")
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error("Não foi possível validar a permissão administrativa.");
+  if (!role) throw new Error("Acesso restrito ao administrador geral do projeto.");
+}
+
 // Create a new tenant (barbershop) from the SaaS panel. Requires super_admin caller.
 export const createTenant = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
     z.object({
       name: z.string().min(2),
@@ -31,7 +63,8 @@ export const createTenant = createServerFn({ method: "POST" })
       owner_password: ownerPasswordSchema.optional(),
     }).parse(d),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const expires = new Date();
     if (data.plan === "yearly") expires.setFullYear(expires.getFullYear() + 1);
@@ -70,8 +103,10 @@ export const createTenant = createServerFn({ method: "POST" })
   });
 
 export const setTenantStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid(), status: z.enum(["active","blocked"]) }).parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("tenants").update({ status: data.status }).eq("id", data.id);
     if (error) throw new Error(error.message);
@@ -79,8 +114,10 @@ export const setTenantStatus = createServerFn({ method: "POST" })
   });
 
 export const getTenantOwner = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: { tenantId: string }) => z.object({ tenantId: z.string().uuid() }).parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: role } = await supabaseAdmin.from("user_roles").select("user_id").eq("tenant_id", data.tenantId).eq("role", "owner").maybeSingle();
     if (!role) return null;
@@ -93,6 +130,7 @@ export const getTenantOwner = createServerFn({ method: "POST" })
   });
 
 export const updateTenant = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
     z.object({
       id: z.string().uuid(),
@@ -104,7 +142,8 @@ export const updateTenant = createServerFn({ method: "POST" })
       owner_password: ownerPasswordSchema.optional(),
     }).parse(d),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error: tErr } = await supabaseAdmin
       .from("tenants")

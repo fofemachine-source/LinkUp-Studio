@@ -102,6 +102,7 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
       context: {
         supabase,
         userId: data.claims.sub,
+        accessToken: token,
         claims: data.claims,
       },
     });

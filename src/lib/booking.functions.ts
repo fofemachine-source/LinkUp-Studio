@@ -760,11 +760,12 @@ export const validateVip = createServerFn({ method: "POST" })
     return null;
   });
 
-// Public: authorize a short-lived upload for a verified renewal charge.
+// Customer session: authorize a short-lived upload for the customer's charge.
 export const prepareSubscriptionProofUpload = createServerFn({ method: "POST" })
   .inputValidator((d) =>
     z
       .object({
+        tenantId: z.string().uuid(),
         paymentToken: z.string().uuid(),
         fileName: z.string().min(1).max(255),
         contentType: z.enum(subscriptionProofTypes),
@@ -775,9 +776,12 @@ export const prepareSubscriptionProofUpload = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const supabase = await pub();
     const db = supabase as any;
+    const { requireCustomerSession } = await import("@/lib/customer-auth.server");
+    const customer = await requireCustomerSession(data.tenantId);
     const { data: charge, error } = await db
       .from("subscription_charges")
       .select("*")
+      .eq("tenant_id", data.tenantId)
       .eq("payment_token", data.paymentToken)
       .in("status", ["pending", "overdue"])
       .maybeSingle();
@@ -793,12 +797,19 @@ export const prepareSubscriptionProofUpload = createServerFn({ method: "POST" })
 
     const { data: contract } = await db
       .from("client_subscriptions")
-      .select("id,status,plan_id")
+      .select("id,status,plan_id,client_id,cpf,whatsapp")
       .eq("id", charge.subscription_id)
-      .eq("tenant_id", charge.tenant_id)
+      .eq("tenant_id", data.tenantId)
       .maybeSingle();
+    const contractBelongsToCustomer =
+      contract?.client_id === customer.clientId ||
+      (!contract?.client_id &&
+        cleanCpf(String(contract?.cpf ?? "")) === cleanCpf(customer.cpf) &&
+        cleanBrazilianPhone(String(contract?.whatsapp ?? "")) ===
+          cleanBrazilianPhone(customer.whatsapp));
     if (
       !contract ||
+      !contractBelongsToCustomer ||
       !["pending_activation", "active", "overdue", "expired"].includes(contract.status)
     ) {
       throw new Error("Esta assinatura não está disponível para pagamento ou renovação.");
@@ -833,11 +844,12 @@ export const prepareSubscriptionProofUpload = createServerFn({ method: "POST" })
     };
   });
 
-// Public: record the uploaded proof and place it in the salon review queue.
+// Customer session: record the uploaded proof and place it in the salon review queue.
 export const submitSubscriptionProof = createServerFn({ method: "POST" })
   .inputValidator((d) =>
     z
       .object({
+        tenantId: z.string().uuid(),
         paymentToken: z.string().uuid(),
         chargeId: z.string().uuid(),
         storagePath: z.string().min(1).max(1000),
@@ -850,10 +862,13 @@ export const submitSubscriptionProof = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const supabase = await pub();
     const db = supabase as any;
+    const { requireCustomerSession } = await import("@/lib/customer-auth.server");
+    const customer = await requireCustomerSession(data.tenantId);
     const { data: charge, error } = await db
       .from("subscription_charges")
       .select("*")
       .eq("id", data.chargeId)
+      .eq("tenant_id", data.tenantId)
       .maybeSingle();
 
     if (error || !charge) throw new Error("Cobrança de renovação inválida.");
@@ -891,12 +906,19 @@ export const submitSubscriptionProof = createServerFn({ method: "POST" })
 
     const { data: contract } = await db
       .from("client_subscriptions")
-      .select("id,status,plan_id")
+      .select("id,status,plan_id,client_id,cpf,whatsapp")
       .eq("id", charge.subscription_id)
-      .eq("tenant_id", charge.tenant_id)
+      .eq("tenant_id", data.tenantId)
       .maybeSingle();
+    const contractBelongsToCustomer =
+      contract?.client_id === customer.clientId ||
+      (!contract?.client_id &&
+        cleanCpf(String(contract?.cpf ?? "")) === cleanCpf(customer.cpf) &&
+        cleanBrazilianPhone(String(contract?.whatsapp ?? "")) ===
+          cleanBrazilianPhone(customer.whatsapp));
     if (
       !contract ||
+      !contractBelongsToCustomer ||
       !["pending_activation", "active", "overdue", "expired"].includes(contract.status)
     ) {
       throw new Error("Esta assinatura não está disponível para pagamento ou renovação.");
@@ -1110,9 +1132,9 @@ export const createBooking = createServerFn({ method: "POST" })
       const belongsToCustomer =
         selectedSubscription.client_id === customer.clientId ||
         (!selectedSubscription.client_id &&
-          ((cleanCpfValue.length === 11 &&
-            cleanCpf(String(selectedSubscription.cpf ?? "")) === cleanCpfValue) ||
-            cleanBrazilianPhone(String(selectedSubscription.whatsapp ?? "")) === cleanWhatsapp));
+          cleanCpfValue.length === 11 &&
+          cleanCpf(String(selectedSubscription.cpf ?? "")) === cleanCpfValue &&
+          cleanBrazilianPhone(String(selectedSubscription.whatsapp ?? "")) === cleanWhatsapp);
       if (!belongsToCustomer) {
         throw new Error("A assinatura escolhida não pertence ao seu cadastro.");
       }
