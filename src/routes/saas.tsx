@@ -334,23 +334,36 @@ function WhatsAppAdminTab() {
     if (!testTenantId) return toast.error("Selecione a loja que vai abastecer os dados do teste.");
     const phone = cleanPhone(testPhone);
     if (phone.length < 10) return toast.error("Informe um WhatsApp válido para receber o teste.");
-    if (!testPreview.trim()) return toast.error("O modelo escolhido está vazio.");
+    const message = testPreview.trim().slice(0, 3900);
+    if (!message) return toast.error("O modelo escolhido está vazio.");
+    const requestId = crypto.randomUUID();
 
     setBusy("test");
     try {
       const { data, error } = await supabase.functions.invoke("whatsapp-connector", {
         body: {
-          action: "send-test",
+          action: "send-template-test",
           tenantId: testTenantId,
           phone,
-          message: testPreview,
+          message,
           templateKey: testTemplate,
-          matrixTemplateTest: true,
+          requestId,
         },
       });
       if (error) throw error;
       if ((data as any)?.ok === false || (data as any)?.error) {
         throw new Error((data as any)?.error || "O conector não confirmou o envio.");
+      }
+      const acknowledgement = (data as any)?.testAcknowledgement;
+      if (
+        acknowledgement?.mode !== "template" ||
+        acknowledgement?.requestId !== requestId ||
+        acknowledgement?.templateKey !== testTemplate ||
+        acknowledgement?.messageLength !== message.length
+      ) {
+        throw new Error(
+          "A Edge Function publicada está desatualizada e não confirmou o modelo escolhido. Republique whatsapp-connector e tente novamente.",
+        );
       }
       toast.success("Mensagem de teste enviada.");
     } catch (error: any) {

@@ -12,6 +12,7 @@ type ConnectorAction =
   | "connect"
   | "disconnect"
   | "send-test"
+  | "send-template-test"
   | "retry-message"
   | "process-queue";
 
@@ -21,7 +22,7 @@ type RequestBody = {
   phone?: string;
   message?: string;
   templateKey?: string;
-  matrixTemplateTest?: boolean;
+  requestId?: string;
   messageId?: string;
   limit?: number;
   secret?: string;
@@ -34,6 +35,7 @@ const connectorActions = new Set<ConnectorAction>([
   "connect",
   "disconnect",
   "send-test",
+  "send-template-test",
   "retry-message",
   "process-queue",
 ]);
@@ -706,6 +708,7 @@ Deno.serve(async (request) => {
     }
 
     let result: Record<string, unknown>;
+    let testAcknowledgement: Record<string, unknown> | null = null;
     if (action === "status") {
       result = await connectorRequest(sessionId, "/status");
     } else if (action === "connect") {
@@ -727,12 +730,29 @@ Deno.serve(async (request) => {
           400,
         );
       }
-      const customMessage = text(body.message, 4000);
-      const isMatrixTemplateTest = body.matrixTemplateTest === true;
-      if (isMatrixTemplateTest && !customMessage) {
+      result = await connectorRequest(sessionId, "/send", {
+        method: "POST",
+        body: {
+          phone,
+          message: `Teste LinkUp Studio: o WhatsApp da ${tenant.name} está conectado e pronto para avisar clientes e profissionais.`,
+          kind: "salon_test",
+          tenantId,
+        },
+      });
+    } else if (action === "send-template-test") {
+      const phone = digits(body.phone);
+      if (phone.length < 10) {
+        return json({ error: "Informe um WhatsApp válido para receber o teste." }, 400);
+      }
+
+      const customMessage = text(body.message, 3900);
+      const templateKey = text(body.templateKey, 120);
+      const requestId = text(body.requestId, 120);
+      if (!customMessage || !templateKey || !requestId) {
         return json(
           {
-            error: "O teste de modelo não recebeu a mensagem renderizada. Recarregue a tela e tente novamente.",
+            error:
+              "O teste do modelo não recebeu todos os dados. Recarregue a tela e tente novamente.",
           },
           400,
         );
@@ -741,14 +761,19 @@ Deno.serve(async (request) => {
         method: "POST",
         body: {
           phone,
-          message:
-            customMessage ||
-            `Teste LinkUp Studio: o WhatsApp da ${tenant.name} está conectado e pronto para avisar clientes e profissionais.`,
-          kind: isMatrixTemplateTest ? "matrix_template_test" : "salon_test",
-          templateKey: text(body.templateKey, 120) || null,
+          message: customMessage,
+          kind: "matrix_template_test",
+          templateKey,
           tenantId,
+          requestId,
         },
       });
+      testAcknowledgement = {
+        mode: "template",
+        requestId,
+        templateKey,
+        messageLength: customMessage.length,
+      };
     } else {
       return json({ error: "Ação inválida." }, 400);
     }
@@ -771,6 +796,7 @@ Deno.serve(async (request) => {
         ...result,
         settings,
         sessionId,
+        testAcknowledgement,
         ok: Boolean(result.ok),
       },
       result.configured === false ? 503 : 200,
