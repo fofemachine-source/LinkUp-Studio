@@ -95,6 +95,7 @@ function vipSubscriptionStatusLabel(status: string) {
 
 import { buildPixPayload } from "@/lib/pix";
 import { QrCode } from "@/lib/qr";
+import { getPublicBookingUrl } from "@/lib/public-booking-url";
 
 function BookingPage() {
   const queryClient = useQueryClient();
@@ -523,8 +524,8 @@ function BookingPage() {
   const selectedTimeIsAvailable = timeSlots.some(
     (slot) => slot.time === time && slot.free,
   );
-  const cancellationUrl = activeCancellationToken && typeof window !== "undefined"
-    ? `${window.location.origin}/booking/${slug}?cancel=${activeCancellationToken}`
+  const cancellationUrl = activeCancellationToken
+    ? `${getPublicBookingUrl(slug)}?cancel=${encodeURIComponent(activeCancellationToken)}`
     : "";
 
   if (cancellationTokenFromUrl) {

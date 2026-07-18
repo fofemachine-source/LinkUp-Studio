@@ -73,6 +73,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { QrCode } from "@/lib/qr";
 import { brl } from "@/lib/format";
+import { getPublicBookingUrl } from "@/lib/public-booking-url";
 import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -246,10 +247,7 @@ function PainelGeral() {
   );
 
   const bookingSlug = tenant?.slug || "linkup-studio";
-  const bookingLink =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/booking/${bookingSlug}`
-      : `https://barber-pro-plus.lovable.app/booking/${bookingSlug}`;
+  const bookingLink = getPublicBookingUrl(bookingSlug);
 
   const { data: userProfile } = useQuery({
     queryKey: ["dashboard-user-profile"],

@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { brl } from "@/lib/format";
 import { syncAppointmentComanda } from "@/lib/commandas";
+import { getPublicBookingUrl } from "@/lib/public-booking-url";
 import {
   AgendaPremium,
   type AgendaAppointment,
@@ -171,9 +172,7 @@ function AgendaPage() {
   }, [openHour, closeHour, slotMin]);
 
   const bookingSlug = tenant?.slug || "ernesth";
-  const bookingLink = typeof window !== "undefined"
-    ? `${window.location.origin}/booking/${bookingSlug}`
-    : `https://barber-pro-plus.lovable.app/booking/${bookingSlug}`;
+  const bookingLink = getPublicBookingUrl(bookingSlug);
 
 
   async function syncOperationalAppointment(appointment: AgendaAppointment) {

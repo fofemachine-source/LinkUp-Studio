@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { dateBR, brl } from "@/lib/format";
 import { validateProjectPassword } from "@/lib/password-policy";
 import { normalizeWhatsAppFormatting } from "@/lib/whatsapp-format";
+import { getPublicBookingUrl } from "@/lib/public-booking-url";
 
 const whatsappTemplateFields = [
   { key: "client_registration_template", title: "Novo cadastro", label: "Mensagem para o cliente" },
@@ -958,7 +959,7 @@ function EmpresasTab() {
                 <p className="text-xs text-slate-300 mt-1">Slug: <span className="font-mono">{t.slug}</span>{t.whatsapp && ` • ${t.whatsapp}`}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <a href={`/booking/${t.slug}`} target="_blank" className="text-xs px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 flex items-center gap-1">Link reservas <ExternalLink className="h-3 w-3"/></a>
+                <a href={getPublicBookingUrl(t.slug)} target="_blank" rel="noreferrer" className="text-xs px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 flex items-center gap-1">Link reservas <ExternalLink className="h-3 w-3"/></a>
                 <button onClick={async()=>{await setStatus({data:{id:t.id,status:t.status==="active"?"blocked":"active"}});qc.invalidateQueries({queryKey:["all-tenants"]});}} className="text-xs px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white font-semibold">{t.status==="active"?"Bloquear":"Liberar Acesso"}</button>
                 <button className="text-xs px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 flex items-center gap-1"><Database className="h-3 w-3"/> Backup</button>
                 <button onClick={()=>setEditingTenant(t)} className="h-8 w-8 rounded-md bg-white/10 hover:bg-white/20 flex items-center justify-center"><Pencil className="h-3.5 w-3.5"/></button>
