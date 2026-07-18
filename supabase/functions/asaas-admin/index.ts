@@ -270,11 +270,11 @@ function asaasApiKey(environment: BillingEnvironment) {
 }
 
 function asaasWebhookToken(environment: BillingEnvironment) {
-  return (
-    (environment === "production"
+  const environmentSpecific =
+    environment === "production"
       ? Deno.env.get("ASAAS_PRODUCTION_WEBHOOK_TOKEN")
-      : Deno.env.get("ASAAS_SANDBOX_WEBHOOK_TOKEN")) || ""
-  );
+      : Deno.env.get("ASAAS_SANDBOX_WEBHOOK_TOKEN");
+  return environmentSpecific || Deno.env.get("ASAAS_WEBHOOK_TOKEN") || "";
 }
 
 function webhookTokensAreUnambiguous() {
@@ -1406,7 +1406,7 @@ async function configureWebhook(admin: SupabaseClient, settings: BillingSettings
         settings.environment === "production"
           ? "ASAAS_PRODUCTION_WEBHOOK_TOKEN"
           : "ASAAS_SANDBOX_WEBHOOK_TOKEN"
-      } com 32 a 255 caracteres antes de publicar o webhook.`,
+      } ou ASAAS_WEBHOOK_TOKEN com 32 a 255 caracteres antes de publicar o webhook.`,
       503,
       null,
     );

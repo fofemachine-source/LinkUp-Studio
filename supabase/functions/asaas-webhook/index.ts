@@ -76,6 +76,7 @@ Deno.serve(async (request) => {
 
     const sandboxToken = Deno.env.get("ASAAS_SANDBOX_WEBHOOK_TOKEN") || "";
     const productionToken = Deno.env.get("ASAAS_PRODUCTION_WEBHOOK_TOKEN") || "";
+    const fallbackToken = Deno.env.get("ASAAS_WEBHOOK_TOKEN") || "";
     if (sandboxToken && productionToken && safeSecretMatch(sandboxToken, productionToken)) {
       console.error("[asaas-webhook] sandbox and production tokens must be different");
       return json({ received: false }, 503);
@@ -84,6 +85,14 @@ Deno.serve(async (request) => {
     if (sandboxToken && safeSecretMatch(receivedToken, sandboxToken)) environment = "sandbox";
     if (productionToken && safeSecretMatch(receivedToken, productionToken)) {
       environment = "production";
+    }
+    if (!environment && fallbackToken && safeSecretMatch(receivedToken, fallbackToken)) {
+      const { data: settings } = await admin
+        .from("platform_billing_settings")
+        .select("environment")
+        .eq("id", "global")
+        .maybeSingle();
+      environment = text(settings?.environment, 20) === "production" ? "production" : "sandbox";
     }
     if (!environment) return json({ received: false }, 401);
 
