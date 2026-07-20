@@ -25,8 +25,8 @@ export const Route = createFileRoute("/_authenticated/app/")({
     const tenantId = profile?.active_tenant_id ?? roles?.find((r) => r.tenant_id)?.tenant_id;
     if (!tenantId) return;
 
-    const { data: userRole } = await supabase.from("user_roles").select("role").eq("user_id", uid).eq("tenant_id", tenantId).maybeSingle();
-    if (userRole?.role === "barber") {
+    const { data: userRoles } = await supabase.from("user_roles").select("role").eq("user_id", uid).eq("tenant_id", tenantId);
+    if (userRoles?.some((r) => r.role === "barber") && !userRoles?.some((r) => r.role === "owner" || r.role === "super_admin")) {
       throw redirect({ to: "/app/agenda" });
     }
   },

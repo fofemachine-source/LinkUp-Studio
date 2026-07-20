@@ -47,8 +47,13 @@ export function useUserRole(tenantId?: string) {
       const { data: userRes } = await supabase.auth.getUser();
       const uid = userRes.user?.id;
       if (!uid || !tenantId) return null;
-      const { data } = await supabase.from("user_roles").select("role").eq("user_id", uid).eq("tenant_id", tenantId).maybeSingle();
-      return data?.role ?? null;
+      const { data } = await supabase.from("user_roles").select("role").eq("user_id", uid).eq("tenant_id", tenantId);
+      if (!data || data.length === 0) return null;
+      if (data.some((r) => r.role === "super_admin")) return "super_admin";
+      if (data.some((r) => r.role === "owner")) return "owner";
+      if (data.some((r) => r.role === "staff")) return "staff";
+      if (data.some((r) => r.role === "barber")) return "barber";
+      return data[0].role ?? null;
     },
   });
 }
