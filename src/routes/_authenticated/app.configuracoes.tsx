@@ -163,12 +163,23 @@ function IdentityTab() {
         <div>
           <Label>Logo</Label>
           <div className="flex items-center gap-4 mt-1">
-            {t?.logo_url && <img src={t.logo_url} className="h-16 w-16 rounded-lg object-cover border" alt="Logo atual"/>}
-            <Input type="file" accept="image/*" onChange={(e)=>setLogo(e.target.files?.[0]??null)}/>
+            {displayedLogo ? (
+              <img src={displayedLogo} className="h-16 w-16 rounded-lg object-cover border" alt="Logo"/>
+            ) : (
+              <div className="h-16 w-16 rounded-lg border border-dashed grid place-items-center text-xs text-muted-foreground">Sem logo</div>
+            )}
+            <Input type="file" accept="image/*" disabled={isSaving} onChange={(e)=>setLogo(e.target.files?.[0]??null)}/>
           </div>
-          {logo && <p className="text-xs text-muted-foreground mt-1">Novo arquivo selecionado: {logo.name}. Clique em Salvar para aplicar.</p>}
+          {logo && (
+            <p className="text-xs text-primary mt-2">
+              Nova imagem selecionada: <span className="font-medium">{logo.name}</span>. Clique em Salvar identidade para aplicar.
+            </p>
+          )}
         </div>
-        <Button onClick={save}>Salvar identidade</Button>
+        <Button onClick={save} disabled={isSaving || !isDirty}>
+          {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isSaving ? (logo ? "Enviando imagem..." : "Salvando...") : "Salvar identidade"}
+        </Button>
       </CardContent></Card>
 
       {t && brandingLoading && (
