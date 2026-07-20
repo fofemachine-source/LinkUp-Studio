@@ -1057,16 +1057,45 @@ export const getBookedSlots = createServerFn({ method: "POST" })
     const supabase = await pub();
     const start = new Date(data.date + "T00:00:00").toISOString();
     const end = new Date(data.date + "T23:59:59").toISOString();
-    const { data: appts, error } = await supabase
-      .from("appointments")
-      .select("start_at,end_at")
-      .eq("tenant_id", data.tenantId)
-      .eq("professional_id", data.professionalId)
-      .gte("start_at", start)
-      .lte("start_at", end)
-      .not("status", "in", "(cancelled,canceled,noshow)");
-    if (error) throw new Error(error.message);
-    return appts ?? [];
+    const [apptsRes, timeOffRes] = await Promise.all([
+      supabase
+        .from("appointments")
+        .select("start_at,end_at")
+        .eq("tenant_id", data.tenantId)
+        .eq("professional_id", data.professionalId)
+        .gte("start_at", start)
+        .lte("start_at", end)
+        .not("status", "in", "(cancelled,canceled,noshow)"),
+      (supabase as any)
+        .from("professional_time_off")
+        .select("starts_on,ends_on,all_day,start_time,end_time")
+        .eq("tenant_id", data.tenantId)
+        .eq("professional_id", data.professionalId)
+        .lte("starts_on", data.date)
+        .gte("ends_on", data.date),
+    ]);
+    if (apptsRes.error) throw new Error(apptsRes.error.message);
+    if (timeOffRes.error) throw new Error(timeOffRes.error.message);
+
+    const busy: { start_at: string; end_at: string }[] = (apptsRes.data ?? []).map((a: any) => ({
+      start_at: a.start_at,
+      end_at: a.end_at,
+    }));
+    const [year, month, day] = data.date.split("-").map(Number);
+    for (const off of timeOffRes.data ?? []) {
+      if (off.all_day) {
+        const s = new Date(year, month - 1, day, 0, 0, 0, 0);
+        const e = new Date(year, month - 1, day, 23, 59, 59, 999);
+        busy.push({ start_at: s.toISOString(), end_at: e.toISOString() });
+      } else {
+        const [sh, sm] = String(off.start_time ?? "00:00").split(":").map(Number);
+        const [eh, em] = String(off.end_time ?? "00:00").split(":").map(Number);
+        const s = new Date(year, month - 1, day, sh || 0, sm || 0, 0, 0);
+        const e = new Date(year, month - 1, day, eh || 0, em || 0, 0, 0);
+        busy.push({ start_at: s.toISOString(), end_at: e.toISOString() });
+      }
+    }
+    return busy;
   });
 
 // Public: create appointment. Enforces slot conflict and VIP-day rule.
