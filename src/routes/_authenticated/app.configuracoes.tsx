@@ -22,6 +22,7 @@ import {
   normalizeBookingWeekdays,
 } from "@/lib/booking-weekdays";
 import { WhatsAppSettings } from "@/components/whatsapp/whatsapp-settings";
+import { ProfessionalTimeOffManager } from "@/components/config/professional-time-off-manager";
 
 export const Route = createFileRoute("/_authenticated/app/configuracoes")({ component: ConfigPage });
 
