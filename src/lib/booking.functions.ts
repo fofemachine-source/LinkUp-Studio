@@ -412,7 +412,7 @@ export const getPublicTenant = createServerFn({ method: "GET" })
     const { data: t, error: tenantError } = await supabase.from("tenants").select("id,name,subtitle,logo_url,banner_url,slug,primary_color,slot_minutes,whatsapp,city").eq("slug", data.slug).eq("status", "active").maybeSingle();
     if (tenantError) throw new Error(tenantError.message);
     if (!t) return null;
-    const [professionalsResult, servicesResult, settingsResult, brandingResult] = await Promise.all([
+    const [professionalsResult, servicesResult, settingsResult, brandingResult, timeOffResult] = await Promise.all([
       supabase.from("professionals").select("id,full_name,photo_url,role_label,work_days,blocked_dates").eq("tenant_id", t.id).eq("active", true).order("full_name"),
       supabase.from("services").select("id,name,price,duration_min,vip_only").eq("tenant_id", t.id).eq("active", true).order("name"),
       loadPublicTenantSettings(supabase, t.id),
@@ -423,6 +423,11 @@ export const getPublicTenant = createServerFn({ method: "GET" })
         )
         .eq("tenant_id", t.id)
         .maybeSingle(),
+      db
+        .from("professional_time_off")
+        .select("professional_id,starts_on,ends_on,all_day,start_time,end_time")
+        .eq("tenant_id", t.id)
+        .gte("ends_on", saoPauloToday()),
     ]);
     if (professionalsResult.error) throw new Error(professionalsResult.error.message);
     if (servicesResult.error) throw new Error(servicesResult.error.message);
@@ -434,6 +439,7 @@ export const getPublicTenant = createServerFn({ method: "GET" })
       services: servicesResult.data ?? [],
       settings: settingsResult.data,
       branding: brandingResult.data,
+      timeOff: timeOffResult.data ?? [],
     };
   });
 
