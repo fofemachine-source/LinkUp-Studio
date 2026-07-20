@@ -18,9 +18,7 @@ function AppErrorComponent({ error }: { error: any }) {
         }
       } catch (e) {}
 
-      const url = new URL(window.location.href);
-      url.searchParams.set("_v", Date.now().toString());
-      window.location.href = url.toString();
+      window.location.href = "/app";
     }
   };
 
