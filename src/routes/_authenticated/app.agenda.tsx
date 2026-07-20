@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { brl } from "@/lib/format";
 import { syncAppointmentComanda } from "@/lib/commandas";
+import { getPublicBookingUrl } from "@/lib/public-booking-url";
 import {
   AgendaPremium,
   type AgendaAppointment,
@@ -171,9 +172,7 @@ function AgendaPage() {
   }, [openHour, closeHour, slotMin]);
 
   const bookingSlug = tenant?.slug || "ernesth";
-  const bookingLink = typeof window !== "undefined"
-    ? `${window.location.origin}/booking/${bookingSlug}`
-    : `https://barber-pro-plus.lovable.app/booking/${bookingSlug}`;
+  const bookingLink = getPublicBookingUrl(bookingSlug);
 
 
   async function syncOperationalAppointment(appointment: AgendaAppointment) {
@@ -573,6 +572,10 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
   }, 0);
 
   const totalValue = totalSvcValue + totalProdValue;
+  const hasClientData = isRegisteringNewClient
+    ? Boolean(newClientName.trim() && newClientWa.trim())
+    : Boolean(clientId);
+  const canConfirmReservation = !busy && hasClientData && Boolean(proId) && selectedSvcs.length > 0;
 
   async function save() {
     setBusy(true);
@@ -840,7 +843,7 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
       
       <div className="p-6 pt-0 flex justify-end gap-3">
         <Button variant="outline" onClick={onDone} className="rounded-full">Fechar</Button>
-        <Button onClick={save} disabled={busy || !clientId || !proId || selectedSvcs.length===0} className="rounded-full">CONFIRMAR RESERVA</Button>
+        <Button onClick={save} disabled={!canConfirmReservation} className="rounded-full">CONFIRMAR RESERVA</Button>
       </div>
     </DialogContent>
   );

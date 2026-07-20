@@ -6,13 +6,27 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-type ConnectorAction = "save" | "status" | "connect" | "disconnect" | "send-test" | "retry-message";
+type ConnectorAction =
+  | "save"
+  | "status"
+  | "connect"
+  | "disconnect"
+  | "send-test"
+  | "send-template-test"
+  | "retry-message"
+  | "process-queue";
 
 type RequestBody = {
   action?: ConnectorAction;
+  scope?: "tenant" | "platform";
   tenantId?: string;
   phone?: string;
+  message?: string;
+  templateKey?: string;
+  requestId?: string;
   messageId?: string;
+  limit?: number;
+  secret?: string;
   settings?: Record<string, unknown>;
 };
 
@@ -22,11 +36,14 @@ const connectorActions = new Set<ConnectorAction>([
   "connect",
   "disconnect",
   "send-test",
+  "send-template-test",
   "retry-message",
+  "process-queue",
 ]);
 
 const editableBooleanFields = [
   "enabled",
+  "notify_client_registration",
   "notify_client_booking",
   "notify_professional_booking",
   "notify_client_cancellation",
@@ -34,16 +51,6 @@ const editableBooleanFields = [
   "notify_client_reschedule",
   "notify_professional_reschedule",
   "reminder_enabled",
-] as const;
-
-const editableTemplateFields = [
-  "client_booking_template",
-  "professional_booking_template",
-  "client_reminder_template",
-  "client_cancellation_template",
-  "professional_cancellation_template",
-  "client_reschedule_template",
-  "professional_reschedule_template",
 ] as const;
 
 function json(body: unknown, status = 200) {
@@ -85,6 +92,22 @@ function text(value: unknown, maxLength: number) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function safeSecretMatch(candidate: unknown, expected: string) {
+  const left = String(candidate ?? "");
+  const right = String(expected ?? "");
+  if (!left || !right) return false;
+
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  if (leftBytes.length !== rightBytes.length) return false;
+
+  let diff = 0;
+  for (let index = 0; index < leftBytes.length; index += 1) {
+    diff |= leftBytes[index] ^ rightBytes[index];
+  }
+  return diff === 0;
 }
 
 function isUuid(value: string) {
@@ -132,7 +155,7 @@ async function connectorRequest(
     body?: Record<string, unknown>;
     timeoutMs?: number;
   } = {},
-) {
+): Promise<Record<string, unknown>> {
   const baseUrl = text(Deno.env.get("LINKUP_WHATSAPP_CONNECTOR_URL"), 1000).replace(/\/+$/, "");
   const secret = Deno.env.get("LINKUP_WHATSAPP_CONNECTOR_SECRET") ?? "";
   if (!baseUrl || !secret) {
@@ -203,6 +226,665 @@ async function cacheConnectorStatus(
   if (error) console.error("[whatsapp-connector] status cache", error);
 }
 
+async function ensurePlatformSettings(admin: SupabaseClient) {
+  const { data, error } = await admin
+    .from("platform_billing_settings")
+    .select("*")
+    .eq("id", "global")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    throw new Error("As configurações financeiras da matriz ainda não foram criadas.");
+  }
+
+  const row = data as Record<string, unknown>;
+  if (!row.platform_whatsapp_session_id) {
+    const { data: updated, error: updateError } = await admin
+      .from("platform_billing_settings")
+      .update({ platform_whatsapp_session_id: "platform-owner" })
+      .eq("id", "global")
+      .select("*")
+      .single();
+    if (updateError) throw updateError;
+    return updated as Record<string, unknown>;
+  }
+
+  return row;
+}
+
+async function cachePlatformConnectorStatus(
+  admin: SupabaseClient,
+  payload: Record<string, unknown>,
+) {
+  const status = connectorStatus(
+    payload.status ?? (payload.connected ? "connected" : "disconnected"),
+  );
+  const { error } = await admin
+    .from("platform_billing_settings")
+    .update({
+      platform_whatsapp_connection_status: status,
+      platform_whatsapp_connected_phone: digits(payload.phone) || null,
+      platform_whatsapp_last_connection_error: text(payload.error ?? payload.lastError, 1000) || null,
+      platform_whatsapp_last_status_at: new Date().toISOString(),
+    })
+    .eq("id", "global");
+  if (error) console.error("[whatsapp-connector] platform status cache", error);
+}
+
+function scalarTemplateValue(value: unknown) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
+}
+
+function normalizeWhatsAppFormatting(value: unknown) {
+  return String(value ?? "").replace(
+    /(^|[^*])\*\*(?![\s*])([^\r\n]*?\S)\*\*(?!\*)/gm,
+    (_match, prefix: string, content: string) => `${prefix}*${content}*`,
+  );
+}
+
+function publicAppUrl(request?: Request) {
+  return text(
+    Deno.env.get("LINKUP_PUBLIC_APP_URL") ||
+      Deno.env.get("PUBLIC_APP_URL") ||
+      Deno.env.get("SITE_URL") ||
+      request?.headers.get("origin"),
+    1000,
+  ).replace(/\/+$/, "");
+}
+
+function buildCancellationLink(payload: Record<string, unknown>, appUrl: string) {
+  const explicit = scalarTemplateValue(
+    payload.link_cancelamento || payload.cancellation_link,
+  ).trim();
+  if (explicit) return explicit;
+
+  const slug = scalarTemplateValue(payload.tenant_slug || payload.slug).trim();
+  const token = scalarTemplateValue(payload.cancellation_token || payload.cancel_token).trim();
+  if (!appUrl || !slug || !token) return "";
+
+  return `${appUrl}/booking/${encodeURIComponent(slug)}?cancel=${encodeURIComponent(token)}`;
+}
+
+function renderTemplate(template: unknown, payloadValue: unknown, appUrl: string) {
+  const payload = isRecord(payloadValue) ? payloadValue : {};
+  const variables: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(payload)) {
+    variables[key.toLowerCase()] = scalarTemplateValue(value);
+  }
+
+  variables.link_cancelamento = buildCancellationLink(payload, appUrl);
+  variables.cancellation_link = variables.link_cancelamento;
+
+  const rendered = normalizeWhatsAppFormatting(
+    String(template || "")
+      .replace(
+        /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}|\{\s*([a-zA-Z0-9_]+)\s*\}/g,
+        (_match, doubleKey, singleKey) => {
+          const key = String(doubleKey || singleKey || "").toLowerCase();
+          return Object.prototype.hasOwnProperty.call(variables, key) ? variables[key] : "";
+        },
+      )
+      .replace(/[ \t]+\n/g, "\n")
+      .trim(),
+  );
+
+  if (!rendered) {
+    throw new Error("O modelo gerou uma mensagem vazia.");
+  }
+  return rendered.slice(0, 3900);
+}
+
+function reminderExpired(row: Record<string, unknown>) {
+  if (row.event_type !== "appointment_reminder") return false;
+  const payload = isRecord(row.payload) ? row.payload : {};
+  const startAt = Date.parse(String(payload.start_at || ""));
+  return Number.isFinite(startAt) && Date.now() >= startAt;
+}
+
+function retryDelayIso(attemptsValue: unknown) {
+  const attempts = Math.max(1, Number(attemptsValue || 1));
+  const baseDelay = Math.min(15 * 60_000, 30_000 * 2 ** Math.max(0, attempts - 1));
+  const jitter = Math.floor(Math.random() * Math.min(5_000, baseDelay * 0.1));
+  return new Date(Date.now() + baseDelay + jitter).toISOString();
+}
+
+function isMissingSubscriptionEnqueueRpc(error: unknown) {
+  const value = isRecord(error) ? error : {};
+  const code = String(value.code || "");
+  const message = [value.message, value.details, value.hint].map(String).join(" ");
+  return (
+    code === "PGRST202" ||
+    code === "42883" ||
+    (/enqueue_due_subscription_whatsapp/i.test(message) &&
+      /schema cache|could not find|does not exist/i.test(message))
+  );
+}
+
+function isMissingPlatformBillingEnqueueRpc(error: unknown) {
+  const value = isRecord(error) ? error : {};
+  const code = String(value.code || "");
+  const message = [value.message, value.details, value.hint].map(String).join(" ");
+  return (
+    code === "PGRST202" ||
+    code === "42883" ||
+    (/enqueue_due_platform_billing_whatsapp/i.test(message) &&
+      /schema cache|could not find|does not exist/i.test(message))
+  );
+}
+
+async function enqueueDueSubscriptionWhatsApp(admin: SupabaseClient) {
+  const { data, error } = await admin.rpc("enqueue_due_subscription_whatsapp");
+  if (error) {
+    if (isMissingSubscriptionEnqueueRpc(error)) {
+      console.info(
+        "[whatsapp-connector] enqueue_due_subscription_whatsapp ainda não está disponível; fila atual preservada.",
+      );
+      return null;
+    }
+    console.error(
+      "[whatsapp-connector] falha ao gerar notificações de assinaturas; demais mensagens continuarão.",
+      error,
+    );
+    return null;
+  }
+  return data;
+}
+
+async function enqueueDuePlatformBillingWhatsApp(admin: SupabaseClient) {
+  const { data, error } = await admin.rpc("enqueue_due_platform_billing_whatsapp");
+  if (error) {
+    if (isMissingPlatformBillingEnqueueRpc(error)) {
+      console.info(
+        "[whatsapp-connector] enqueue_due_platform_billing_whatsapp ainda não está disponível; fila atual preservada.",
+      );
+      return null;
+    }
+    console.error(
+      "[whatsapp-connector] falha ao gerar avisos B2B da plataforma; demais mensagens continuarão.",
+      error,
+    );
+    return null;
+  }
+  return data;
+}
+
+async function recoverStaleQueueClaims(admin: SupabaseClient, limit: number) {
+  const cutoff = new Date(Date.now() - 5 * 60_000).toISOString();
+  const { data: staleRows, error } = await admin
+    .from("whatsapp_message_queue")
+    .select("id,attempts,max_attempts,locked_at")
+    .eq("status", "processing")
+    .lt("locked_at", cutoff)
+    .order("locked_at", { ascending: true })
+    .limit(Math.max(1, limit));
+  if (error) throw error;
+
+  let recovered = 0;
+  for (const row of staleRows ?? []) {
+    const attempts = Math.max(0, Number(row.attempts || 0));
+    const exhausted = attempts >= Math.max(1, Number(row.max_attempts || 5));
+    const { data: updated, error: updateError } = await admin
+      .from("whatsapp_message_queue")
+      .update({
+        status: exhausted ? "failed" : "pending",
+        locked_at: null,
+        scheduled_for: exhausted ? new Date().toISOString() : retryDelayIso(attempts),
+        last_error: exhausted
+          ? "Worker interrompido e limite de tentativas atingido."
+          : "Processamento anterior foi interrompido; mensagem reagendada.",
+      })
+      .eq("id", row.id)
+      .eq("status", "processing")
+      .eq("locked_at", row.locked_at)
+      .select("id")
+      .maybeSingle();
+    if (updateError) throw updateError;
+    if (updated) recovered += 1;
+  }
+
+  if (recovered > 0) {
+    console.warn(`[whatsapp-connector] ${recovered} lock(s) abandonado(s) recuperado(s).`);
+  }
+  return recovered;
+}
+
+function subscriptionChargeId(row: Record<string, unknown>) {
+  const payload = isRecord(row.payload) ? row.payload : {};
+  return text(
+    row.subscription_charge_id || payload.subscription_charge_id || payload.charge_id,
+    100,
+  );
+}
+
+async function validateSubscriptionQueueRow(admin: SupabaseClient, row: Record<string, unknown>) {
+  const eventType = String(row.event_type || "");
+  if (!eventType.startsWith("subscription_")) {
+    return { valid: true as const };
+  }
+
+  const chargeId = subscriptionChargeId(row);
+  const tenantId = text(row.tenant_id, 100);
+  if (!isUuid(chargeId) || !isUuid(tenantId)) {
+    return {
+      valid: false as const,
+      reason: "Mensagem de assinatura sem cobrança e loja válidas.",
+    };
+  }
+
+  const { data: charge, error } = await admin
+    .from("subscription_charges")
+    .select("id,status")
+    .eq("id", chargeId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!charge) {
+    return {
+      valid: false as const,
+      reason: "Cobrança da assinatura não existe mais nesta loja.",
+    };
+  }
+
+  const { data: tenant, error: tenantError } = await admin
+    .from("tenants")
+    .select("id,status")
+    .eq("id", tenantId)
+    .maybeSingle();
+  if (tenantError) throw tenantError;
+  if (!tenant || String(tenant.status || "active") === "blocked") {
+    return {
+      valid: false as const,
+      reason: "Mensagem cancelada porque a loja está bloqueada.",
+    };
+  }
+
+  const allowedStatuses =
+    eventType === "subscription_payment_confirmed"
+      ? new Set(["paid"])
+      : new Set(["pending", "overdue"]);
+  if (!allowedStatuses.has(String(charge.status || ""))) {
+    return {
+      valid: false as const,
+      reason: `Mensagem cancelada porque a cobrança está com status ${charge.status || "desconhecido"}.`,
+    };
+  }
+
+  return { valid: true as const };
+}
+
+function platformBillingContractId(row: Record<string, unknown>) {
+  const payload = isRecord(row.payload) ? row.payload : {};
+  return text(
+    row.platform_billing_contract_id || payload.platform_billing_contract_id || payload.contract_id,
+    100,
+  );
+}
+
+function platformBillingChargeId(row: Record<string, unknown>) {
+  const payload = isRecord(row.payload) ? row.payload : {};
+  return text(
+    row.platform_billing_charge_id || payload.platform_billing_charge_id || payload.charge_id,
+    100,
+  );
+}
+
+function billedTenantId(row: Record<string, unknown>) {
+  const payload = isRecord(row.payload) ? row.payload : {};
+  return text(payload.tenant_id || payload.billed_tenant_id, 100);
+}
+
+async function validateBilledTenantIsActive(admin: SupabaseClient, tenantId: string) {
+  if (!isUuid(tenantId)) {
+    return {
+      valid: false as const,
+      reason: "Mensagem B2B sem salão válido no payload.",
+    };
+  }
+
+  const { data: tenant, error } = await admin
+    .from("tenants")
+    .select("id,status")
+    .eq("id", tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!tenant || String(tenant.status || "active") === "blocked") {
+    return {
+      valid: false as const,
+      reason: "Mensagem B2B cancelada porque o salão está bloqueado.",
+    };
+  }
+
+  return { valid: true as const };
+}
+
+async function validatePlatformBillingQueueRow(
+  admin: SupabaseClient,
+  row: Record<string, unknown>,
+) {
+  const eventType = String(row.event_type || "");
+  if (!eventType.startsWith("platform_")) {
+    return { valid: true as const };
+  }
+
+  const tenantValidation = await validateBilledTenantIsActive(admin, billedTenantId(row));
+  if (!tenantValidation.valid) return tenantValidation;
+
+  if (eventType === "platform_trial_reminder") {
+    const contractId = platformBillingContractId(row);
+    if (!isUuid(contractId)) {
+      return {
+        valid: false as const,
+        reason: "Aviso de teste grátis sem contrato válido.",
+      };
+    }
+
+    const { data: contract, error } = await admin
+      .from("platform_billing_contracts")
+      .select("id,status,trial_ends_on")
+      .eq("id", contractId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!contract || String(contract.status || "") !== "trialing") {
+      return {
+        valid: false as const,
+        reason: "Aviso de teste grátis cancelado porque o contrato não está mais em teste.",
+      };
+    }
+
+    return { valid: true as const };
+  }
+
+  const chargeId = platformBillingChargeId(row);
+  if (!isUuid(chargeId)) {
+    return {
+      valid: false as const,
+      reason: "Mensagem B2B sem cobrança válida.",
+    };
+  }
+
+  const { data: charge, error } = await admin
+    .from("platform_billing_charges")
+    .select("id,status")
+    .eq("id", chargeId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!charge) {
+    return {
+      valid: false as const,
+      reason: "Cobrança B2B não existe mais.",
+    };
+  }
+
+  const allowedStatuses =
+    eventType === "platform_billing_payment_confirmed"
+      ? new Set(["confirmed", "received"])
+      : eventType === "platform_billing_overdue"
+        ? new Set(["overdue"])
+        : new Set(["pending"]);
+
+  if (!allowedStatuses.has(String(charge.status || ""))) {
+    return {
+      valid: false as const,
+      reason: `Mensagem B2B cancelada porque a cobrança está com status ${charge.status || "desconhecido"}.`,
+    };
+  }
+
+  return { valid: true as const };
+}
+
+function isPermanentQueueError(error: unknown) {
+  const value = isRecord(error) ? error : {};
+  const statusCode = Number(value.statusCode || 0);
+  const status = String(value.status || "");
+  const message = String(value.error || value.message || "");
+  return (
+    [400, 404].includes(statusCode) ||
+    ["invalid_phone", "phone_not_found", "empty_message", "empty_template"].includes(status) ||
+    /telefone|phone|modelo|mensagem vazia/i.test(message)
+  );
+}
+
+async function cancelQueueRow(admin: SupabaseClient, rowId: string, reason: string) {
+  const { error } = await admin
+    .from("whatsapp_message_queue")
+    .update({
+      status: "cancelled",
+      locked_at: null,
+      last_error: reason,
+    })
+    .eq("id", rowId)
+    .eq("status", "processing");
+  if (error) throw error;
+}
+
+async function failOrRetryQueueRow(
+  admin: SupabaseClient,
+  row: Record<string, unknown>,
+  errorValue: unknown,
+  renderedMessage: string | null,
+) {
+  const attempts = Math.max(1, Number(row.attempts || 1));
+  const maxAttempts = Math.max(1, Number(row.max_attempts || 5));
+  const permanent = isPermanentQueueError(errorValue);
+  const exhausted = attempts >= maxAttempts;
+  const retry = !permanent && !exhausted;
+  const errorMessage = isRecord(errorValue)
+    ? String(errorValue.error || errorValue.message || "Falha ao enviar mensagem.")
+    : errorValue instanceof Error
+      ? errorValue.message
+      : "Falha ao enviar mensagem.";
+
+  const { error } = await admin
+    .from("whatsapp_message_queue")
+    .update({
+      status: retry ? "pending" : "failed",
+      locked_at: null,
+      scheduled_for: retry ? retryDelayIso(attempts) : row.scheduled_for,
+      rendered_message: renderedMessage,
+      last_error: errorMessage.slice(0, 1000),
+    })
+    .eq("id", row.id)
+    .eq("status", "processing");
+  if (error) throw error;
+}
+
+async function processQueue(admin: SupabaseClient, limit: number, request: Request) {
+  await enqueueDueSubscriptionWhatsApp(admin);
+  await enqueueDuePlatformBillingWhatsApp(admin);
+  await recoverStaleQueueClaims(admin, Math.max(20, limit * 2));
+
+  const now = new Date().toISOString();
+  const { data: candidates, error } = await admin
+    .from("whatsapp_message_queue")
+    .select("*")
+    .eq("status", "pending")
+    .lte("scheduled_for", now)
+    .order("scheduled_for", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+
+  const summary = {
+    ok: true,
+    checked: candidates?.length ?? 0,
+    claimed: 0,
+    sent: 0,
+    cancelled: 0,
+    failed: 0,
+    retried: 0,
+    skipped: 0,
+  };
+  const appUrl = publicAppUrl(request);
+
+  for (const candidate of candidates ?? []) {
+    const attempts = Math.max(0, Number(candidate.attempts || 0));
+    const maxAttempts = Math.max(1, Number(candidate.max_attempts || 5));
+    if (attempts >= maxAttempts) {
+      await admin
+        .from("whatsapp_message_queue")
+        .update({
+          status: "failed",
+          locked_at: null,
+          last_error: "Quantidade mÃ¡xima de tentativas atingida.",
+        })
+        .eq("id", candidate.id)
+        .eq("status", "pending")
+        .eq("attempts", attempts);
+      summary.failed += 1;
+      continue;
+    }
+
+    const { data: row, error: claimError } = await admin
+      .from("whatsapp_message_queue")
+      .update({
+        status: "processing",
+        locked_at: new Date().toISOString(),
+        attempts: attempts + 1,
+        last_error: null,
+      })
+      .eq("id", candidate.id)
+      .eq("status", "pending")
+      .eq("attempts", attempts)
+      .select("*")
+      .maybeSingle();
+    if (claimError) throw claimError;
+    if (!row) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    summary.claimed += 1;
+    let renderedMessage: string | null = null;
+
+    try {
+      if (reminderExpired(row)) {
+        await cancelQueueRow(admin, row.id, "Lembrete expirou antes do envio.");
+        summary.cancelled += 1;
+        continue;
+      }
+
+      const subscriptionValidation = await validateSubscriptionQueueRow(admin, row);
+      if (!subscriptionValidation.valid) {
+        await cancelQueueRow(admin, row.id, subscriptionValidation.reason);
+        summary.cancelled += 1;
+        continue;
+      }
+
+      const platformBillingValidation = await validatePlatformBillingQueueRow(admin, row);
+      if (!platformBillingValidation.valid) {
+        await cancelQueueRow(admin, row.id, platformBillingValidation.reason);
+        summary.cancelled += 1;
+        continue;
+      }
+
+      const senderScope = String(row.sender_scope || "tenant");
+      let senderSessionId = String(row.session_id || row.tenant_id || "");
+
+      if (senderScope === "platform") {
+        const platformSettings = await ensurePlatformSettings(admin);
+        const platformEnabled = Boolean(platformSettings.whatsapp_enabled);
+        const platformStatus = String(
+          platformSettings.platform_whatsapp_connection_status || "not_connected",
+        );
+        senderSessionId = text(
+          platformSettings.platform_whatsapp_session_id || senderSessionId || "platform-owner",
+          180,
+        );
+
+        if (!platformEnabled) {
+          await cancelQueueRow(
+            admin,
+            row.id,
+            "Avisos WhatsApp da matriz estão desativados.",
+          );
+          summary.cancelled += 1;
+          continue;
+        }
+
+        if (platformStatus !== "connected") {
+          throw {
+            statusCode: 503,
+            error:
+              "WhatsApp Owner/Matriz não está conectado. A mensagem será reagendada para nova tentativa.",
+          };
+        }
+      } else {
+        const { data: settings, error: settingsError } = await admin
+        .from("tenant_whatsapp_settings")
+        .select("enabled, session_id")
+        .eq("tenant_id", row.tenant_id)
+        .maybeSingle();
+      if (settingsError) throw settingsError;
+      if (!settings?.enabled) {
+        await cancelQueueRow(
+          admin,
+          row.id,
+          "AutomaÃ§Ã£o do WhatsApp estÃ¡ desativada para esta loja.",
+        );
+        summary.cancelled += 1;
+        continue;
+      }
+
+        senderSessionId = String(settings.session_id || row.session_id || row.tenant_id);
+      }
+
+      renderedMessage = renderTemplate(row.template, row.payload, appUrl);
+      const result = await connectorRequest(
+        senderSessionId,
+        "/send",
+        {
+          method: "POST",
+          timeoutMs: 30_000,
+          body: {
+            phone: row.recipient_phone,
+            message: renderedMessage,
+            kind: row.event_type,
+            tenantId: row.tenant_id,
+            senderScope,
+            queueId: row.id,
+          },
+        },
+      );
+
+      if (!result.ok || result.sent === false) {
+        throw result;
+      }
+
+      const { error: updateError } = await admin
+        .from("whatsapp_message_queue")
+        .update({
+          status: "sent",
+          locked_at: null,
+          sent_at: new Date().toISOString(),
+          provider_message_id: text(result.messageId || result.id, 200) || null,
+          rendered_message: renderedMessage,
+          last_error: null,
+        })
+        .eq("id", row.id)
+        .eq("status", "processing");
+      if (updateError) throw updateError;
+
+      summary.sent += 1;
+    } catch (queueError) {
+      await failOrRetryQueueRow(admin, row, queueError, renderedMessage);
+      if (
+        isPermanentQueueError(queueError) ||
+        Number(row.attempts || 1) >= Number(row.max_attempts || 5)
+      ) {
+        summary.failed += 1;
+      } else {
+        summary.retried += 1;
+      }
+    }
+  }
+
+  return summary;
+}
+
 async function authorizeTenant(admin: SupabaseClient, userId: string, tenantId: string) {
   const { data: roles, error } = await admin
     .from("user_roles")
@@ -215,6 +897,17 @@ async function authorizeTenant(admin: SupabaseClient, userId: string, tenantId: 
       role.role === "super_admin" ||
       (role.tenant_id === tenantId && (role.role === "owner" || role.role === "staff")),
   );
+}
+
+async function authorizePlatform(admin: SupabaseClient, userId: string) {
+  const { data, error } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("role", "super_admin")
+    .limit(1);
+  if (error) throw error;
+  return Boolean(data?.length);
 }
 
 Deno.serve(async (request) => {
@@ -244,6 +937,175 @@ Deno.serve(async (request) => {
       );
     }
 
+    let decodedBody: unknown;
+    try {
+      decodedBody = await request.json();
+    } catch {
+      return json({ error: "Envie um corpo JSON vÃ¡lido." }, 400);
+    }
+    if (!isRecord(decodedBody)) {
+      return json({ error: "Formato da requisiÃ§Ã£o invÃ¡lido." }, 400);
+    }
+
+    const body = decodedBody as RequestBody;
+    const tenantId = text(body.tenantId, 80);
+    const actionValue = text(body.action, 40);
+    if (!actionValue) {
+      return json({ error: "AÃ§Ã£o nÃ£o informada." }, 400);
+    }
+    if (!connectorActions.has(actionValue as ConnectorAction)) {
+      return json({ error: "AÃ§Ã£o invÃ¡lida." }, 400);
+    }
+    const action = actionValue as ConnectorAction;
+
+    const admin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    if (action === "process-queue") {
+      const expectedSecret = Deno.env.get("LINKUP_WHATSAPP_CONNECTOR_SECRET") ?? "";
+      const requestSecret = request.headers.get("x-linkup-connector-secret") || body.secret;
+      if (!safeSecretMatch(requestSecret, expectedSecret)) {
+        return json({ error: "NÃ£o autorizado." }, 401);
+      }
+
+      const requestedLimit = Number(body.limit ?? 10);
+      const limit = Number.isFinite(requestedLimit)
+        ? Math.min(25, Math.max(1, Math.floor(requestedLimit)))
+        : 10;
+      return json(await processQueue(admin, limit, request));
+    }
+
+    if (body.scope === "platform") {
+      const authorization = request.headers.get("Authorization");
+      const token = authorization?.replace(/^Bearer\s+/i, "");
+      if (!authorization || !token) {
+        return json({ error: "Sessão não encontrada." }, 401);
+      }
+
+      const callerClient = createClient(supabaseUrl, publishableKey, {
+        global: { headers: { Authorization: authorization } },
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const { data: caller, error: callerError } = await callerClient.auth.getUser(token);
+      if (callerError || !caller.user) {
+        return json({ error: "Sessão inválida ou expirada." }, 401);
+      }
+
+      if (!(await authorizePlatform(admin, caller.user.id))) {
+        return json(
+          {
+            error: "Apenas o ADM Owner pode configurar o WhatsApp da matriz.",
+          },
+          403,
+        );
+      }
+
+      let platformSettings = await ensurePlatformSettings(admin);
+      const sessionId = text(
+        platformSettings.platform_whatsapp_session_id || "platform-owner",
+        180,
+      );
+
+      if (action === "save") {
+        const incoming = isRecord(body.settings) ? body.settings : {};
+        const phone = digits(incoming.platform_whatsapp_test_phone ?? incoming.testPhone);
+        const { data, error } = await admin
+          .from("platform_billing_settings")
+          .update({
+            platform_whatsapp_test_phone: phone || null,
+            updated_by: caller.user.id,
+          })
+          .eq("id", "global")
+          .select("*")
+          .single();
+        if (error) throw error;
+        return json({ ok: true, settings: data, sessionId });
+      }
+
+      if (action === "retry-message") {
+        return json({ error: "Reenvio manual é permitido apenas no WhatsApp da loja." }, 400);
+      }
+
+      let result: Record<string, unknown>;
+      let testAcknowledgement: Record<string, unknown> | null = null;
+      if (action === "status") {
+        result = await connectorRequest(sessionId, "/status");
+      } else if (action === "connect") {
+        result = await connectorRequest(sessionId, "/connect", { method: "POST" });
+      } else if (action === "disconnect") {
+        result = await connectorRequest(sessionId, "/session", { method: "DELETE" });
+      } else if (action === "send-test") {
+        const phone = digits(body.phone) || digits(platformSettings.platform_whatsapp_test_phone);
+        if (phone.length < 10) {
+          return json({ error: "Informe o WhatsApp que receberá o teste da matriz." }, 400);
+        }
+        result = await connectorRequest(sessionId, "/send", {
+          method: "POST",
+          body: {
+            phone,
+            message:
+              "Teste LinkUp Studio: o WhatsApp Owner/Matriz está conectado e pronto para avisar salões sobre cobranças, vencimentos e pagamentos.",
+            kind: "platform_owner_test",
+            senderScope: "platform",
+          },
+        });
+      } else if (action === "send-template-test") {
+        const phone = digits(body.phone);
+        const customMessage = text(normalizeWhatsAppFormatting(body.message), 3900);
+        const templateKey = text(body.templateKey, 120);
+        const requestId = text(body.requestId, 120);
+        if (phone.length < 10) {
+          return json({ error: "Informe um WhatsApp válido para receber o teste." }, 400);
+        }
+        if (!customMessage || !templateKey || !requestId) {
+          return json({ error: "O teste do modelo não recebeu todos os dados." }, 400);
+        }
+        result = await connectorRequest(sessionId, "/send", {
+          method: "POST",
+          body: {
+            phone,
+            message: customMessage,
+            kind: "platform_template_test",
+            templateKey,
+            requestId,
+            senderScope: "platform",
+          },
+        });
+        testAcknowledgement = {
+          mode: "template",
+          requestId,
+          templateKey,
+          messageLength: customMessage.length,
+        };
+      } else {
+        return json({ error: "Ação inválida para o WhatsApp da matriz." }, 400);
+      }
+
+      if (action !== "send-test" && action !== "send-template-test") {
+        await cachePlatformConnectorStatus(admin, result);
+      }
+      platformSettings = await ensurePlatformSettings(admin);
+
+      return json(
+        {
+          ...result,
+          settings: platformSettings,
+          sessionId,
+          testAcknowledgement,
+          ok: Boolean(result.ok),
+        },
+        result.configured === false ? 503 : 200,
+      );
+    }
+
+    if (!tenantId) {
+      return json({ error: "Empresa nÃ£o informada." }, 400);
+    }
+    if (!isUuid(tenantId)) {
+      return json({ error: "Identificador da empresa invÃ¡lido." }, 400);
+    }
+
     const authorization = request.headers.get("Authorization");
     const token = authorization?.replace(/^Bearer\s+/i, "");
     if (!authorization || !token) {
@@ -259,33 +1121,6 @@ Deno.serve(async (request) => {
       return json({ error: "Sessão inválida ou expirada." }, 401);
     }
 
-    let decodedBody: unknown;
-    try {
-      decodedBody = await request.json();
-    } catch {
-      return json({ error: "Envie um corpo JSON válido." }, 400);
-    }
-    if (!isRecord(decodedBody)) {
-      return json({ error: "Formato da requisição inválido." }, 400);
-    }
-
-    const body = decodedBody as RequestBody;
-    const tenantId = text(body.tenantId, 80);
-    const actionValue = text(body.action, 40);
-    if (!tenantId || !actionValue) {
-      return json({ error: "Empresa ou ação não informada." }, 400);
-    }
-    if (!isUuid(tenantId)) {
-      return json({ error: "Identificador da empresa inválido." }, 400);
-    }
-    if (!connectorActions.has(actionValue as ConnectorAction)) {
-      return json({ error: "Ação inválida." }, 400);
-    }
-    const action = actionValue as ConnectorAction;
-
-    const admin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
     if (!(await authorizeTenant(admin, caller.user.id, tenantId))) {
       return json(
         {
@@ -318,21 +1153,6 @@ Deno.serve(async (request) => {
           update[field] = incoming[field];
         }
       }
-      for (const field of editableTemplateFields) {
-        if (field in incoming) {
-          const template = text(incoming[field], 4000);
-          if (!template) {
-            return json(
-              {
-                error: "Os modelos de mensagem não podem ficar vazios.",
-              },
-              400,
-            );
-          }
-          update[field] = template;
-        }
-      }
-
       if ("responsible_whatsapp" in incoming) {
         const phone = digits(incoming.responsible_whatsapp);
         if (phone && phone.length < 10) {
@@ -400,6 +1220,7 @@ Deno.serve(async (request) => {
     }
 
     let result: Record<string, unknown>;
+    let testAcknowledgement: Record<string, unknown> | null = null;
     if (action === "status") {
       result = await connectorRequest(sessionId, "/status");
     } else if (action === "connect") {
@@ -425,11 +1246,46 @@ Deno.serve(async (request) => {
         method: "POST",
         body: {
           phone,
-          message: `Teste LinkUp Salão: o WhatsApp da ${tenant.name} está conectado e pronto para avisar clientes e profissionais.`,
+          message: `Teste LinkUp Studio: o WhatsApp da ${tenant.name} está conectado e pronto para avisar clientes e profissionais.`,
           kind: "salon_test",
           tenantId,
         },
       });
+    } else if (action === "send-template-test") {
+      const phone = digits(body.phone);
+      if (phone.length < 10) {
+        return json({ error: "Informe um WhatsApp válido para receber o teste." }, 400);
+      }
+
+      const customMessage = text(normalizeWhatsAppFormatting(body.message), 3900);
+      const templateKey = text(body.templateKey, 120);
+      const requestId = text(body.requestId, 120);
+      if (!customMessage || !templateKey || !requestId) {
+        return json(
+          {
+            error:
+              "O teste do modelo não recebeu todos os dados. Recarregue a tela e tente novamente.",
+          },
+          400,
+        );
+      }
+      result = await connectorRequest(sessionId, "/send", {
+        method: "POST",
+        body: {
+          phone,
+          message: customMessage,
+          kind: "matrix_template_test",
+          templateKey,
+          tenantId,
+          requestId,
+        },
+      });
+      testAcknowledgement = {
+        mode: "template",
+        requestId,
+        templateKey,
+        messageLength: customMessage.length,
+      };
     } else {
       return json({ error: "Ação inválida." }, 400);
     }
@@ -452,6 +1308,7 @@ Deno.serve(async (request) => {
         ...result,
         settings,
         sessionId,
+        testAcknowledgement,
         ok: Boolean(result.ok),
       },
       result.configured === false ? 503 : 200,

@@ -6,12 +6,13 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { authUserQueryKey, fetchAuthUser } from "@/lib/auth-cache";
 
 export function AppHeader() {
   const nav = useNavigate();
@@ -19,40 +20,45 @@ export function AppHeader() {
   const { data: tenant } = useCurrentTenant();
   const { data: role } = useUserRole(tenant?.id);
   const { toggleSidebar } = useSidebar();
-  
-  const [email, setEmail] = useState<string | null>(null);
-  const [fullName, setFullName] = useState<string | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   const [photoOpen, setPhotoOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [user, setUser] = useState<any>(null);
+
+  const { data: user } = useQuery({
+    queryKey: authUserQueryKey,
+    queryFn: fetchAuthUser,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: professionalPhotoUrl } = useQuery({
+    queryKey: ["header-professional-photo", user?.id],
+    enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("professionals")
+        .select("photo_url")
+        .eq("auth_user_id", user!.id)
+        .maybeSingle();
+      return data?.photo_url ?? null;
+    },
+  });
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-      setEmail(data.user?.email ?? null);
-      setFullName((data.user?.user_metadata as any)?.full_name ?? null);
-      if (data.user) {
-        // Query professional photo url
-        supabase
-          .from("professionals")
-          .select("photo_url")
-          .eq("auth_user_id", data.user.id)
-          .maybeSingle()
-          .then(({ data: pro }) => {
-            if (pro?.photo_url) {
-              setPreviewUrl(pro.photo_url);
-              setAvatarUrl(pro.photo_url);
-            }
-          });
-      }
-    });
-  }, [photoOpen]);
+    return () => {
+      if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
-  const initials = (fullName ?? email ?? "U").split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
+  const email = user?.email ?? null;
+  const fullName = (user?.user_metadata as any)?.full_name ?? null;
+  const savedAvatarUrl =
+    professionalPhotoUrl ?? ((user?.user_metadata as any)?.avatar_url as string | undefined) ?? null;
+  const avatarUrl = previewUrl ?? savedAvatarUrl;
+
+  const initials = (fullName ?? email ?? "U").split(" ").map((w: string) => w[0]).join("").slice(0,2).toUpperCase();
 
   const roleLabel = role === "super_admin" 
     ? "SaaS Admin" 
@@ -110,10 +116,11 @@ export function AppHeader() {
         data: { avatar_url: photoUrl }
       });
 
-      setAvatarUrl(photoUrl);
       toast.success("Foto de perfil atualizada!");
       setPhotoOpen(false);
       setFile(null);
+      setPreviewUrl(null);
+      qc.setQueryData(["header-professional-photo", user.id], photoUrl);
       
       qc.invalidateQueries({ queryKey: ["pros"] });
       qc.invalidateQueries({ queryKey: ["pros-all"] });
@@ -173,8 +180,8 @@ export function AppHeader() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="flex flex-col items-center gap-4">
-              {previewUrl ? (
-                <img src={previewUrl} className="h-32 w-32 rounded-full object-cover border-2 border-primary shadow-md" alt="Preview" />
+              {avatarUrl ? (
+                <img src={avatarUrl} className="h-32 w-32 rounded-full object-cover border-2 border-primary shadow-md" alt="Preview" />
               ) : (
                 <div className="h-32 w-32 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-sm">Sem foto</div>
               )}

@@ -3,32 +3,21 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
-import { useCurrentTenant } from "@/hooks/use-tenant";
+import { TenantAccessScreen } from "@/components/tenant-access-screen";
+import { getTenantAccess, useCurrentTenant, useIsSuperAdmin } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { toast } from "sonner";
+import { useNavigate } from "@tanstack/react-router";
+import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app")({
-  beforeLoad: async () => {
-    const { data: userResult } = await supabase.auth.getUser();
-    if (!userResult.user) return;
+  beforeLoad: async ({ context }) => {
+    const access = await getTenantAccess(context.queryClient);
+    const hasTenant = Boolean(access.activeTenantId || access.roles.some(({ tenant_id }) => tenant_id));
 
-    const [{ data: roles }, { data: profile }] = await Promise.all([
-      supabase.from("user_roles").select("role, tenant_id").eq("user_id", userResult.user.id),
-      supabase
-        .from("profiles")
-        .select("active_tenant_id")
-        .eq("id", userResult.user.id)
-        .maybeSingle(),
-    ]);
-
-    const isSuperAdmin = roles?.some(({ role }) => role === "super_admin");
-    const hasTenant = Boolean(
-      profile?.active_tenant_id || roles?.some(({ tenant_id }) => tenant_id),
-    );
-
-    if (isSuperAdmin && !hasTenant) {
+    if (access.isSuperAdmin && !hasTenant) {
       throw redirect({ to: "/saas" });
     }
   },
@@ -36,12 +25,17 @@ export const Route = createFileRoute("/_authenticated/app")({
 });
 
 function AppLayout() {
-  const { data: tenant } = useCurrentTenant();
+  const tenantQuery = useCurrentTenant();
+  const superAdminQuery = useIsSuperAdmin();
+  const tenant = tenantQuery.data;
   const tenantId = tenant?.id;
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const isSuperAdmin = superAdminQuery.data === true;
+  const tenantBlocked = !isSuperAdmin && tenant?.status === "blocked";
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || tenantBlocked) return;
 
     const channel = supabase
       .channel(`new-appointments-${tenantId}`)
@@ -78,7 +72,47 @@ function AppLayout() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [tenantId, qc]);
+  }, [tenantBlocked, tenantId, qc]);
+
+  async function signOut() {
+    await qc.cancelQueries();
+    qc.clear();
+    await supabase.auth.signOut();
+    navigate({ to: "/auth", search: { redirect: "/app" }, replace: true });
+  }
+
+  if (tenantQuery.isLoading || superAdminQuery.isLoading) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-white grid place-items-center">
+        <div className="flex items-center gap-3 text-sm text-slate-300">
+          <Loader2 className="h-5 w-5 animate-spin text-amber-400" />
+          Validando acesso ao salão…
+        </div>
+      </main>
+    );
+  }
+
+  if (tenantQuery.isError || superAdminQuery.isError) {
+    return (
+      <TenantAccessScreen
+        error
+        isRefreshing={tenantQuery.isFetching}
+        onRefresh={() => tenantQuery.refetch()}
+        onSignOut={signOut}
+      />
+    );
+  }
+
+  if (tenantBlocked) {
+    return (
+      <TenantAccessScreen
+        tenant={tenant}
+        isRefreshing={tenantQuery.isFetching}
+        onRefresh={() => tenantQuery.refetch()}
+        onSignOut={signOut}
+      />
+    );
+  }
 
   return (
     <SidebarProvider>

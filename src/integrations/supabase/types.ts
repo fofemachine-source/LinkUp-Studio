@@ -514,6 +514,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "commanda_items_commanda_tenant_fk"
+            columns: ["commanda_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "commandas"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
             foreignKeyName: "commanda_items_professional_id_fkey"
             columns: ["professional_id"]
             isOneToOne: false
@@ -564,6 +571,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "commandas"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commanda_payments_commanda_tenant_fk"
+            columns: ["commanda_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "commandas"
+            referencedColumns: ["id", "tenant_id"]
           },
           {
             foreignKeyName: "commanda_payments_tenant_id_fkey"
@@ -1501,6 +1515,679 @@ export type Database = {
           },
         ]
       }
+      platform_billing_audit_log: {
+        Row: {
+          action: string
+          actor_user_id: string | null
+          after_data: Json | null
+          before_data: Json | null
+          charge_id: string | null
+          contract_id: string | null
+          created_at: string
+          entity_id: string | null
+          entity_type: string
+          id: string
+          provider_event_id: string | null
+          source: string
+          tenant_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_user_id?: string | null
+          after_data?: Json | null
+          before_data?: Json | null
+          charge_id?: string | null
+          contract_id?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          provider_event_id?: string | null
+          source?: string
+          tenant_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string | null
+          after_data?: Json | null
+          before_data?: Json | null
+          charge_id?: string | null
+          contract_id?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          provider_event_id?: string | null
+          source?: string
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_audit_log_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_audit_log_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_audit_log_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_charges: {
+        Row: {
+          access_applied_at: string | null
+          access_reversed_at: string | null
+          amount: number
+          bank_slip_url: string | null
+          billing_type: string
+          confirmed_at: string | null
+          contract_id: string
+          coverage_end: string
+          coverage_start: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          due_date: string
+          environment: string
+          error_message: string | null
+          external_reference: string
+          id: string
+          idempotency_key: string
+          invoice_url: string | null
+          last_provider_event_at: string | null
+          last_provider_event_id: string | null
+          last_synced_at: string | null
+          plan_id: string
+          provider: string
+          provider_customer_id: string | null
+          provider_payment_id: string | null
+          provider_status: string | null
+          received_at: string | null
+          refunded_at: string | null
+          source: string
+          status: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          access_applied_at?: string | null
+          access_reversed_at?: string | null
+          amount: number
+          bank_slip_url?: string | null
+          billing_type?: string
+          confirmed_at?: string | null
+          contract_id: string
+          coverage_end: string
+          coverage_start: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date: string
+          environment: string
+          error_message?: string | null
+          external_reference: string
+          id?: string
+          idempotency_key: string
+          invoice_url?: string | null
+          last_provider_event_at?: string | null
+          last_provider_event_id?: string | null
+          last_synced_at?: string | null
+          plan_id: string
+          provider?: string
+          provider_customer_id?: string | null
+          provider_payment_id?: string | null
+          provider_status?: string | null
+          received_at?: string | null
+          refunded_at?: string | null
+          source?: string
+          status?: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          access_applied_at?: string | null
+          access_reversed_at?: string | null
+          amount?: number
+          bank_slip_url?: string | null
+          billing_type?: string
+          confirmed_at?: string | null
+          contract_id?: string
+          coverage_end?: string
+          coverage_start?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date?: string
+          environment?: string
+          error_message?: string | null
+          external_reference?: string
+          id?: string
+          idempotency_key?: string
+          invoice_url?: string | null
+          last_provider_event_at?: string | null
+          last_provider_event_id?: string | null
+          last_synced_at?: string | null
+          plan_id?: string
+          provider?: string
+          provider_customer_id?: string | null
+          provider_payment_id?: string | null
+          provider_status?: string | null
+          received_at?: string | null
+          refunded_at?: string | null
+          source?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_charges_contract_tenant_fk"
+            columns: ["contract_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_contracts"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "platform_billing_charges_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_charges_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_contracts: {
+        Row: {
+          amount_snapshot: number
+          auto_renew: boolean
+          billing_type: string
+          cancel_at_period_end: boolean
+          cancelled_at: string | null
+          created_at: string
+          created_by: string | null
+          current_period_end: string | null
+          current_period_start: string | null
+          due_day: number
+          id: string
+          interval_months_snapshot: number
+          last_paid_at: string | null
+          next_due_date: string | null
+          past_due_since: string | null
+          plan_id: string
+          starts_on: string
+          status: string
+          suspended_at: string | null
+          tenant_id: string
+          trial_ends_on: string | null
+          trial_starts_on: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          amount_snapshot: number
+          auto_renew?: boolean
+          billing_type?: string
+          cancel_at_period_end?: boolean
+          cancelled_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
+          due_day?: number
+          id?: string
+          interval_months_snapshot: number
+          last_paid_at?: string | null
+          next_due_date?: string | null
+          past_due_since?: string | null
+          plan_id: string
+          starts_on?: string
+          status?: string
+          suspended_at?: string | null
+          tenant_id: string
+          trial_ends_on?: string | null
+          trial_starts_on?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          amount_snapshot?: number
+          auto_renew?: boolean
+          billing_type?: string
+          cancel_at_period_end?: boolean
+          cancelled_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
+          due_day?: number
+          id?: string
+          interval_months_snapshot?: number
+          last_paid_at?: string | null
+          next_due_date?: string | null
+          past_due_since?: string | null
+          plan_id?: string
+          starts_on?: string
+          status?: string
+          suspended_at?: string | null
+          tenant_id?: string
+          trial_ends_on?: string | null
+          trial_starts_on?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_contracts_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_contracts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_plans: {
+        Row: {
+          active: boolean
+          amount: number
+          code: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          interval_months: number
+          name: string
+          sort_order: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          active?: boolean
+          amount: number
+          code: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          interval_months?: number
+          name: string
+          sort_order?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          active?: boolean
+          amount?: number
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          interval_months?: number
+          name?: string
+          sort_order?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      platform_billing_provider_operations: {
+        Row: {
+          attempts: number
+          charge_id: string | null
+          completed_at: string | null
+          contract_id: string | null
+          created_at: string
+          environment: string
+          id: string
+          last_error: string | null
+          operation_key: string
+          operation_type: string
+          provider: string
+          provider_resource_id: string | null
+          request_fingerprint: string | null
+          request_payload: Json
+          response_payload: Json
+          started_at: string | null
+          status: string
+          tenant_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          charge_id?: string | null
+          completed_at?: string | null
+          contract_id?: string | null
+          created_at?: string
+          environment: string
+          id?: string
+          last_error?: string | null
+          operation_key: string
+          operation_type: string
+          provider?: string
+          provider_resource_id?: string | null
+          request_fingerprint?: string | null
+          request_payload?: Json
+          response_payload?: Json
+          started_at?: string | null
+          status?: string
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          charge_id?: string | null
+          completed_at?: string | null
+          contract_id?: string | null
+          created_at?: string
+          environment?: string
+          id?: string
+          last_error?: string | null
+          operation_key?: string
+          operation_type?: string
+          provider?: string
+          provider_resource_id?: string | null
+          request_fingerprint?: string | null
+          request_payload?: Json
+          response_payload?: Json
+          started_at?: string | null
+          status?: string
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_provider_operations_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_provider_operations_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_provider_operations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_settings: {
+        Row: {
+          auto_suspend: boolean
+          created_at: string
+          default_billing_type: string
+          discount_due_days: number
+          discount_percentage: number
+          enabled: boolean
+          environment: string
+          fine_percentage: number
+          grace_days: number
+          id: string
+          interest_percentage: number
+          issue_days_before: number
+          notification_disabled: boolean
+          platform_notification_time: string
+          platform_overdue_days_after: number[]
+          platform_overdue_enabled: boolean
+          platform_overdue_template: string
+          platform_payment_confirmation_enabled: boolean
+          platform_payment_confirmation_template: string
+          platform_payment_reminder_days_before: number[]
+          platform_payment_reminder_enabled: boolean
+          platform_payment_reminder_template: string
+          platform_trial_reminder_days_before: number[]
+          platform_trial_reminder_enabled: boolean
+          platform_trial_reminder_template: string
+          platform_whatsapp_connected_phone: string | null
+          platform_whatsapp_connection_status: string
+          platform_whatsapp_last_connection_error: string | null
+          platform_whatsapp_last_status_at: string | null
+          platform_whatsapp_session_id: string
+          platform_whatsapp_test_phone: string | null
+          provider: string
+          updated_at: string
+          updated_by: string | null
+          webhook_environment: string | null
+          webhook_id: string | null
+          webhook_last_synced_at: string | null
+          webhook_status: string
+          whatsapp_enabled: boolean
+          whatsapp_sender_tenant_id: string | null
+        }
+        Insert: {
+          auto_suspend?: boolean
+          created_at?: string
+          default_billing_type?: string
+          discount_due_days?: number
+          discount_percentage?: number
+          enabled?: boolean
+          environment?: string
+          fine_percentage?: number
+          grace_days?: number
+          id?: string
+          interest_percentage?: number
+          issue_days_before?: number
+          notification_disabled?: boolean
+          platform_notification_time?: string
+          platform_overdue_days_after?: number[]
+          platform_overdue_enabled?: boolean
+          platform_overdue_template?: string
+          platform_payment_confirmation_enabled?: boolean
+          platform_payment_confirmation_template?: string
+          platform_payment_reminder_days_before?: number[]
+          platform_payment_reminder_enabled?: boolean
+          platform_payment_reminder_template?: string
+          platform_trial_reminder_days_before?: number[]
+          platform_trial_reminder_enabled?: boolean
+          platform_trial_reminder_template?: string
+          platform_whatsapp_connected_phone?: string | null
+          platform_whatsapp_connection_status?: string
+          platform_whatsapp_last_connection_error?: string | null
+          platform_whatsapp_last_status_at?: string | null
+          platform_whatsapp_session_id?: string
+          platform_whatsapp_test_phone?: string | null
+          provider?: string
+          updated_at?: string
+          updated_by?: string | null
+          webhook_environment?: string | null
+          webhook_id?: string | null
+          webhook_last_synced_at?: string | null
+          webhook_status?: string
+          whatsapp_enabled?: boolean
+          whatsapp_sender_tenant_id?: string | null
+        }
+        Update: {
+          auto_suspend?: boolean
+          created_at?: string
+          default_billing_type?: string
+          discount_due_days?: number
+          discount_percentage?: number
+          enabled?: boolean
+          environment?: string
+          fine_percentage?: number
+          grace_days?: number
+          id?: string
+          interest_percentage?: number
+          issue_days_before?: number
+          notification_disabled?: boolean
+          platform_notification_time?: string
+          platform_overdue_days_after?: number[]
+          platform_overdue_enabled?: boolean
+          platform_overdue_template?: string
+          platform_payment_confirmation_enabled?: boolean
+          platform_payment_confirmation_template?: string
+          platform_payment_reminder_days_before?: number[]
+          platform_payment_reminder_enabled?: boolean
+          platform_payment_reminder_template?: string
+          platform_trial_reminder_days_before?: number[]
+          platform_trial_reminder_enabled?: boolean
+          platform_trial_reminder_template?: string
+          platform_whatsapp_connected_phone?: string | null
+          platform_whatsapp_connection_status?: string
+          platform_whatsapp_last_connection_error?: string | null
+          platform_whatsapp_last_status_at?: string | null
+          platform_whatsapp_session_id?: string
+          platform_whatsapp_test_phone?: string | null
+          provider?: string
+          updated_at?: string
+          updated_by?: string | null
+          webhook_environment?: string | null
+          webhook_id?: string | null
+          webhook_last_synced_at?: string | null
+          webhook_status?: string
+          whatsapp_enabled?: boolean
+          whatsapp_sender_tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_settings_whatsapp_sender_fk"
+            columns: ["whatsapp_sender_tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_webhook_events: {
+        Row: {
+          attempts: number
+          available_at: string
+          charge_id: string | null
+          claimed_at: string | null
+          claimed_by: string | null
+          environment: string
+          event_type: string
+          external_reference: string | null
+          id: string
+          last_error: string | null
+          payload: Json
+          processed_at: string | null
+          processing_status: string
+          provider: string
+          provider_created_at: string | null
+          provider_event_id: string
+          provider_payment_id: string | null
+          received_at: string
+        }
+        Insert: {
+          attempts?: number
+          available_at?: string
+          charge_id?: string | null
+          claimed_at?: string | null
+          claimed_by?: string | null
+          environment: string
+          event_type: string
+          external_reference?: string | null
+          id?: string
+          last_error?: string | null
+          payload?: Json
+          processed_at?: string | null
+          processing_status?: string
+          provider?: string
+          provider_created_at?: string | null
+          provider_event_id: string
+          provider_payment_id?: string | null
+          received_at?: string
+        }
+        Update: {
+          attempts?: number
+          available_at?: string
+          charge_id?: string | null
+          claimed_at?: string | null
+          claimed_by?: string | null
+          environment?: string
+          event_type?: string
+          external_reference?: string | null
+          id?: string
+          last_error?: string | null
+          payload?: Json
+          processed_at?: string | null
+          processing_status?: string
+          provider?: string
+          provider_created_at?: string | null
+          provider_event_id?: string
+          provider_payment_id?: string | null
+          received_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_webhook_events_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_charges"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_worker_runs: {
+        Row: {
+          action: string
+          completed_at: string | null
+          environment: string
+          error_message: string | null
+          id: string
+          started_at: string
+          status: string
+          summary: Json
+        }
+        Insert: {
+          action?: string
+          completed_at?: string | null
+          environment: string
+          error_message?: string | null
+          id?: string
+          started_at?: string
+          status?: string
+          summary?: Json
+        }
+        Update: {
+          action?: string
+          completed_at?: string | null
+          environment?: string
+          error_message?: string | null
+          id?: string
+          started_at?: string
+          status?: string
+          summary?: Json
+        }
+        Relationships: []
+      }
       products: {
         Row: {
           active: boolean | null
@@ -2274,6 +2961,101 @@ export type Database = {
           },
         ]
       }
+      tenant_billing_provider_customers: {
+        Row: {
+          address: string | null
+          address_number: string | null
+          city: string | null
+          complement: string | null
+          cpf_cnpj: string | null
+          created_at: string
+          created_by: string | null
+          email: string | null
+          environment: string
+          external_reference: string
+          id: string
+          last_error: string | null
+          last_synced_at: string | null
+          legal_name: string
+          notification_disabled: boolean
+          phone: string | null
+          postal_code: string | null
+          preferred_billing_type: string
+          provider: string
+          provider_customer_id: string | null
+          province: string | null
+          state: string | null
+          sync_status: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          address?: string | null
+          address_number?: string | null
+          city?: string | null
+          complement?: string | null
+          cpf_cnpj?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          environment: string
+          external_reference: string
+          id?: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          legal_name: string
+          notification_disabled?: boolean
+          phone?: string | null
+          postal_code?: string | null
+          preferred_billing_type?: string
+          provider?: string
+          provider_customer_id?: string | null
+          province?: string | null
+          state?: string | null
+          sync_status?: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          address?: string | null
+          address_number?: string | null
+          city?: string | null
+          complement?: string | null
+          cpf_cnpj?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          environment?: string
+          external_reference?: string
+          id?: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          legal_name?: string
+          notification_disabled?: boolean
+          phone?: string | null
+          postal_code?: string | null
+          preferred_billing_type?: string
+          provider?: string
+          provider_customer_id?: string | null
+          province?: string | null
+          state?: string | null
+          sync_status?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_billing_provider_customers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenant_booking_branding: {
         Row: {
           background_asset_id: string | null
@@ -2453,6 +3235,7 @@ export type Database = {
           enabled: boolean
           last_connection_error: string | null
           last_status_at: string | null
+          message_templates_source: string
           notify_client_booking: boolean
           notify_client_cancellation: boolean
           notify_client_registration: boolean
@@ -2467,6 +3250,15 @@ export type Database = {
           reminder_minutes_before: number
           responsible_whatsapp: string | null
           session_id: string
+          subscription_notification_time: string
+          subscription_overdue_days_after: number[]
+          subscription_overdue_enabled: boolean
+          subscription_overdue_template: string
+          subscription_payment_confirmation_enabled: boolean
+          subscription_payment_confirmation_template: string
+          subscription_payment_reminder_days_before: number[]
+          subscription_payment_reminder_enabled: boolean
+          subscription_payment_reminder_template: string
           tenant_id: string
           updated_at: string
         }
@@ -2482,6 +3274,7 @@ export type Database = {
           enabled?: boolean
           last_connection_error?: string | null
           last_status_at?: string | null
+          message_templates_source?: string
           notify_client_booking?: boolean
           notify_client_cancellation?: boolean
           notify_client_registration?: boolean
@@ -2496,6 +3289,15 @@ export type Database = {
           reminder_minutes_before?: number
           responsible_whatsapp?: string | null
           session_id: string
+          subscription_notification_time?: string
+          subscription_overdue_days_after?: number[]
+          subscription_overdue_enabled?: boolean
+          subscription_overdue_template?: string
+          subscription_payment_confirmation_enabled?: boolean
+          subscription_payment_confirmation_template?: string
+          subscription_payment_reminder_days_before?: number[]
+          subscription_payment_reminder_enabled?: boolean
+          subscription_payment_reminder_template?: string
           tenant_id: string
           updated_at?: string
         }
@@ -2511,6 +3313,7 @@ export type Database = {
           enabled?: boolean
           last_connection_error?: string | null
           last_status_at?: string | null
+          message_templates_source?: string
           notify_client_booking?: boolean
           notify_client_cancellation?: boolean
           notify_client_registration?: boolean
@@ -2525,6 +3328,15 @@ export type Database = {
           reminder_minutes_before?: number
           responsible_whatsapp?: string | null
           session_id?: string
+          subscription_notification_time?: string
+          subscription_overdue_days_after?: number[]
+          subscription_overdue_enabled?: boolean
+          subscription_overdue_template?: string
+          subscription_payment_confirmation_enabled?: boolean
+          subscription_payment_confirmation_template?: string
+          subscription_payment_reminder_days_before?: number[]
+          subscription_payment_reminder_enabled?: boolean
+          subscription_payment_reminder_template?: string
           tenant_id?: string
           updated_at?: string
         }
@@ -2542,6 +3354,7 @@ export type Database = {
         Row: {
           address: string | null
           banner_url: string | null
+          billing_blocked_at: string | null
           city: string | null
           created_at: string
           id: string
@@ -2556,12 +3369,14 @@ export type Database = {
           slug: string
           state: string | null
           status: string | null
+          status_reason: string | null
           subtitle: string | null
           whatsapp: string | null
         }
         Insert: {
           address?: string | null
           banner_url?: string | null
+          billing_blocked_at?: string | null
           city?: string | null
           created_at?: string
           id?: string
@@ -2576,12 +3391,14 @@ export type Database = {
           slug: string
           state?: string | null
           status?: string | null
+          status_reason?: string | null
           subtitle?: string | null
           whatsapp?: string | null
         }
         Update: {
           address?: string | null
           banner_url?: string | null
+          billing_blocked_at?: string | null
           city?: string | null
           created_at?: string
           id?: string
@@ -2596,6 +3413,7 @@ export type Database = {
           slug?: string
           state?: string | null
           status?: string | null
+          status_reason?: string | null
           subtitle?: string | null
           whatsapp?: string | null
         }
@@ -2633,6 +3451,75 @@ export type Database = {
           },
         ]
       }
+      whatsapp_global_templates: {
+        Row: {
+          client_booking_template: string
+          client_cancellation_template: string
+          client_registration_template: string
+          client_reminder_template: string
+          client_reschedule_template: string
+          created_at: string
+          id: string
+          professional_booking_template: string
+          professional_cancellation_template: string
+          professional_reschedule_template: string
+          subscription_notification_time: string
+          subscription_overdue_days_after: number[]
+          subscription_overdue_enabled: boolean
+          subscription_overdue_template: string
+          subscription_payment_confirmation_enabled: boolean
+          subscription_payment_confirmation_template: string
+          subscription_payment_reminder_days_before: number[]
+          subscription_payment_reminder_enabled: boolean
+          subscription_payment_reminder_template: string
+          updated_at: string
+        }
+        Insert: {
+          client_booking_template?: string
+          client_cancellation_template?: string
+          client_registration_template?: string
+          client_reminder_template?: string
+          client_reschedule_template?: string
+          created_at?: string
+          id?: string
+          professional_booking_template?: string
+          professional_cancellation_template?: string
+          professional_reschedule_template?: string
+          subscription_notification_time?: string
+          subscription_overdue_days_after?: number[]
+          subscription_overdue_enabled?: boolean
+          subscription_overdue_template?: string
+          subscription_payment_confirmation_enabled?: boolean
+          subscription_payment_confirmation_template?: string
+          subscription_payment_reminder_days_before?: number[]
+          subscription_payment_reminder_enabled?: boolean
+          subscription_payment_reminder_template?: string
+          updated_at?: string
+        }
+        Update: {
+          client_booking_template?: string
+          client_cancellation_template?: string
+          client_registration_template?: string
+          client_reminder_template?: string
+          client_reschedule_template?: string
+          created_at?: string
+          id?: string
+          professional_booking_template?: string
+          professional_cancellation_template?: string
+          professional_reschedule_template?: string
+          subscription_notification_time?: string
+          subscription_overdue_days_after?: number[]
+          subscription_overdue_enabled?: boolean
+          subscription_overdue_template?: string
+          subscription_payment_confirmation_enabled?: boolean
+          subscription_payment_confirmation_template?: string
+          subscription_payment_reminder_days_before?: number[]
+          subscription_payment_reminder_enabled?: boolean
+          subscription_payment_reminder_template?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       whatsapp_message_queue: {
         Row: {
           appointment_id: string | null
@@ -2645,17 +3532,21 @@ export type Database = {
           locked_at: string | null
           max_attempts: number
           payload: Json
+          platform_billing_charge_id: string | null
+          platform_billing_contract_id: string | null
           provider_message_id: string | null
           recipient_kind: string
           recipient_name: string | null
           recipient_phone: string
           rendered_message: string | null
           scheduled_for: string
+          sender_scope: string
           sent_at: string | null
-          session_id: string
+          session_id: string | null
           status: string
+          subscription_charge_id: string | null
           template: string
-          tenant_id: string
+          tenant_id: string | null
           updated_at: string
         }
         Insert: {
@@ -2669,17 +3560,21 @@ export type Database = {
           locked_at?: string | null
           max_attempts?: number
           payload?: Json
+          platform_billing_charge_id?: string | null
+          platform_billing_contract_id?: string | null
           provider_message_id?: string | null
           recipient_kind: string
           recipient_name?: string | null
           recipient_phone: string
           rendered_message?: string | null
           scheduled_for?: string
+          sender_scope?: string
           sent_at?: string | null
-          session_id: string
+          session_id?: string | null
           status?: string
+          subscription_charge_id?: string | null
           template: string
-          tenant_id: string
+          tenant_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -2693,17 +3588,21 @@ export type Database = {
           locked_at?: string | null
           max_attempts?: number
           payload?: Json
+          platform_billing_charge_id?: string | null
+          platform_billing_contract_id?: string | null
           provider_message_id?: string | null
           recipient_kind?: string
           recipient_name?: string | null
           recipient_phone?: string
           rendered_message?: string | null
           scheduled_for?: string
+          sender_scope?: string
           sent_at?: string | null
-          session_id?: string
+          session_id?: string | null
           status?: string
+          subscription_charge_id?: string | null
           template?: string
-          tenant_id?: string
+          tenant_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -2721,6 +3620,27 @@ export type Database = {
             referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "whatsapp_queue_platform_billing_charge_fk"
+            columns: ["platform_billing_charge_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_queue_platform_billing_contract_fk"
+            columns: ["platform_billing_contract_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_queue_subscription_charge_tenant_fk"
+            columns: ["subscription_charge_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_charges"
+            referencedColumns: ["id", "tenant_id"]
+          },
         ]
       }
     }
@@ -2728,8 +3648,53 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_platform_billing_charge_state: {
+        Args: {
+          p_bank_slip_url?: string
+          p_charge_id: string
+          p_event_row_id?: string
+          p_event_type: string
+          p_invoice_url?: string
+          p_provider_event_at?: string
+          p_provider_event_id: string
+          p_provider_payment_id?: string
+          p_source?: string
+        }
+        Returns: Json
+      }
+      apply_platform_billing_suspensions: {
+        Args: { p_as_of?: string }
+        Returns: number
+      }
+      begin_platform_billing_provider_operation: {
+        Args: {
+          p_charge_id: string
+          p_contract_id: string
+          p_environment: string
+          p_operation_key: string
+          p_operation_type: string
+          p_request_fingerprint: string
+          p_request_payload: Json
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
       cancel_payable: {
         Args: { p_movement_id: string; p_reason: string; p_tenant_id: string }
+        Returns: Json
+      }
+      claim_platform_billing_webhook_events: {
+        Args: { p_environment: string; p_limit?: number; p_worker_id?: string }
+        Returns: Json
+      }
+      complete_platform_billing_provider_operation: {
+        Args: {
+          p_error: string
+          p_operation_id: string
+          p_provider_resource_id: string
+          p_response_payload: Json
+          p_status: string
+        }
         Returns: Json
       }
       consume_booking_customer_rate_limit: {
@@ -2762,6 +3727,16 @@ export type Database = {
           p_payment_method: string
           p_supplier_name: string
           p_tenant_id: string
+        }
+        Returns: Json
+      }
+      enqueue_due_platform_billing_whatsapp: { Args: never; Returns: Json }
+      enqueue_due_subscription_whatsapp: { Args: never; Returns: Json }
+      fail_platform_billing_webhook_event: {
+        Args: {
+          p_error: string
+          p_event_row_id: string
+          p_retry_after_seconds?: number
         }
         Returns: Json
       }
@@ -2799,6 +3774,23 @@ export type Database = {
       generate_commissions_for_commanda: {
         Args: { p_commanda_id: string; p_tenant_id: string }
         Returns: number
+      }
+      get_platform_billing_worker_health: { Args: never; Returns: Json }
+      ingest_platform_billing_webhook_event: {
+        Args: {
+          p_environment: string
+          p_event_id: string
+          p_event_type: string
+          p_external_reference: string
+          p_payload: Json
+          p_payment_id: string
+          p_provider_created_at: string
+        }
+        Returns: Json
+      }
+      process_platform_billing_webhook_event: {
+        Args: { p_event_row_id: string }
+        Returns: Json
       }
       record_booking_customer_login_failure: {
         Args: { p_cpf_hash: string; p_tenant_id: string }

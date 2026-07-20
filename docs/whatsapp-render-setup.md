@@ -6,9 +6,27 @@ O módulo usa uma única conexão de WhatsApp por loja:
 2. A Edge Function valida o usuário e a loja.
 3. O conector Node/Baileys fica ativo no Render.
 4. As sessões são gravadas em um disco persistente.
-5. Agendamentos, remarcações, cancelamentos e lembretes entram em
+5. Cadastros de clientes, agendamentos, remarcações, cancelamentos e lembretes entram em
    `whatsapp_message_queue`.
-6. O conector processa a fila sem bloquear a criação do agendamento.
+6. Um Job do Lovable/Supabase chama a Edge Function para processar a fila sem
+   bloquear a criação do agendamento.
+
+## Modo recomendado para reaproveitar um Render existente
+
+Quando o mesmo Render precisa atender mais de um projeto LinkUp, mantenha o
+Render como conector compartilhado. Ele deve cuidar apenas de QR Code, sessão e
+envio direto pelo endpoint `/stores/:tenantId/send`.
+
+Nesse modo:
+
+- o Render continua com `LINKUP_WHATSAPP_CONNECTOR_SECRET` e
+  `LINKUP_WHATSAPP_DATA_DIR`;
+- o projeto Lovable recebe `LINKUP_WHATSAPP_CONNECTOR_URL` e
+  `LINKUP_WHATSAPP_CONNECTOR_SECRET`;
+- não coloque `SUPABASE_URL` nem `SUPABASE_SERVICE_ROLE_KEY` nesse Render
+  compartilhado, porque isso amarra o worker de fila a uma única base;
+- cada projeto processa a própria fila chamando a Edge Function
+  `whatsapp-connector` com a ação `process-queue`.
 
 ## Requisitos
 
@@ -16,6 +34,7 @@ O módulo usa uma única conexão de WhatsApp por loja:
 - Um Persistent Disk montado em `/var/data`.
 - Projeto conectado ao Supabase/Lovable Cloud.
 - Migração `20260716231000_whatsapp_automation.sql` aplicada.
+- Migração `20260717130424_customer_booking_accounts.sql` aplicada.
 - Edge Function `whatsapp-connector` publicada.
 
 O plano gratuito do Render não mantém o processo ativo 24 horas e não oferece
@@ -35,6 +54,47 @@ Se o projeto for administrado pelo Lovable Cloud, a migração pode ser executad
 no SQL Editor e a função pode ser publicada pelo fluxo de deploy do próprio
 Lovable.
 
+Para conferir se o banco ficou pronto para o WhatsApp, rode no SQL Editor:
+
+```sql
+select
+  to_regclass('public.tenant_whatsapp_settings') is not null as tem_configuracoes_whatsapp,
+  to_regclass('public.whatsapp_message_queue') is not null as tem_fila_whatsapp,
+  exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'tenant_whatsapp_settings'
+      and column_name = 'notify_client_registration'
+  ) as tem_cadastro_cliente_whatsapp,
+  exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'tenant_whatsapp_settings'
+      and column_name = 'client_registration_template'
+  ) as tem_template_cadastro_cliente,
+  exists (
+    select 1
+    from pg_trigger
+    where tgname = 'queue_appointment_whatsapp_messages'
+  ) as tem_trigger_agendamentos,
+  exists (
+    select 1
+    from pg_trigger
+    where tgname = 'enqueue_customer_registration_whatsapp'
+  ) as tem_trigger_cadastro_cliente,
+  exists (
+    select 1
+    from pg_constraint
+    where conname = 'whatsapp_message_queue_event_type_check'
+      and pg_get_constraintdef(oid) like '%client_registered%'
+  ) as fila_aceita_cadastro_cliente;
+```
+
+Todos os campos precisam voltar `true`. Se algum voltar `false`, a migração de
+WhatsApp ou a migração de cadastro de cliente ainda precisa ser aplicada.
+
 ## 2. Criar um segredo compartilhado
 
 Gere uma senha longa e aleatória. O mesmo valor deve ser cadastrado no Render e
@@ -49,14 +109,23 @@ frontend.
 
 ## 3. Publicar o conector no Render
 
-No Render, crie um Blueprint usando o `render.yaml` da raiz deste repositório.
-Preencha as variáveis marcadas como secretas:
+Se for criar um Render exclusivo para este projeto, crie um Blueprint usando o
+`render.yaml` da raiz deste repositório e preencha as variáveis marcadas como
+secretas:
 
 ```text
 LINKUP_WHATSAPP_CONNECTOR_SECRET=<mesmo segredo da Edge Function>
 SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service role/secret key do projeto>
 LINKUP_PUBLIC_APP_URL=https://barber-pro-plus.lovable.app
+```
+
+Se for reaproveitar o Render compartilhado já existente
+`https://linkup-whatsapp-connector.onrender.com`, mantenha nele apenas:
+
+```text
+LINKUP_WHATSAPP_CONNECTOR_SECRET=<segredo compartilhado>
+LINKUP_WHATSAPP_DATA_DIR=/var/data/whatsapp
 ```
 
 O Blueprint cria:
@@ -79,12 +148,52 @@ https://<servico>.onrender.com/health
 Cadastre estes segredos no Supabase/Lovable Cloud:
 
 ```text
-LINKUP_WHATSAPP_CONNECTOR_URL=https://<servico>.onrender.com
+LINKUP_WHATSAPP_CONNECTOR_URL=https://linkup-whatsapp-connector.onrender.com
 LINKUP_WHATSAPP_CONNECTOR_SECRET=<mesmo segredo do Render>
 ```
 
 Publique novamente a Edge Function após alterar os segredos, caso a plataforma
 solicite.
+
+Opcional, mas recomendado para preencher `{link_cancelamento}` nos modelos de
+mensagem:
+
+```text
+LINKUP_PUBLIC_APP_URL=https://barber-pro-plus.lovable.app
+```
+
+## 4.1. Job para mensagens automáticas
+
+Crie um Job no Lovable/Supabase para rodar a cada minuto chamando:
+
+```text
+POST https://<project-ref>.supabase.co/functions/v1/whatsapp-connector
+```
+
+Headers:
+
+```text
+Content-Type: application/json
+apikey: <SUPABASE_ANON_KEY>
+Authorization: Bearer <SUPABASE_ANON_KEY>
+x-linkup-connector-secret: <LINKUP_WHATSAPP_CONNECTOR_SECRET>
+```
+
+Body:
+
+```json
+{
+  "action": "process-queue",
+  "limit": 10
+}
+```
+
+Esse Job é o que faz sair automaticamente:
+
+- confirmação do agendamento para o cliente;
+- aviso de novo agendamento para o profissional;
+- lembrete antes do horário;
+- cancelamentos e remarcações.
 
 ## 5. Conectar uma loja
 

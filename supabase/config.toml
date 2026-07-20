@@ -3,3 +3,12 @@ project_id = "dcysbrxooqibozgctprn"
 [auth]
 minimum_password_length = 8
 password_requirements = ""
+
+[functions.asaas-admin]
+verify_jwt = true
+
+[functions.asaas-webhook]
+verify_jwt = false
+
+[functions.asaas-worker]
+verify_jwt = false

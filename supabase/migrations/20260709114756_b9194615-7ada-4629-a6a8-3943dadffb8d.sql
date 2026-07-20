@@ -11,7 +11,7 @@ create table public.tenants (
   id uuid primary key default gen_random_uuid(),
   slug text unique not null,
   name text not null,
-  subtitle text default 'Soluções Premium',
+  subtitle text default 'Gestão Premium',
   logo_url text,
   banner_url text,
   whatsapp text,

@@ -16,7 +16,7 @@ const {
   useMultiFileAuthState,
 } = require("@whiskeysockets/baileys");
 
-const BUILD_VERSION = "2026-07-16-linkup-salao-queue-v1";
+const BUILD_VERSION = "2026-07-17-linkup-studio-queue-v1";
 const PORT = integerEnv("PORT", 10000, 1, 65535);
 const HOST = String(process.env.HOST || "0.0.0.0").trim();
 const DATA_DIR = path.resolve(
@@ -52,7 +52,7 @@ const RETRY_MAX_MS = integerEnv(
 
 const logger = pino({
   level: process.env.LOG_LEVEL || "info",
-  base: { service: "linkup-salao-whatsapp-connector" },
+  base: { service: "linkup-studio-whatsapp-connector" },
 });
 
 function integerEnv(name, fallback, minimum, maximum) {
@@ -516,9 +516,7 @@ class WhatsAppSessionManager {
     if (![12, 13].includes(normalizedPhone.length)) {
       throw serviceError("Telefone inválido para envio.", 400, "invalid_phone");
     }
-    const text = String(message || "")
-      .trim()
-      .slice(0, 3_900);
+    const text = normalizeWhatsAppFormatting(String(message || "").trim()).slice(0, 3_900);
     if (!text) {
       throw serviceError("A mensagem não pode ficar vazia.", 400, "empty_message");
     }
@@ -586,7 +584,7 @@ function createSupabaseAdmin() {
     },
     global: {
       headers: {
-        "X-Client-Info": "linkup-salao-whatsapp-connector/1.0.0",
+        "X-Client-Info": "linkup-studio-whatsapp-connector/1.0.0",
       },
     },
   });
@@ -631,6 +629,13 @@ function scalarTemplateValue(value) {
   return "";
 }
 
+function normalizeWhatsAppFormatting(value) {
+  return String(value ?? "").replace(
+    /(^|[^*])\*\*(?![\s*])([^\r\n]*?\S)\*\*(?!\*)/gm,
+    (_match, prefix, content) => `${prefix}*${content}*`,
+  );
+}
+
 function buildCancellationLink(payload) {
   const explicit = scalarTemplateValue(
     payload.link_cancelamento || payload.cancellation_link,
@@ -655,16 +660,18 @@ function renderTemplate(template, payload = {}) {
   variables.link_cancelamento = buildCancellationLink(payload);
   variables.cancellation_link = variables.link_cancelamento;
 
-  const rendered = String(template || "")
-    .replace(
-      /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}|\{\s*([a-zA-Z0-9_]+)\s*\}/g,
-      (_match, doubleKey, singleKey) => {
-        const key = String(doubleKey || singleKey || "").toLowerCase();
-        return Object.prototype.hasOwnProperty.call(variables, key) ? variables[key] : "";
-      },
-    )
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
+  const rendered = normalizeWhatsAppFormatting(
+    String(template || "")
+      .replace(
+        /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}|\{\s*([a-zA-Z0-9_]+)\s*\}/g,
+        (_match, doubleKey, singleKey) => {
+          const key = String(doubleKey || singleKey || "").toLowerCase();
+          return Object.prototype.hasOwnProperty.call(variables, key) ? variables[key] : "";
+        },
+      )
+      .replace(/[ \t]+\n/g, "\n")
+      .trim(),
+  );
 
   if (!rendered) {
     throw serviceError("O modelo gerou uma mensagem vazia.", 400, "empty_template");
@@ -694,6 +701,24 @@ function retryDelayMs(attempts) {
   return Math.min(RETRY_MAX_MS, baseDelay + jitter);
 }
 
+function isMissingSubscriptionEnqueueRpc(error) {
+  const code = String(error?.code || "");
+  const message = [error?.message, error?.details, error?.hint].map(String).join(" ");
+  return (
+    code === "PGRST202" ||
+    code === "42883" ||
+    (/enqueue_due_subscription_whatsapp/i.test(message) &&
+      /schema cache|could not find|does not exist/i.test(message))
+  );
+}
+
+function subscriptionChargeId(row) {
+  const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+  return String(
+    row?.subscription_charge_id || payload.subscription_charge_id || payload.charge_id || "",
+  ).trim();
+}
+
 class WhatsAppQueueWorker {
   constructor(database, sessionManager) {
     this.database = database;
@@ -702,6 +727,8 @@ class WhatsAppQueueWorker {
     this.running = false;
     this.stopped = true;
     this.pollCount = 0;
+    this.lastSubscriptionEnqueueAt = 0;
+    this.subscriptionRpcMissingLogged = false;
     this.state = {
       enabled: QUEUE_ENABLED,
       running: false,
@@ -754,6 +781,8 @@ class WhatsAppQueueWorker {
     this.pollCount += 1;
 
     try {
+      await this.enqueueDueSubscriptionMessages();
+
       if (this.pollCount === 1 || this.pollCount % 20 === 0) {
         await this.recoverStaleClaims();
       }
@@ -785,6 +814,43 @@ class WhatsAppQueueWorker {
       this.running = false;
       this.state.running = false;
       this.schedule();
+    }
+  }
+
+  async enqueueDueSubscriptionMessages() {
+    const now = Date.now();
+    if (now - this.lastSubscriptionEnqueueAt < 60_000) return;
+    this.lastSubscriptionEnqueueAt = now;
+
+    const { data, error } = await this.database.rpc("enqueue_due_subscription_whatsapp");
+    if (error) {
+      if (isMissingSubscriptionEnqueueRpc(error)) {
+        if (!this.subscriptionRpcMissingLogged) {
+          logger.info(
+            "RPC enqueue_due_subscription_whatsapp ainda não está disponível; fila atual preservada",
+          );
+          this.subscriptionRpcMissingLogged = true;
+        }
+        return;
+      }
+      logger.error(
+        { error: errorMessage(error) },
+        "Falha ao gerar notificações de assinaturas; demais mensagens continuarão",
+      );
+      return;
+    }
+
+    this.subscriptionRpcMissingLogged = false;
+    const enqueued = Number(data?.enqueued || 0);
+    if (enqueued > 0) {
+      logger.info(
+        {
+          enqueued,
+          paymentReminders: Number(data?.payment_reminders || 0),
+          overdueNotices: Number(data?.overdue_notices || 0),
+        },
+        "Notificações de assinaturas adicionadas à fila",
+      );
     }
   }
 
@@ -857,6 +923,62 @@ class WhatsAppQueueWorker {
     }
   }
 
+  async validateSubscriptionQueueRow(row) {
+    const eventType = String(row?.event_type || "");
+    if (!eventType.startsWith("subscription_")) {
+      return { valid: true };
+    }
+
+    const chargeId = normalizeSessionId(subscriptionChargeId(row));
+    const tenantId = normalizeSessionId(row?.tenant_id);
+    if (!chargeId || !tenantId) {
+      return {
+        valid: false,
+        reason: "Mensagem de assinatura sem cobrança e loja válidas.",
+      };
+    }
+
+    const { data: charge, error } = await this.database
+      .from("subscription_charges")
+      .select("id,status")
+      .eq("id", chargeId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!charge) {
+      return {
+        valid: false,
+        reason: "Cobrança da assinatura não existe mais nesta loja.",
+      };
+    }
+
+    const { data: tenant, error: tenantError } = await this.database
+      .from("tenants")
+      .select("id,status")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (tenantError) throw tenantError;
+    if (!tenant || String(tenant.status || "active") === "blocked") {
+      return {
+        valid: false,
+        reason: "Mensagem cancelada porque a loja está bloqueada.",
+      };
+    }
+
+    const allowedStatuses =
+      eventType === "subscription_payment_confirmed"
+        ? new Set(["paid"])
+        : new Set(["pending", "overdue"]);
+    if (!allowedStatuses.has(String(charge.status || ""))) {
+      return {
+        valid: false,
+        reason: `Mensagem cancelada porque a cobrança está com status ${charge.status || "desconhecido"}.`,
+      };
+    }
+
+    return { valid: true };
+  }
+
   async processWithConcurrency(rows) {
     if (!rows.length) return;
     let cursor = 0;
@@ -889,6 +1011,12 @@ class WhatsAppQueueWorker {
         .maybeSingle();
       if (currentError) throw currentError;
       if (current?.status !== "processing") return;
+
+      const subscriptionValidation = await this.validateSubscriptionQueueRow(row);
+      if (!subscriptionValidation.valid) {
+        await this.cancel(row, subscriptionValidation.reason);
+        return;
+      }
 
       const { data: settings, error: settingsError } = await this.database
         .from("tenant_whatsapp_settings")
@@ -1047,7 +1175,7 @@ app.use((request, response, next) => {
   if (isHealth) {
     response.status(200).json({
       ok: true,
-      service: "linkup-salao-whatsapp-connector",
+      service: "linkup-studio-whatsapp-connector",
       buildVersion: BUILD_VERSION,
       sessions: {
         active: manager.sessions.size,
@@ -1138,7 +1266,7 @@ const server = app.listen(PORT, HOST, () => {
       dataDir: DATA_DIR,
       queueEnabled: QUEUE_ENABLED,
     },
-    "LinkUp Salão WhatsApp Connector iniciado",
+    "LinkUp Studio WhatsApp Connector iniciado",
   );
   manager.restoreSavedSessions().finally(() => worker.start());
 });

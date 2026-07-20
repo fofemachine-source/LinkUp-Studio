@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: linkup-salao-whatsapp-connector
+    name: linkup-studio-whatsapp-connector
     runtime: node
     plan: starter
     rootDir: services/whatsapp-connector

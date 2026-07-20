@@ -46,8 +46,8 @@ export function AppSidebar() {
               : <Scissors className="h-5 w-5" />}
           </div>
           <div className="min-w-0 group-data-[collapsible=icon]:hidden">
-            <div className="font-semibold truncate text-white">{tenant?.name ?? "Ernesth Barbearia"}</div>
-            <div className="text-xs text-amber-500 truncate">{tenant?.subtitle ?? "Soluções Premium"}</div>
+            <div className="font-semibold truncate text-white">{tenant?.name ?? "LinkUp Studio"}</div>
+            <div className="text-xs text-amber-500 truncate">{tenant?.subtitle ?? "Gestão Premium"}</div>
           </div>
         </div>
       </SidebarHeader>

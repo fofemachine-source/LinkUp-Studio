@@ -1,4 +1,4 @@
--- WhatsApp automation for LinkUp Salão.
+-- WhatsApp automation for LinkUp Studio.
 -- The long-lived Baileys session runs on Render. Supabase only stores
 -- tenant-scoped configuration, an auditable delivery queue, and triggers.
 

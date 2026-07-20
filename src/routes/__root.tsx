@@ -1,10 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Outlet, createRootRouteWithContext, HeadContent, Scripts } from "@tanstack/react-router";
+import { Outlet, createRootRouteWithContext, HeadContent, Scripts, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "sonner";
-import { getRouter } from "@/router";
+import { authUserQueryKey } from "@/lib/auth-cache";
 
 function NotFound() {
   return (
@@ -12,7 +12,7 @@ function NotFound() {
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold">404</h1>
         <p className="mt-2 text-muted-foreground">Página não encontrada.</p>
-        <a href="/" className="mt-6 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Voltar</a>
+        <Link to="/" className="mt-6 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Voltar</Link>
       </div>
     </div>
   );
@@ -23,14 +23,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Ernesth Barbearia — Gestão Premium" },
-      { name: "description", content: "Sistema completo de gestão para barbearias: agenda, comandas, assinaturas VIP, comissões e agendamento online." },
-      { property: "og:title", content: "Ernesth Barbearia — Gestão Premium" },
-      { property: "og:description", content: "Sistema completo de gestão para barbearias: agenda, comandas, assinaturas VIP, comissões e agendamento online." },
+      { title: "LinkUp Studio — Gestão Premium" },
+      { name: "description", content: "Sistema completo de gestão para negócios de beleza: agenda, comandas, assinaturas VIP, comissões e agendamento online." },
+      { property: "og:title", content: "LinkUp Studio — Gestão Premium" },
+      { property: "og:description", content: "Sistema completo de gestão para negócios de beleza: agenda, comandas, assinaturas VIP, comissões e agendamento online." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "Ernesth Barbearia — Gestão Premium" },
-      { name: "twitter:description", content: "Sistema completo de gestão para barbearias: agenda, comandas, assinaturas VIP, comissões e agendamento online." },
+      { name: "twitter:title", content: "LinkUp Studio — Gestão Premium" },
+      { name: "twitter:description", content: "Sistema completo de gestão para negócios de beleza: agenda, comandas, assinaturas VIP, comissões e agendamento online." },
       { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/6e2fbd98-36ff-4995-a12c-dcf5f1919e33/id-preview-b7e97340--4b4acdc3-fd33-4736-8670-cfbaa0acd909.lovable.app-1783598446094.png" },
       { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/6e2fbd98-36ff-4995-a12c-dcf5f1919e33/id-preview-b7e97340--4b4acdc3-fd33-4736-8670-cfbaa0acd909.lovable.app-1783598446094.png" },
     ],
@@ -52,15 +52,18 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const router = useRouter();
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
-        getRouter().invalidate();
-        if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
+        queryClient.setQueryData(authUserQueryKey, session?.user ?? null);
+        if (event === "SIGNED_OUT") queryClient.clear();
+        else queryClient.invalidateQueries({ queryKey: ["current-tenant"] });
+        router.invalidate();
       }
     });
     return () => sub.subscription.unsubscribe();
-  }, [queryClient]);
+  }, [queryClient, router]);
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />

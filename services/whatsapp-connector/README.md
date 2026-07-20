@@ -1,4 +1,4 @@
-# LinkUp Salão — WhatsApp Connector
+# LinkUp Studio — WhatsApp Connector
 
 Serviço Node persistente responsável por:
 
@@ -130,6 +130,10 @@ Falhas transitórias usam retentativa com atraso exponencial. Telefone inválido
 número inexistente no WhatsApp, modelo vazio e lembrete vencido são encerrados
 sem novas tentativas. Locks abandonados por reinício do processo são
 recuperados automaticamente.
+
+O evento `client_registered` usa a mesma fila para confirmar o cadastro do
+cliente. Ele não possui agendamento associado e usa as variáveis `{cliente}` e
+`{salao}`.
 
 O link de cancelamento é montado assim:
 

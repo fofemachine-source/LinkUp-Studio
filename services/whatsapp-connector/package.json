@@ -1,8 +1,8 @@
 {
-  "name": "@linkup-salao/whatsapp-connector",
+  "name": "@linkup-studio/whatsapp-connector",
   "version": "1.0.0",
   "private": true,
-  "description": "Serviço persistente multi-tenant do LinkUp Salão para WhatsApp Web e processamento da fila Supabase.",
+  "description": "Serviço persistente multi-tenant do LinkUp Studio para WhatsApp Web e processamento da fila Supabase.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

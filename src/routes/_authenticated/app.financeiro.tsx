@@ -144,6 +144,14 @@ type CommandaItem = {
   professionals?: { full_name: string } | null;
 };
 
+type CommandaPayment = {
+  id: string;
+  method: string | null;
+  amount: number | null;
+  received_amount: number | null;
+  created_at: string | null;
+};
+
 type ClosedComanda = {
   id: string;
   number: number;
@@ -155,6 +163,14 @@ type ClosedComanda = {
   total: number | null;
   payment_method: string | null;
   commanda_items: CommandaItem[];
+  commanda_payments?: CommandaPayment[] | null;
+};
+
+type PaymentEntry = {
+  method: string | null;
+  amount: number;
+  createdAt: string | null;
+  commanda: ClosedComanda;
 };
 
 type ForecastComanda = {
@@ -223,6 +239,38 @@ function paymentLabel(value: string | null) {
   return value ? (labels[value] ?? value) : "Não informado";
 }
 
+function getCommandaPaymentEntries(cmd: ClosedComanda): PaymentEntry[] {
+  const detailed = (cmd.commanda_payments ?? [])
+    .map((payment) => ({
+      method: payment.method,
+      amount: Number(payment.amount ?? 0),
+      createdAt: payment.created_at ?? cmd.closed_at,
+      commanda: cmd,
+    }))
+    .filter((payment) => payment.amount > 0);
+
+  if (detailed.length > 0) return detailed;
+
+  const total = Number(cmd.total ?? 0);
+  return total > 0
+    ? [
+        {
+          method: cmd.payment_method,
+          amount: total,
+          createdAt: cmd.closed_at,
+          commanda: cmd,
+        },
+      ]
+    : [];
+}
+
+function commandaPaymentLabel(cmd: ClosedComanda) {
+  const labels = Array.from(
+    new Set(getCommandaPaymentEntries(cmd).map((payment) => paymentLabel(payment.method))),
+  );
+  return labels.length > 0 ? labels.join(" + ") : paymentLabel(cmd.payment_method);
+}
+
 function FinanceiroPage() {
   const tenantId = useCurrentTenant().data?.id;
   const queryClient = useQueryClient();
@@ -276,7 +324,7 @@ function FinanceiroPage() {
         (rangeFrom, rangeTo) =>
           supabase
             .from("commandas")
-            .select("*, commanda_items(*, professionals(full_name))")
+            .select("*, commanda_items:commanda_items!commanda_items_commanda_tenant_fk(*, professionals(full_name)), commanda_payments:commanda_payments!commanda_payments_commanda_tenant_fk(id,method,amount,received_amount,created_at)")
             .eq("tenant_id", tenantId!)
             .eq("status", "closed")
             .gte("closed_at", bounds.start)
@@ -650,21 +698,44 @@ function FinanceiroPage() {
     });
   }, [commandas, forecastCommandas, periodMovements, from, to]);
 
+  const paymentEntries = useMemo(
+    () => commandas.flatMap((cmd) => getCommandaPaymentEntries(cmd)),
+    [commandas],
+  );
+
+  const paymentTotal = useMemo(
+    () => sum(paymentEntries, (payment) => payment.amount),
+    [paymentEntries],
+  );
+
   const paymentMix = useMemo(() => {
     const grouped = new Map<string, { label: string; count: number; total: number }>();
-    commandas.forEach((cmd) => {
-      const key = cmd.payment_method ?? "unknown";
+    paymentEntries.forEach((payment) => {
+      const key = payment.method ?? "unknown";
       const current = grouped.get(key) ?? {
-        label: paymentLabel(cmd.payment_method),
+        label: paymentLabel(payment.method),
         count: 0,
         total: 0,
       };
       current.count += 1;
-      current.total += Number(cmd.total ?? 0);
+      current.total += payment.amount;
       grouped.set(key, current);
     });
     return [...grouped.values()].sort((a, b) => b.total - a.total);
-  }, [commandas]);
+  }, [paymentEntries]);
+
+  const latestReceipts = useMemo(
+    () =>
+      paymentEntries
+        .slice()
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt ?? b.commanda.closed_at ?? 0).getTime() -
+            new Date(a.createdAt ?? a.commanda.closed_at ?? 0).getTime(),
+        )
+        .slice(0, 6),
+    [paymentEntries],
+  );
 
   const professionalReport = useMemo(() => {
     const grouped = new Map<
@@ -916,7 +987,7 @@ function FinanceiroPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {paymentMix.map((item) => {
-                  const pct = metrics.netSales ? (item.total / metrics.netSales) * 100 : 0;
+                  const pct = paymentTotal ? (item.total / paymentTotal) * 100 : 0;
                   return (
                     <div key={item.label} className="space-y-1">
                       <div className="flex justify-between text-sm">
@@ -930,12 +1001,38 @@ function FinanceiroPage() {
                         />
                       </div>
                       <div className="text-[11px] text-muted-foreground">
-                        {item.count} vendas · {pct.toFixed(1)}%
+                        {item.count} recebimento(s) · {pct.toFixed(1)}%
                       </div>
                     </div>
                   );
                 })}
                 {paymentMix.length === 0 && <EmptyState text="Sem vendas no período." />}
+                {latestReceipts.length > 0 && (
+                  <div className="border-t pt-4">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Últimos recebimentos
+                    </p>
+                    <div className="space-y-3">
+                      {latestReceipts.map((payment) => (
+                        <div
+                          key={`${payment.commanda.id}-${payment.method}-${payment.createdAt}`}
+                          className="flex items-start justify-between gap-3 text-sm"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">
+                              {payment.commanda.client_name || "Cliente"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              #{payment.commanda.number} · {paymentLabel(payment.method)}
+                              {payment.createdAt ? ` · ${dateBR(payment.createdAt)}` : ""}
+                            </p>
+                          </div>
+                          <span className="shrink-0 font-semibold">{brl(payment.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -1507,7 +1604,7 @@ function FinanceiroPage() {
                         <TableCell>{cmd.closed_at ? dateBR(cmd.closed_at) : "—"}</TableCell>
                         <TableCell>#{cmd.number}</TableCell>
                         <TableCell>{cmd.client_name || "Cliente"}</TableCell>
-                        <TableCell>{paymentLabel(cmd.payment_method)}</TableCell>
+                        <TableCell>{commandaPaymentLabel(cmd)}</TableCell>
                         <TableCell>{brl(cmd.discount)}</TableCell>
                         <TableCell className="text-right font-semibold">{brl(cmd.total)}</TableCell>
                       </TableRow>
@@ -2360,7 +2457,7 @@ function exportSalesCsv(commandas: ClosedComanda[]) {
       cmd.closed_at ? dateBR(cmd.closed_at) : "",
       cmd.number,
       cmd.client_name,
-      paymentLabel(cmd.payment_method),
+      commandaPaymentLabel(cmd),
       cmd.subtotal,
       cmd.discount,
       cmd.addition,
