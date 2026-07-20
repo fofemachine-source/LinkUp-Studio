@@ -46,8 +46,11 @@ function ConfigPage() {
 
 function IdentityTab() {
   const { data: t } = useCurrentTenant(); const qc = useQueryClient();
-  const [f, setF] = useState({ name: "", subtitle: "", primary_color: "#2563eb", slot_minutes: 30, pix_key: "", pix_holder: "" });
+  const initial = { name: "", subtitle: "", primary_color: "#2563eb", slot_minutes: 30, pix_key: "", pix_holder: "" };
+  const [f, setF] = useState(initial);
   const [logo, setLogo] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const brandingQueryKey = ["tenant-booking-branding", t?.id];
   const {
     data: brandingRow,
@@ -91,21 +94,60 @@ function IdentityTab() {
     },
   });
   useEffect(() => { if (t) setF({ name: t.name, subtitle: t.subtitle ?? "", primary_color: t.primary_color ?? "#2563eb", slot_minutes: t.slot_minutes ?? 30, pix_key: t.pix_key ?? "", pix_holder: t.pix_holder ?? "" }); }, [t]);
+  useEffect(() => {
+    if (!logo) { setLogoPreview(null); return; }
+    const url = URL.createObjectURL(logo);
+    setLogoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [logo]);
+
+  const isDirty = !!logo || (t ? (
+    f.name !== (t.name ?? "") ||
+    f.subtitle !== (t.subtitle ?? "") ||
+    f.primary_color !== (t.primary_color ?? "#2563eb") ||
+    f.slot_minutes !== (t.slot_minutes ?? 30) ||
+    f.pix_key !== (t.pix_key ?? "") ||
+    f.pix_holder !== (t.pix_holder ?? "")
+  ) : false);
+
+  const displayedLogo = logoPreview || t?.logo_url || null;
+
   async function save() {
     if (!t?.id) return toast.error("Empresa não carregada. Recarregue a página e tente novamente.");
-    let logo_url = t?.logo_url;
-    if (logo) {
-      const safeName = logo.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `${t.id}/logos/${Date.now()}-${safeName}`;
-      const { error } = await supabase.storage.from("assets").upload(path, logo, { upsert: true, contentType: logo.type || "image/jpeg" });
-      if (error) return toast.error(error.message);
-      const { data: signed, error: signedError } = await supabase.storage.from("assets").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
-      if (signedError || !signed?.signedUrl) return toast.error("Logo enviada, mas não foi possível gerar o link de exibição.");
-      logo_url = signed.signedUrl;
+    setIsSaving(true);
+    try {
+      let logo_url = t?.logo_url;
+      if (logo) {
+        if (!logo.type.startsWith("image/")) {
+          toast.error("Arquivo inválido. Selecione uma imagem.");
+          return;
+        }
+        if (logo.size > 5 * 1024 * 1024) {
+          toast.error("Imagem muito grande (máx. 5MB).");
+          return;
+        }
+        toast.info("Enviando imagem...");
+        const safeName = logo.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = `${t.id}/logos/${Date.now()}-${safeName}`;
+        const { error: upErr } = await supabase.storage.from("assets").upload(path, logo, { upsert: true, contentType: logo.type || "image/jpeg" });
+        if (upErr) throw upErr;
+        const { data: signed, error: signedError } = await supabase.storage.from("assets").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
+        if (signedError || !signed?.signedUrl) throw new Error("Logo enviada, mas não foi possível gerar o link de exibição.");
+        logo_url = signed.signedUrl;
+      }
+      const { error } = await supabase.from("tenants").update({ ...f, logo_url }).eq("id", t.id);
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ["current-tenant"] });
+      await qc.invalidateQueries({ queryKey: ["public-tenant", t.slug] });
+      setLogo(null);
+      setLogoPreview(null);
+      toast.success("Identidade visual atualizada com sucesso.");
+    } catch (err: any) {
+      console.error("[IdentityTab] save error", err);
+      toast.error(err?.message || "Não foi possível atualizar a logo. Verifique o arquivo e tente novamente.");
+    } finally {
+      setIsSaving(false);
     }
-    const { error } = await supabase.from("tenants").update({ ...f, logo_url }).eq("id", t.id);
-    if (error) return toast.error(error.message);
-    toast.success("Salvo"); qc.invalidateQueries({ queryKey: ["current-tenant"] });
   }
   return (
     <div className="space-y-6">
@@ -121,12 +163,23 @@ function IdentityTab() {
         <div>
           <Label>Logo</Label>
           <div className="flex items-center gap-4 mt-1">
-            {t?.logo_url && <img src={t.logo_url} className="h-16 w-16 rounded-lg object-cover border" alt="Logo atual"/>}
-            <Input type="file" accept="image/*" onChange={(e)=>setLogo(e.target.files?.[0]??null)}/>
+            {displayedLogo ? (
+              <img src={displayedLogo} className="h-16 w-16 rounded-lg object-cover border" alt="Logo"/>
+            ) : (
+              <div className="h-16 w-16 rounded-lg border border-dashed grid place-items-center text-xs text-muted-foreground">Sem logo</div>
+            )}
+            <Input type="file" accept="image/*" disabled={isSaving} onChange={(e)=>setLogo(e.target.files?.[0]??null)}/>
           </div>
-          {logo && <p className="text-xs text-muted-foreground mt-1">Novo arquivo selecionado: {logo.name}. Clique em Salvar para aplicar.</p>}
+          {logo && (
+            <p className="text-xs text-primary mt-2">
+              Nova imagem selecionada: <span className="font-medium">{logo.name}</span>. Clique em Salvar identidade para aplicar.
+            </p>
+          )}
         </div>
-        <Button onClick={save}>Salvar identidade</Button>
+        <Button onClick={save} disabled={isSaving || !isDirty}>
+          {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isSaving ? (logo ? "Enviando imagem..." : "Salvando...") : "Salvar identidade"}
+        </Button>
       </CardContent></Card>
 
       {t && brandingLoading && (
