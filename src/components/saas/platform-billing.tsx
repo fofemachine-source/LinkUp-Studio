@@ -1271,7 +1271,7 @@ function ClientsPanel({
                     </div>
                     {promoActive && (
                       <div className="text-xs text-emerald-700">
-                        Promo até {localDate(contract.promotional_discount_ends_on)}
+                        Promo até {localDate(contract?.promotional_discount_ends_on)}
                       </div>
                     )}
                   </TableCell>
