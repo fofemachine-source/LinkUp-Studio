@@ -87,17 +87,17 @@ export const registerBookingCustomer = createServerFn({ method: "POST" })
       }
       if (reason.includes("CUSTOMER_ACCOUNT_EXISTS")) {
         throw new Error(
-          "Não foi possível concluir o primeiro acesso. Tente Entrar ou fale com o salão.",
+          "Já existe uma conta com esse CPF neste salão. Use 'Entrar' com sua senha.",
         );
       }
       if (reason.includes("EXISTING_CUSTOMER_REQUIRES_ACTIVATION")) {
         throw new Error(
-          "Não foi possível concluir o primeiro acesso. Tente Entrar ou fale com o salão.",
+          "Este CPF possui uma assinatura ativa. Peça o código de liberação ao salão para concluir o primeiro acesso.",
         );
       }
       if (reason.includes("INVALID_CUSTOMER_ACTIVATION")) {
         throw new Error(
-          "Não foi possível concluir o primeiro acesso. Tente Entrar ou fale com o salão.",
+          "Código de liberação inválido ou expirado. Solicite um novo ao salão.",
         );
       }
       if (registrationError?.code === "PGRST202") {
