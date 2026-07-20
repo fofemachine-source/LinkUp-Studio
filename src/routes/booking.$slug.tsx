@@ -1184,11 +1184,13 @@ function BookingPage() {
                           if (proBlockedDates.includes(dateStr)) return true;
                         }
 
+                        // Non-VIP customers use work_days only (VIP days don't restrict them).
+                        // VIP customers in strict mode are limited to vip_days.
                         const vipMode = settings?.vip_mode ?? "strict";
                         if (
                           vipMode === "strict" &&
-                          !isVip &&
-                          isVipExclusiveBookingDay(settings?.work_days, settings?.vip_days, normalizedDay)
+                          isVip &&
+                          !includesBookingWeekday(settings?.vip_days, normalizedDay, settings?.work_days ?? DEFAULT_BOOKING_WORK_DAYS)
                         ) {
                           return true;
                         }
