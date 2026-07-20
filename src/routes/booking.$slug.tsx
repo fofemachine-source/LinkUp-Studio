@@ -468,6 +468,7 @@ function BookingPage() {
     services,
     settings,
     branding: brandingRow,
+    timeOff = [],
   } = data as any;
   const bookingBranding = normalizeBookingBranding(brandingRow);
   const bookingFallback = null;
