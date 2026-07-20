@@ -1093,14 +1093,8 @@ async function loadDashboardData(
       forecastStart,
       forecastEnd,
     ),
-    periodLabel:
-      filters.period === "today"
-        ? "Hoje"
-        : filters.period === "thisMonth"
-          ? "Este mês"
-          : filters.period === "thisYear"
-            ? "Este ano"
-            : "Período selecionado",
+    periodLabel: "Período selecionado",
+
   };
   const receivableToday = forecast.days[0]?.total ?? 0;
   const receivableWeek = calculateForecastTotal(

@@ -123,9 +123,10 @@ export const repairAppointmentCommandasForDate = createServerFn({ method: "POST"
       await Promise.all([
         supabaseAdmin
           .from("services")
-          .select("id,name,price,cost_price")
+          .select("id,name,price")
           .eq("tenant_id", data.tenantId)
           .in("id", serviceIds),
+
         supabaseAdmin
           .from("professionals")
           .select("id,commission_pct")
@@ -151,8 +152,9 @@ export const repairAppointmentCommandasForDate = createServerFn({ method: "POST"
         clientId: appointment.client_id ?? null,
         clientName: appointment.client_name ?? "Cliente",
         professionalId: appointment.professional_id,
-        serviceIds: [appointment.service_id],
-        services: [service],
+        serviceIds: [appointment.service_id].filter(Boolean) as string[],
+        services: [service] as any,
+
         professionals: professionals ?? [],
         scheduledAt: appointment.start_at,
         status: appointment.status,
