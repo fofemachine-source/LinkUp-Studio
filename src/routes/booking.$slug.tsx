@@ -1183,6 +1183,15 @@ function BookingPage() {
 
                           const proBlockedDates = selectedPro.blocked_dates ?? [];
                           if (proBlockedDates.includes(dateStr)) return true;
+
+                          const fullDayOff = (timeOff as any[]).some(
+                            (o) =>
+                              o.professional_id === selectedPro.id &&
+                              o.all_day &&
+                              o.starts_on <= dateStr &&
+                              o.ends_on >= dateStr,
+                          );
+                          if (fullDayOff) return true;
                         }
 
                         // Non-VIP customers use work_days only (VIP days don't restrict them).
