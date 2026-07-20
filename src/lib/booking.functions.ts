@@ -1301,8 +1301,8 @@ export const createBooking = createServerFn({ method: "POST" })
       .lte("starts_on", bookingDate)
       .gte("ends_on", bookingDate);
     if (timeOffError) throw new Error(timeOffError.message);
-    const startMinInDay = start.getHours() * 60 + start.getMinutes();
-    const endMinInDay = end.getHours() * 60 + end.getMinutes();
+    const startMinInDay = saoPauloTimeMinutes(start);
+    const endMinInDay = saoPauloTimeMinutes(end);
     for (const off of timeOffRows ?? []) {
       if (off.all_day) {
         throw new Error("O profissional está de folga na data escolhida.");
