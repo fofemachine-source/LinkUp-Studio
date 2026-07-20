@@ -1,4 +1,4 @@
-const DEFAULT_PUBLIC_APP_URL = "https://barber-pro-plus.lovable.app";
+const DEFAULT_PUBLIC_APP_URL = "https://linkup-studio.lovable.app";
 
 function normalizePublicAppUrl(value: string | undefined) {
   const candidate = value?.trim().replace(/\/+$/, "");
