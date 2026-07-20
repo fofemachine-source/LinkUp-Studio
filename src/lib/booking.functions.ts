@@ -1293,6 +1293,29 @@ export const createBooking = createServerFn({ method: "POST" })
       throw new Error("O profissional não está disponível na data escolhida.");
     }
 
+    const { data: timeOffRows, error: timeOffError } = await (supabase as any)
+      .from("professional_time_off")
+      .select("all_day,start_time,end_time")
+      .eq("tenant_id", data.tenantId)
+      .eq("professional_id", data.professionalId)
+      .lte("starts_on", bookingDate)
+      .gte("ends_on", bookingDate);
+    if (timeOffError) throw new Error(timeOffError.message);
+    const startMinInDay = start.getHours() * 60 + start.getMinutes();
+    const endMinInDay = end.getHours() * 60 + end.getMinutes();
+    for (const off of timeOffRows ?? []) {
+      if (off.all_day) {
+        throw new Error("O profissional está de folga na data escolhida.");
+      }
+      const [sh, sm] = String(off.start_time ?? "00:00").split(":").map(Number);
+      const [eh, em] = String(off.end_time ?? "00:00").split(":").map(Number);
+      const offStart = (sh || 0) * 60 + (sm || 0);
+      const offEnd = (eh || 0) * 60 + (em || 0);
+      if (startMinInDay < offEnd && endMinInDay > offStart) {
+        throw new Error("O profissional está de folga neste horário.");
+      }
+    }
+
     const openingMinutes = configuredTimeMinutes(settings?.open_hour, 8);
     const closingMinutes = configuredTimeMinutes(settings?.close_hour, 20);
     const startMinutes = saoPauloTimeMinutes(start);
