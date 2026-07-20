@@ -6,9 +6,13 @@ export const authUserQueryKey = ["auth-user"] as const;
 export const authUserStaleTime = 5 * 60 * 1000;
 
 export async function fetchAuthUser(): Promise<User | null> {
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  return data.user ?? null;
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data?.user) return null;
+    return data.user;
+  } catch (err) {
+    return null;
+  }
 }
 
 export function getAuthUser(queryClient: QueryClient) {
