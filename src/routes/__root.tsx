@@ -5,6 +5,7 @@ import appCss from "../styles.css?url";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "sonner";
 import { authUserQueryKey } from "@/lib/auth-cache";
+import { installStaleBuildRecovery, STALE_BUILD_RECOVERY_INLINE_SCRIPT } from "@/lib/stale-build-recovery";
 
 function NotFound() {
   return (
@@ -45,7 +46,11 @@ function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="pt-BR">
       <head><HeadContent /></head>
-      <body>{children}<Scripts /></body>
+      <body>
+        <script dangerouslySetInnerHTML={{ __html: STALE_BUILD_RECOVERY_INLINE_SCRIPT }} />
+        {children}
+        <Scripts />
+      </body>
     </html>
   );
 }
@@ -53,6 +58,9 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
+  useEffect(() => {
+    installStaleBuildRecovery();
+  }, []);
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
