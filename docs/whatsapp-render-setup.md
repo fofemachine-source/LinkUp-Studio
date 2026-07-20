@@ -117,7 +117,7 @@ secretas:
 LINKUP_WHATSAPP_CONNECTOR_SECRET=<mesmo segredo da Edge Function>
 SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service role/secret key do projeto>
-LINKUP_PUBLIC_APP_URL=https://barber-pro-plus.lovable.app
+LINKUP_PUBLIC_APP_URL=https://linkup-studio.lovable.app
 ```
 
 Se for reaproveitar o Render compartilhado já existente
@@ -159,7 +159,7 @@ Opcional, mas recomendado para preencher `{link_cancelamento}` nos modelos de
 mensagem:
 
 ```text
-LINKUP_PUBLIC_APP_URL=https://barber-pro-plus.lovable.app
+LINKUP_PUBLIC_APP_URL=https://linkup-studio.lovable.app
 ```
 
 ## 4.1. Job para mensagens automáticas
