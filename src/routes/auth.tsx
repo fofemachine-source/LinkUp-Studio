@@ -48,7 +48,7 @@ function AuthPage() {
       .then(async ({ data }) => {
         if (!active || !data.user) return;
         const destination = await getAuthenticatedDestination(data.user.id);
-        if (active) navigate({ to: destination });
+        if (active) window.location.href = destination;
       })
       .catch(() => {
         // Mantém o login visível se o perfil não puder ser identificado.
@@ -67,7 +67,7 @@ function AuthPage() {
 
   const goAfterAuth = async (userId: string) => {
     const destination = await getAuthenticatedDestination(userId);
-    navigate({ to: destination });
+    window.location.href = destination;
   };
 
   return (
