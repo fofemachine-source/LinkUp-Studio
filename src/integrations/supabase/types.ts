@@ -2229,6 +2229,66 @@ export type Database = {
           },
         ]
       }
+      professional_time_off: {
+        Row: {
+          all_day: boolean
+          created_at: string
+          created_by: string | null
+          end_time: string | null
+          ends_on: string
+          id: string
+          professional_id: string
+          reason: string | null
+          start_time: string | null
+          starts_on: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          all_day?: boolean
+          created_at?: string
+          created_by?: string | null
+          end_time?: string | null
+          ends_on: string
+          id?: string
+          professional_id: string
+          reason?: string | null
+          start_time?: string | null
+          starts_on: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          all_day?: boolean
+          created_at?: string
+          created_by?: string | null
+          end_time?: string | null
+          ends_on?: string
+          id?: string
+          professional_id?: string
+          reason?: string | null
+          start_time?: string | null
+          starts_on?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "professional_time_off_professional_id_fkey"
+            columns: ["professional_id"]
+            isOneToOne: false
+            referencedRelation: "professionals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "professional_time_off_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       professionals: {
         Row: {
           active: boolean | null

@@ -22,6 +22,7 @@ import {
   normalizeBookingWeekdays,
 } from "@/lib/booking-weekdays";
 import { WhatsAppSettings } from "@/components/whatsapp/whatsapp-settings";
+import { ProfessionalTimeOffManager } from "@/components/config/professional-time-off-manager";
 
 export const Route = createFileRoute("/_authenticated/app/configuracoes")({ component: ConfigPage });
 
@@ -422,6 +423,8 @@ function HoursTab() {
         {f.closed_dates.length === 0 && <span className="text-xs text-muted-foreground italic">Nenhuma data bloqueada cadastrada.</span>}
       </div>
     </div>
+
+    <ProfessionalTimeOffManager tenantId={tenantId} />
 
     <Button onClick={saveHours} disabled={isSaving}>
       {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

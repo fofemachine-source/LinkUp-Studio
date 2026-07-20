@@ -412,7 +412,7 @@ export const getPublicTenant = createServerFn({ method: "GET" })
     const { data: t, error: tenantError } = await supabase.from("tenants").select("id,name,subtitle,logo_url,banner_url,slug,primary_color,slot_minutes,whatsapp,city").eq("slug", data.slug).eq("status", "active").maybeSingle();
     if (tenantError) throw new Error(tenantError.message);
     if (!t) return null;
-    const [professionalsResult, servicesResult, settingsResult, brandingResult] = await Promise.all([
+    const [professionalsResult, servicesResult, settingsResult, brandingResult, timeOffResult] = await Promise.all([
       supabase.from("professionals").select("id,full_name,photo_url,role_label,work_days,blocked_dates").eq("tenant_id", t.id).eq("active", true).order("full_name"),
       supabase.from("services").select("id,name,price,duration_min,vip_only").eq("tenant_id", t.id).eq("active", true).order("name"),
       loadPublicTenantSettings(supabase, t.id),
@@ -423,6 +423,11 @@ export const getPublicTenant = createServerFn({ method: "GET" })
         )
         .eq("tenant_id", t.id)
         .maybeSingle(),
+      db
+        .from("professional_time_off")
+        .select("professional_id,starts_on,ends_on,all_day,start_time,end_time")
+        .eq("tenant_id", t.id)
+        .gte("ends_on", saoPauloToday()),
     ]);
     if (professionalsResult.error) throw new Error(professionalsResult.error.message);
     if (servicesResult.error) throw new Error(servicesResult.error.message);
@@ -434,6 +439,7 @@ export const getPublicTenant = createServerFn({ method: "GET" })
       services: servicesResult.data ?? [],
       settings: settingsResult.data,
       branding: brandingResult.data,
+      timeOff: timeOffResult.data ?? [],
     };
   });
 
@@ -1051,16 +1057,45 @@ export const getBookedSlots = createServerFn({ method: "POST" })
     const supabase = await pub();
     const start = new Date(data.date + "T00:00:00").toISOString();
     const end = new Date(data.date + "T23:59:59").toISOString();
-    const { data: appts, error } = await supabase
-      .from("appointments")
-      .select("start_at,end_at")
-      .eq("tenant_id", data.tenantId)
-      .eq("professional_id", data.professionalId)
-      .gte("start_at", start)
-      .lte("start_at", end)
-      .not("status", "in", "(cancelled,canceled,noshow)");
-    if (error) throw new Error(error.message);
-    return appts ?? [];
+    const [apptsRes, timeOffRes] = await Promise.all([
+      supabase
+        .from("appointments")
+        .select("start_at,end_at")
+        .eq("tenant_id", data.tenantId)
+        .eq("professional_id", data.professionalId)
+        .gte("start_at", start)
+        .lte("start_at", end)
+        .not("status", "in", "(cancelled,canceled,noshow)"),
+      (supabase as any)
+        .from("professional_time_off")
+        .select("starts_on,ends_on,all_day,start_time,end_time")
+        .eq("tenant_id", data.tenantId)
+        .eq("professional_id", data.professionalId)
+        .lte("starts_on", data.date)
+        .gte("ends_on", data.date),
+    ]);
+    if (apptsRes.error) throw new Error(apptsRes.error.message);
+    if (timeOffRes.error) throw new Error(timeOffRes.error.message);
+
+    const busy: { start_at: string; end_at: string }[] = (apptsRes.data ?? []).map((a: any) => ({
+      start_at: a.start_at,
+      end_at: a.end_at,
+    }));
+    const [year, month, day] = data.date.split("-").map(Number);
+    for (const off of timeOffRes.data ?? []) {
+      if (off.all_day) {
+        const s = new Date(year, month - 1, day, 0, 0, 0, 0);
+        const e = new Date(year, month - 1, day, 23, 59, 59, 999);
+        busy.push({ start_at: s.toISOString(), end_at: e.toISOString() });
+      } else {
+        const [sh, sm] = String(off.start_time ?? "00:00").split(":").map(Number);
+        const [eh, em] = String(off.end_time ?? "00:00").split(":").map(Number);
+        const s = new Date(year, month - 1, day, sh || 0, sm || 0, 0, 0);
+        const e = new Date(year, month - 1, day, eh || 0, em || 0, 0, 0);
+        busy.push({ start_at: s.toISOString(), end_at: e.toISOString() });
+      }
+    }
+    return busy;
   });
 
 // Public: create appointment. Enforces slot conflict and VIP-day rule.
@@ -1256,6 +1291,29 @@ export const createBooking = createServerFn({ method: "POST" })
     }
     if ((pro.blocked_dates ?? []).includes(bookingDate)) {
       throw new Error("O profissional não está disponível na data escolhida.");
+    }
+
+    const { data: timeOffRows, error: timeOffError } = await (supabase as any)
+      .from("professional_time_off")
+      .select("all_day,start_time,end_time")
+      .eq("tenant_id", data.tenantId)
+      .eq("professional_id", data.professionalId)
+      .lte("starts_on", bookingDate)
+      .gte("ends_on", bookingDate);
+    if (timeOffError) throw new Error(timeOffError.message);
+    const startMinInDay = saoPauloTimeMinutes(start);
+    const endMinInDay = saoPauloTimeMinutes(end);
+    for (const off of timeOffRows ?? []) {
+      if (off.all_day) {
+        throw new Error("O profissional está de folga na data escolhida.");
+      }
+      const [sh, sm] = String(off.start_time ?? "00:00").split(":").map(Number);
+      const [eh, em] = String(off.end_time ?? "00:00").split(":").map(Number);
+      const offStart = (sh || 0) * 60 + (sm || 0);
+      const offEnd = (eh || 0) * 60 + (em || 0);
+      if (startMinInDay < offEnd && endMinInDay > offStart) {
+        throw new Error("O profissional está de folga neste horário.");
+      }
     }
 
     const openingMinutes = configuredTimeMinutes(settings?.open_hour, 8);
