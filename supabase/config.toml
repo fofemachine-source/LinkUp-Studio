@@ -12,3 +12,6 @@ verify_jwt = false
 
 [functions.asaas-worker]
 verify_jwt = false
+
+[functions.appointment-push]
+verify_jwt = false
