@@ -904,7 +904,13 @@ function DayTimeline({
 
             {professionals.map((professional) => {
               const professionalAppointments = appointments.filter(
-                (appointment) => appointment.professional_id === professional.id,
+                (appointment) => {
+                  if (appointment.professional_id !== professional.id) return false;
+                  if (!isTodayView) return true;
+                  // Hide past appointments already ended in the "now onward" view.
+                  const end = new Date(appointment.end_at);
+                  return end.getHours() * 60 + end.getMinutes() > nowSlotMinutes;
+                },
               );
               const off = isProfessionalOff(professional, date);
               return (
