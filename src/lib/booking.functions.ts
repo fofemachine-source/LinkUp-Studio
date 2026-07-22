@@ -626,9 +626,19 @@ export const validateVip = createServerFn({ method: "POST" })
         }
       }
 
+      const renewalDueDate = dateOnly(renewal?.due_date);
+      const shouldExposeRenewalPayment =
+        !!renewal &&
+        (contractStatus === "pending_activation" ||
+          contractStatus === "overdue" ||
+          contractStatus === "expired" ||
+          renewal.status === "overdue" ||
+          (renewalDueDate != null && renewalDueDate <= today));
+      const exposedRenewal = shouldExposeRenewalPayment ? renewal : null;
+
       let payment: { pix_key: string; pix_holder: string | null; city: string | null } | null =
         null;
-      if (renewal && plan.pix_enabled) {
+      if (exposedRenewal && plan.pix_enabled) {
         const { data: tenantPayment } = await db
           .from("tenants")
           .select("pix_key,pix_holder,city")
@@ -736,20 +746,20 @@ export const validateVip = createServerFn({ method: "POST" })
         included_services_only: plan.included_services_only,
         discount_value: plan.discount_allowed ? plan.discount_value : 0,
         payment,
-        renewal: renewal
+        renewal: exposedRenewal
           ? {
-              charge_id: renewal.id,
-              amount: renewal.amount,
-              due_date: renewal.due_date,
-              status: renewal.status,
-              proof_status: renewal.proof_status ?? "none",
-              proof_submitted_at: renewal.proof_submitted_at,
-              proof_file_name: renewal.proof_file_name,
-              proof_rejection_reason: renewal.proof_rejection_reason,
+              charge_id: exposedRenewal.id,
+              amount: exposedRenewal.amount,
+              due_date: exposedRenewal.due_date,
+              status: exposedRenewal.status,
+              proof_status: exposedRenewal.proof_status ?? "none",
+              proof_submitted_at: exposedRenewal.proof_submitted_at,
+              proof_file_name: exposedRenewal.proof_file_name,
+              proof_rejection_reason: exposedRenewal.proof_rejection_reason,
               payment_token:
                 payment &&
-                ["none", "rejected"].includes(renewal.proof_status ?? "none")
-                ? renewal.payment_token
+                ["none", "rejected"].includes(exposedRenewal.proof_status ?? "none")
+                ? exposedRenewal.payment_token
                 : null,
             }
           : null,
