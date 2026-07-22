@@ -8,13 +8,7 @@ const repairAppointmentCommandasSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
-const FINAL_COMANDA_STATUSES = new Set([
-  "closed",
-  "canceled",
-  "cancelled",
-  "no_show",
-  "noshow",
-]);
+const FINAL_COMANDA_STATUSES = new Set(["closed", "canceled", "cancelled", "no_show", "noshow"]);
 
 function saoPauloDayRange(date: string) {
   return {
@@ -23,7 +17,10 @@ function saoPauloDayRange(date: string) {
   };
 }
 
-function canManageTenant(roles: Array<{ role: string; tenant_id: string | null }>, tenantId: string) {
+function canManageTenant(
+  roles: Array<{ role: string; tenant_id: string | null }>,
+  tenantId: string,
+) {
   return roles.some(
     (role) =>
       role.role === "super_admin" ||
@@ -31,7 +28,48 @@ function canManageTenant(roles: Array<{ role: string; tenant_id: string | null }
   );
 }
 
-function shouldRepairCommanda(commanda: any | undefined, appointment: any) {
+type RepairAppointment = {
+  id: string;
+  tenant_id: string;
+  client_id: string | null;
+  client_name: string | null;
+  professional_id: string;
+  service_id: string;
+  start_at: string;
+  status: string | null;
+  source: string | null;
+  subscription_id: string | null;
+};
+
+type RepairCommanda = {
+  id: string;
+  appointment_id: string | null;
+  status: string | null;
+  scheduled_at: string | null;
+  subtotal?: number | null;
+  discount?: number | null;
+  addition?: number | null;
+  total?: number | null;
+};
+
+type RepairCommandaItem = {
+  commanda_id: string;
+  kind: string | null;
+  ref_id: string | null;
+  quantity: number | null;
+  unit_price: number | null;
+};
+
+function money(value: unknown) {
+  const parsed = Number(value ?? 0);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.round(parsed * 100) / 100;
+}
+
+function shouldNormalizeCommanda(
+  commanda: RepairCommanda | undefined,
+  appointment: RepairAppointment,
+) {
   if (!commanda) return true;
 
   const status = String(commanda.status ?? "").toLowerCase();
@@ -44,6 +82,185 @@ function shouldRepairCommanda(commanda: any | undefined, appointment: any) {
 
   if (!["open", "awaiting_payment"].includes(status)) return true;
   return false;
+}
+
+async function loadCoveredServiceIdsByAppointment(
+  db: any,
+  tenantId: string,
+  appointments: RepairAppointment[],
+) {
+  const result = new Map<string, string[]>();
+  const subscriptionIds = Array.from(
+    new Set(
+      appointments
+        .map((appointment) => appointment.subscription_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+
+  if (subscriptionIds.length === 0) return result;
+
+  const { data: subscriptions, error: subscriptionsError } = await db
+    .from("client_subscriptions")
+    .select("id,plan_id")
+    .eq("tenant_id", tenantId)
+    .in("id", subscriptionIds);
+
+  if (subscriptionsError) throw new Error(subscriptionsError.message);
+
+  const planBySubscriptionId = new Map<string, string>();
+  for (const subscription of subscriptions ?? []) {
+    if (subscription.id && subscription.plan_id) {
+      planBySubscriptionId.set(subscription.id, subscription.plan_id);
+    }
+  }
+
+  const planIds = Array.from(new Set(planBySubscriptionId.values()));
+  if (planIds.length === 0) return result;
+
+  const { data: benefits, error: benefitsError } = await db
+    .from("subscription_plan_benefits")
+    .select("plan_id,service_id,benefit_type,active")
+    .eq("tenant_id", tenantId)
+    .eq("benefit_type", "service")
+    .eq("active", true)
+    .in("plan_id", planIds);
+
+  if (benefitsError) throw new Error(benefitsError.message);
+
+  const coveredServicesByPlanId = new Map<string, Set<string>>();
+  for (const benefit of benefits ?? []) {
+    if (!benefit.plan_id || !benefit.service_id) continue;
+
+    const services = coveredServicesByPlanId.get(benefit.plan_id) ?? new Set<string>();
+    services.add(benefit.service_id);
+    coveredServicesByPlanId.set(benefit.plan_id, services);
+  }
+
+  for (const appointment of appointments) {
+    if (!appointment.subscription_id) continue;
+
+    const planId = planBySubscriptionId.get(appointment.subscription_id);
+    const coveredServices = planId ? coveredServicesByPlanId.get(planId) : null;
+    if (coveredServices?.has(appointment.service_id)) {
+      result.set(appointment.id, [appointment.service_id]);
+    }
+  }
+
+  return result;
+}
+
+async function adjustOpenCoveredSubscriptionCommandas(
+  db: any,
+  tenantId: string,
+  appointments: RepairAppointment[],
+  commandaByAppointmentId: Map<string, RepairCommanda>,
+) {
+  const coveredServiceIdsByAppointment = await loadCoveredServiceIdsByAppointment(
+    db,
+    tenantId,
+    appointments,
+  );
+
+  const appointmentsWithCoverage = appointments.filter(
+    (appointment) =>
+      (coveredServiceIdsByAppointment.get(appointment.id)?.length ?? 0) > 0 &&
+      commandaByAppointmentId.has(appointment.id),
+  );
+
+  if (appointmentsWithCoverage.length === 0) return 0;
+
+  const openCommandaIds = appointmentsWithCoverage
+    .map((appointment) => commandaByAppointmentId.get(appointment.id))
+    .filter((commanda): commanda is RepairCommanda => {
+      if (!commanda) return false;
+      const status = String(commanda.status ?? "").toLowerCase();
+      return !FINAL_COMANDA_STATUSES.has(status);
+    })
+    .map((commanda) => commanda.id);
+
+  if (openCommandaIds.length === 0) return 0;
+
+  const { data: items, error: itemsError } = await db
+    .from("commanda_items")
+    .select("commanda_id,kind,ref_id,quantity,unit_price")
+    .eq("tenant_id", tenantId)
+    .in("commanda_id", openCommandaIds);
+
+  if (itemsError) throw new Error(itemsError.message);
+
+  const itemsByCommandaId = new Map<string, RepairCommandaItem[]>();
+  for (const item of (items ?? []) as RepairCommandaItem[]) {
+    const grouped = itemsByCommandaId.get(item.commanda_id) ?? [];
+    grouped.push(item);
+    itemsByCommandaId.set(item.commanda_id, grouped);
+  }
+
+  let adjusted = 0;
+
+  for (const appointment of appointmentsWithCoverage) {
+    const commanda = commandaByAppointmentId.get(appointment.id);
+    if (!commanda) continue;
+
+    const currentStatus = String(commanda.status ?? "").toLowerCase();
+    if (FINAL_COMANDA_STATUSES.has(currentStatus)) continue;
+
+    const covered = new Set(coveredServiceIdsByAppointment.get(appointment.id) ?? []);
+    if (covered.size === 0) continue;
+
+    const commandaItems = itemsByCommandaId.get(commanda.id) ?? [];
+    if (commandaItems.length === 0) continue;
+
+    const catalogSubtotal = money(
+      commandaItems.reduce(
+        (sum, item) => sum + money(item.unit_price) * Number(item.quantity ?? 1),
+        0,
+      ),
+    );
+    const coveredSubtotal = money(
+      commandaItems
+        .filter((item) => item.kind === "service" && item.ref_id && covered.has(item.ref_id))
+        .reduce((sum, item) => sum + money(item.unit_price) * Number(item.quantity ?? 1), 0),
+    );
+
+    if (coveredSubtotal <= 0) continue;
+
+    const nextSubtotal = money(Math.max(0, catalogSubtotal - coveredSubtotal));
+    const nextTotal = money(
+      Math.max(0, nextSubtotal - money(commanda.discount) + money(commanda.addition)),
+    );
+
+    if (
+      money(commanda.subtotal) === nextSubtotal &&
+      money(commanda.total) === nextTotal &&
+      commanda.scheduled_at === appointment.start_at &&
+      ["open", "awaiting_payment"].includes(currentStatus) &&
+      commanda.appointment_id === appointment.id
+    ) {
+      continue;
+    }
+
+    const { error: updateError } = await db
+      .from("commandas")
+      .update({
+        subscription_id: appointment.subscription_id ?? null,
+        scheduled_at: appointment.start_at,
+        source: appointment.source === "online" ? "online" : "manual",
+        client_id: appointment.client_id ?? null,
+        client_name: appointment.client_name ?? "Cliente",
+        status: ["open", "awaiting_payment"].includes(currentStatus) ? currentStatus : "open",
+        subtotal: nextSubtotal,
+        total: nextTotal,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("tenant_id", tenantId)
+      .eq("id", commanda.id);
+
+    if (updateError) throw new Error(updateError.message);
+    adjusted += 1;
+  }
+
+  return adjusted;
 }
 
 export const repairAppointmentCommandasForDate = createServerFn({ method: "POST" })
@@ -60,10 +277,13 @@ export const repairAppointmentCommandasForDate = createServerFn({ method: "POST"
       throw new Error("Você não tem permissão para sincronizar comandas deste salão.");
     }
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Keep this repair path caller-scoped. The owner/staff authorization above
+    // and the table RLS policies both validate every tenant read/write, so the
+    // web server does not need (and must not expose) a service-role key.
+    const db = context.supabase;
     const range = saoPauloDayRange(data.date);
 
-    const { data: appointments, error: appointmentsError } = await supabaseAdmin
+    const { data: appointments, error: appointmentsError } = await db
       .from("appointments")
       .select(
         "id,tenant_id,client_id,client_name,professional_id,service_id,start_at,status,source,subscription_id",
@@ -76,100 +296,160 @@ export const repairAppointmentCommandasForDate = createServerFn({ method: "POST"
     if (appointmentsError) throw new Error(appointmentsError.message);
 
     const candidateAppointments = (appointments ?? []).filter(
-      (appointment: any) => appointment.id && appointment.professional_id && appointment.service_id,
+      (appointment): appointment is RepairAppointment =>
+        Boolean(appointment.id && appointment.professional_id && appointment.service_id),
     );
 
     if (candidateAppointments.length === 0) {
       return { ok: true, checked: 0, repaired: 0, created: 0, normalized: 0 };
     }
 
-    const appointmentIds = candidateAppointments.map((appointment: any) => appointment.id);
-    const { data: relatedCommandas, error: relatedCommandasError } = await supabaseAdmin
+    const appointmentIds = candidateAppointments.map((appointment) => appointment.id);
+    const { data: relatedCommandas, error: relatedCommandasError } = await db
       .from("commandas")
-      .select("id,appointment_id,status,scheduled_at")
+      .select("id,appointment_id,status,scheduled_at,subtotal,discount,addition,total")
       .eq("tenant_id", data.tenantId)
       .in("appointment_id", appointmentIds);
 
     if (relatedCommandasError) throw new Error(relatedCommandasError.message);
 
-    const commandaByAppointmentId = new Map(
-      (relatedCommandas ?? [])
-        .filter((commanda: any) => commanda.appointment_id)
-        .map((commanda: any) => [commanda.appointment_id, commanda]),
+    const commandaByAppointmentId = new Map<string, RepairCommanda>();
+    for (const commanda of relatedCommandas ?? []) {
+      if (commanda.appointment_id) {
+        commandaByAppointmentId.set(commanda.appointment_id, commanda);
+      }
+    }
+
+    const billingAdjusted = await adjustOpenCoveredSubscriptionCommandas(
+      db,
+      data.tenantId,
+      candidateAppointments,
+      commandaByAppointmentId,
     );
 
-    const appointmentsToRepair = candidateAppointments.filter((appointment: any) =>
-      shouldRepairCommanda(commandaByAppointmentId.get(appointment.id), appointment),
+    const appointmentsToRepair = candidateAppointments.filter((appointment) =>
+      shouldNormalizeCommanda(commandaByAppointmentId.get(appointment.id), appointment),
     );
 
     if (appointmentsToRepair.length === 0) {
       return {
         ok: true,
         checked: candidateAppointments.length,
-        repaired: 0,
+        repaired: billingAdjusted,
         created: 0,
-        normalized: 0,
+        normalized: billingAdjusted,
+        billingAdjusted,
+      };
+    }
+
+    const appointmentsToCreate = appointmentsToRepair.filter(
+      (appointment) => !commandaByAppointmentId.has(appointment.id),
+    );
+    const appointmentsToNormalize = appointmentsToRepair.filter((appointment) =>
+      commandaByAppointmentId.has(appointment.id),
+    );
+
+    let normalized = 0;
+    for (const appointment of appointmentsToNormalize) {
+      const commanda = commandaByAppointmentId.get(appointment.id);
+      if (!commanda) continue;
+
+      const currentStatus = String(commanda.status ?? "").toLowerCase();
+      const normalizedStatus = ["open", "awaiting_payment"].includes(currentStatus)
+        ? currentStatus
+        : "open";
+      const { error: updateError } = await db
+        .from("commandas")
+        .update({
+          subscription_id: appointment.subscription_id ?? null,
+          scheduled_at: appointment.start_at,
+          source: appointment.source === "online" ? "online" : "manual",
+          client_id: appointment.client_id ?? null,
+          client_name: appointment.client_name ?? "Cliente",
+          status: normalizedStatus,
+        })
+        .eq("tenant_id", data.tenantId)
+        .eq("id", commanda.id);
+
+      if (updateError) throw new Error(updateError.message);
+      normalized += 1;
+    }
+
+    if (appointmentsToCreate.length === 0) {
+      return {
+        ok: true,
+        checked: candidateAppointments.length,
+        repaired: normalized + billingAdjusted,
+        created: 0,
+        normalized: normalized + billingAdjusted,
+        billingAdjusted,
       };
     }
 
     const serviceIds = Array.from(
-      new Set(appointmentsToRepair.map((appointment: any) => appointment.service_id)),
+      new Set(appointmentsToCreate.map((appointment) => appointment.service_id)),
     );
     const professionalIds = Array.from(
-      new Set(appointmentsToRepair.map((appointment: any) => appointment.professional_id)),
+      new Set(appointmentsToCreate.map((appointment) => appointment.professional_id)),
     );
 
-    const [{ data: services, error: servicesError }, { data: professionals, error: professionalsError }] =
-      await Promise.all([
-        supabaseAdmin
-          .from("services")
-          .select("id,name,price")
-          .eq("tenant_id", data.tenantId)
-          .in("id", serviceIds),
+    const [
+      { data: services, error: servicesError },
+      { data: professionals, error: professionalsError },
+    ] = await Promise.all([
+      db
+        .from("services")
+        .select("id,name,price")
+        .eq("tenant_id", data.tenantId)
+        .in("id", serviceIds),
 
-        supabaseAdmin
-          .from("professionals")
-          .select("id,commission_pct")
-          .eq("tenant_id", data.tenantId)
-          .in("id", professionalIds),
-      ]);
+      db
+        .from("professionals")
+        .select("id,commission_pct")
+        .eq("tenant_id", data.tenantId)
+        .in("id", professionalIds),
+    ]);
 
     if (servicesError) throw new Error(servicesError.message);
     if (professionalsError) throw new Error(professionalsError.message);
 
-    let created = 0;
-    let normalized = 0;
+    const coveredServiceIdsByAppointment = await loadCoveredServiceIdsByAppointment(
+      db,
+      data.tenantId,
+      appointmentsToCreate,
+    );
 
-    for (const appointment of appointmentsToRepair) {
-      const service = (services ?? []).find((item: any) => item.id === appointment.service_id);
+    let created = 0;
+
+    for (const appointment of appointmentsToCreate) {
+      const service = (services ?? []).find((item) => item.id === appointment.service_id);
       if (!service) continue;
 
-      const alreadyHadCommanda = Boolean(commandaByAppointmentId.get(appointment.id));
-      await syncAppointmentComanda(supabaseAdmin as any, {
+      await syncAppointmentComanda(db, {
         appointmentId: appointment.id,
         tenantId: data.tenantId,
         subscriptionId: appointment.subscription_id ?? null,
+        coveredServiceIds: coveredServiceIdsByAppointment.get(appointment.id) ?? [],
         clientId: appointment.client_id ?? null,
         clientName: appointment.client_name ?? "Cliente",
         professionalId: appointment.professional_id,
-        serviceIds: [appointment.service_id].filter(Boolean) as string[],
-        services: [service] as any,
-
+        serviceIds: [appointment.service_id],
+        services: [service],
         professionals: professionals ?? [],
         scheduledAt: appointment.start_at,
         status: appointment.status,
         source: appointment.source === "online" ? "online" : "manual",
       });
 
-      if (alreadyHadCommanda) normalized += 1;
-      else created += 1;
+      created += 1;
     }
 
     return {
       ok: true,
       checked: candidateAppointments.length,
-      repaired: created + normalized,
+      repaired: created + normalized + billingAdjusted,
       created,
-      normalized,
+      normalized: normalized + billingAdjusted,
+      billingAdjusted,
     };
   });

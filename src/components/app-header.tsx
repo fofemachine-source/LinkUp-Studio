@@ -12,7 +12,7 @@ import {
   Volume2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -85,8 +85,17 @@ function normalizeRepeatSeconds(value: string | number | null | undefined) {
   return Math.min(300, Math.max(5, Math.round(parsed)));
 }
 
+function getMobileGreeting(name: string) {
+  const hour = new Date().getHours();
+  const prefix = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+  const firstName = name.trim().split(/\s+/)[0] || "Gestor";
+  return `${prefix}, ${firstName}`;
+}
+
 export function AppHeader() {
   const nav = useNavigate();
+  const currentPath = useRouterState({ select: (router) => router.location.pathname });
+  const isDashboard = currentPath.replace(/\/+$/, "") === "/app";
   const qc = useQueryClient();
   const { data: tenant } = useCurrentTenant();
   const { data: role } = useUserRole(tenant?.id);
@@ -372,15 +381,29 @@ export function AppHeader() {
   };
 
   return (
-    <header className="h-16 border-b bg-background flex items-center gap-3 px-4 sticky top-0 z-30">
+    <header className="sticky top-0 z-30 flex h-[4.5rem] items-center gap-3 border-b bg-background/95 px-4 backdrop-blur md:h-16 md:bg-background md:backdrop-blur-none">
       <button
         onClick={toggleSidebar}
-        className="h-9 w-9 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-95 transition-all duration-200"
+        className={`${isDashboard ? "hidden md:flex" : "flex"} h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted md:transition-all md:duration-200 md:active:scale-95`}
         aria-label="Abrir Menu"
       >
         <Menu className="h-5 w-5" />
       </button>
-      <div className="relative flex-1 max-w-2xl">
+      {isDashboard ? (
+        <div className="min-w-0 flex-1 md:hidden">
+          <div className="truncate text-sm font-semibold leading-tight">
+            {getMobileGreeting(fullName ?? "Gestor")}
+          </div>
+          <div className="mt-1 truncate text-xs capitalize text-muted-foreground">
+            {new Intl.DateTimeFormat("pt-BR", {
+              weekday: "long",
+              day: "2-digit",
+              month: "long",
+            }).format(new Date())}
+          </div>
+        </div>
+      ) : null}
+      <div className={`relative max-w-2xl flex-1 ${isDashboard ? "hidden md:block" : ""}`}>
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="Buscar agendamentos, clientes..."

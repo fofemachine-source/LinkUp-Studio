@@ -1394,6 +1394,7 @@ export const createBooking = createServerFn({ method: "POST" })
         appointmentId: appt.id,
         tenantId: data.tenantId,
         subscriptionId: activeSubscription?.id ?? null,
+        coveredServiceIds: coveredBySubscription ? [data.serviceId] : [],
         clientId,
         clientName: customer.fullName,
         professionalId: data.professionalId,
@@ -1422,7 +1423,7 @@ export const cancelBooking = createServerFn({ method: "POST" })
     const { data: appointment, error: appointmentError } = await supabase
       .from("appointments")
       .select(
-        "id,tenant_id,client_id,client_name,professional_id,service_id,start_at,status,source,cancellation_token",
+        "id,tenant_id,client_id,client_name,professional_id,service_id,start_at,status,source,cancellation_token,subscription_id",
       )
       .eq("cancellation_token", data.token)
       .eq("source", "online")
@@ -1477,6 +1478,7 @@ export const cancelBooking = createServerFn({ method: "POST" })
       await syncAppointmentComanda(supabase, {
         appointmentId: appointment.id,
         tenantId: appointment.tenant_id,
+        subscriptionId: appointment.subscription_id ?? null,
         clientId: appointment.client_id,
         clientName: appointment.client_name || "Cliente",
         professionalId: appointment.professional_id,

@@ -97,6 +97,7 @@ export type AgendaAppointment = {
   notes?: string | null;
   source?: string | null;
   is_vip?: boolean | null;
+  subscription_id?: string | null;
   services?: {
     name?: string | null;
     duration_min?: number | null;

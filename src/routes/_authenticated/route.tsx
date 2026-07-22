@@ -5,11 +5,19 @@ import { Loader2 } from "lucide-react";
 import { useEffect } from "react";
 
 export const Route = createFileRoute("/_authenticated")({
+  // Supabase Auth is persisted in localStorage in this app. The server cannot
+  // read that session, so rendering this subtree during SSR would produce an
+  // unauthenticated HTML tree that differs from the hydrated browser state.
+  ssr: false,
   component: AuthenticatedGuard,
 });
 
 function AuthenticatedGuard() {
-  const { data: user, isLoading, isError } = useQuery({
+  const {
+    data: user,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: authUserQueryKey,
     queryFn: fetchAuthUser,
     staleTime: authUserStaleTime,

@@ -19,6 +19,14 @@ export type AppointmentComandaInput = {
   appointmentId: string;
   tenantId: string;
   subscriptionId?: string | null;
+  /**
+   * Services already paid by the linked subscription.
+   *
+   * Keep the original service price in commanda_items for history, usage and
+   * commission calculations; only the commanda subtotal/total must ignore these
+   * covered services so the client is not charged twice.
+   */
+  coveredServiceIds?: string[];
   clientId?: string | null;
   clientName: string;
   professionalId: string;
@@ -97,7 +105,15 @@ function buildComandaItems(input: AppointmentComandaInput, commandaId: string) {
   return [...serviceItems, ...productItems];
 }
 
-export function appointmentComandaTotal(input: AppointmentComandaInput) {
+function coveredServiceIdSet(input: AppointmentComandaInput) {
+  if (!input.subscriptionId || !input.coveredServiceIds?.length) {
+    return new Set<string>();
+  }
+
+  return new Set(input.coveredServiceIds.filter(Boolean));
+}
+
+export function appointmentComandaCatalogTotal(input: AppointmentComandaInput) {
   const serviceTotal = input.serviceIds.reduce((total, id) => {
     const service = input.services.find((item) => item.id === id);
     return total + Number(service?.price ?? 0);
@@ -109,6 +125,36 @@ export function appointmentComandaTotal(input: AppointmentComandaInput) {
   }, 0);
 
   return serviceTotal + productTotal;
+}
+
+export function appointmentComandaCoveredTotal(input: AppointmentComandaInput) {
+  const covered = coveredServiceIdSet(input);
+  if (covered.size === 0) return 0;
+
+  return input.serviceIds.reduce((total, id) => {
+    if (!covered.has(id)) return total;
+
+    const service = input.services.find((item) => item.id === id);
+    return total + Number(service?.price ?? 0);
+  }, 0);
+}
+
+export function appointmentComandaTotal(input: AppointmentComandaInput) {
+  const covered = coveredServiceIdSet(input);
+
+  const billableServiceTotal = input.serviceIds.reduce((total, id) => {
+    if (covered.has(id)) return total;
+
+    const service = input.services.find((item) => item.id === id);
+    return total + Number(service?.price ?? 0);
+  }, 0);
+
+  const productTotal = (input.productIds ?? []).reduce((total, id) => {
+    const product = input.products?.find((item) => item.id === id);
+    return total + Number(product?.price ?? 0);
+  }, 0);
+
+  return billableServiceTotal + productTotal;
 }
 
 export async function syncAppointmentComanda(db: DbClient, input: AppointmentComandaInput) {

@@ -174,6 +174,40 @@ function AgendaPage() {
   const bookingSlug = tenant?.slug || "ernesth";
   const bookingLink = getPublicBookingUrl(bookingSlug);
 
+  async function loadCoveredServiceIds(
+    subscriptionId: string | null | undefined,
+    serviceIds: string[],
+  ) {
+    if (!tenantId || !subscriptionId || serviceIds.length === 0) return [];
+
+    const { data: subscription, error: subscriptionError } = await supabase
+      .from("client_subscriptions")
+      .select("id,plan_id")
+      .eq("tenant_id", tenantId)
+      .eq("id", subscriptionId)
+      .maybeSingle();
+
+    if (subscriptionError || !subscription?.plan_id) return [];
+
+    const { data: benefits, error: benefitsError } = await supabase
+      .from("subscription_plan_benefits")
+      .select("service_id,benefit_type,active")
+      .eq("tenant_id", tenantId)
+      .eq("plan_id", subscription.plan_id)
+      .eq("benefit_type", "service")
+      .eq("active", true);
+
+    if (benefitsError) return [];
+
+    const covered = new Set(
+      (benefits ?? [])
+        .map((benefit) => benefit.service_id)
+        .filter((id): id is string => Boolean(id)),
+    );
+
+    return serviceIds.filter((serviceId) => covered.has(serviceId));
+  }
+
 
   async function syncOperationalAppointment(appointment: AgendaAppointment) {
     if (!tenantId) throw new Error("Salão não identificado.");
@@ -198,13 +232,21 @@ function AgendaPage() {
       "Assinatura / VIP": "vip",
     };
 
+    const uniqueServiceIds = [...new Set(serviceIds)];
+    const coveredServiceIds = await loadCoveredServiceIds(
+      appointment.subscription_id ?? null,
+      uniqueServiceIds,
+    );
+
     await syncAppointmentComanda(supabase, {
       appointmentId: appointment.id,
       tenantId,
+      subscriptionId: appointment.subscription_id ?? null,
+      coveredServiceIds,
       clientId: appointment.client_id ?? null,
       clientName: appointment.client_name || appointment.clients?.full_name || "Cliente",
       professionalId: appointment.professional_id,
-      serviceIds: [...new Set(serviceIds)],
+      serviceIds: uniqueServiceIds,
       productIds,
       services: servicesCatalog ?? [],
       products: productsCatalog ?? [],
@@ -647,6 +689,23 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
       };
       const mappedMethod = paymentMapped[paymentMethod] ?? null;
       const finalObs = [obs, svcsText, prodsText, payText].filter(Boolean).join(" | ");
+      let linkedSubscriptionId: string | null = null;
+      let coveredServiceIds: string[] = [];
+
+      if (isVip && finalClientId) {
+        const { data: subscription } = await supabase
+          .from("client_subscriptions")
+          .select("id")
+          .eq("tenant_id", tenantId!)
+          .eq("client_id", finalClientId)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        linkedSubscriptionId = subscription?.id ?? null;
+        coveredServiceIds = await loadCoveredServiceIds(linkedSubscriptionId, selectedSvcs);
+      }
 
       const { data: appt, error } = await supabase.from("appointments").insert({
         tenant_id: tenantId!,
@@ -655,6 +714,7 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
         client_id: finalClientId || null,
         client_name: finalName,
         client_whatsapp: finalWa.replace(/\D/g, ""),
+        subscription_id: linkedSubscriptionId,
         start_at: currentStart.toISOString(),
         end_at: currentEnd.toISOString(),
         status,
@@ -668,6 +728,8 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
         await syncAppointmentComanda(supabase, {
           appointmentId: appt.id,
           tenantId: tenantId!,
+          subscriptionId: linkedSubscriptionId,
+          coveredServiceIds,
           clientId: finalClientId || null,
           clientName: finalName,
           professionalId: proId,
@@ -1013,6 +1075,21 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
       const mappedMethod = paymentMapped[paymentMethod] ?? null;
 
       const finalObs = [obs, svcsText, prodsText, payText].filter(Boolean).join(" | ");
+      let linkedSubscriptionId = appt.subscription_id ?? null;
+
+      if (!linkedSubscriptionId && isVip && finalClientId) {
+        const { data: subscription } = await supabase
+          .from("client_subscriptions")
+          .select("id")
+          .eq("tenant_id", tenantId!)
+          .eq("client_id", finalClientId)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        linkedSubscriptionId = subscription?.id ?? null;
+      }
 
       const extraIdsToDelete = chain.map(x => x.id).filter((id) => id !== appt.id);
       if (extraIdsToDelete.length > 0) {
@@ -1030,6 +1107,7 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
         client_whatsapp: finalWa.replace(/\D/g, ""),
         start_at: currentStart.toISOString(),
         end_at: currentEnd.toISOString(),
+        subscription_id: linkedSubscriptionId,
         status,
         notes: finalObs,
         source: appt.source ?? "manual",
@@ -1037,9 +1115,16 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
       }).eq("id", appt.id);
       if (error) throw error;
 
+      const coveredServiceIds = await loadCoveredServiceIds(
+        linkedSubscriptionId,
+        selectedSvcs,
+      );
+
       await syncAppointmentComanda(supabase, {
         appointmentId: appt.id,
         tenantId: tenantId!,
+        subscriptionId: linkedSubscriptionId,
+        coveredServiceIds,
         clientId: finalClientId || null,
         clientName: finalName,
         professionalId: proId,

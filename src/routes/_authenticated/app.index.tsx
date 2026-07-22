@@ -80,17 +80,34 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { RevenueForecast } from "@/components/dashboard/revenue-forecast";
+import {
+  MobileCommandCenter,
+  type MobileCommandCenterAlert,
+} from "@/components/dashboard/mobile-command-center";
 import { QrCode } from "@/lib/qr";
 import { brl } from "@/lib/format";
 import { getPublicBookingUrl } from "@/lib/public-booking-url";
-import { getTenantAccess, useCurrentTenant, useTenantAccess, useUserRole } from "@/hooks/use-tenant";
+import {
+  getTenantAccess,
+  useCurrentTenant,
+  useTenantAccess,
+  useUserRole,
+} from "@/hooks/use-tenant";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/app/")({
   beforeLoad: async ({ context }) => {
     const access = await getTenantAccess(context.queryClient);
-    const tenantRoles = access.roles.filter((item) => item.tenant_id === access.activeTenantId).map((r) => r.role);
-    if (tenantRoles.includes("barber") && !tenantRoles.includes("owner") && !tenantRoles.includes("super_admin") && !access.isSuperAdmin) {
+    const tenantRoles = access.roles
+      .filter((item) => item.tenant_id === access.activeTenantId)
+      .map((r) => r.role);
+    if (
+      tenantRoles.includes("barber") &&
+      !tenantRoles.includes("owner") &&
+      !tenantRoles.includes("super_admin") &&
+      !access.isSuperAdmin
+    ) {
       throw redirect({ to: "/app/agenda" });
     }
   },
@@ -211,6 +228,7 @@ const defaultFilters: DashboardFilters = {
 };
 
 function PainelGeral() {
+  const isMobile = useIsMobile();
   const { data: tenant } = useCurrentTenant();
   const { data: access } = useTenantAccess();
   const tenantId = tenant?.id;
@@ -311,6 +329,27 @@ function PainelGeral() {
           </CardContent>
         </Card>
       </div>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <MobileCommandCenter
+        data={data}
+        loading={isLoading}
+        fetching={isFetching}
+        periodLabel={range.label}
+        onRefresh={() => void refetch()}
+        filtersContent={
+          <DashboardFiltersBar
+            filters={filters}
+            onChange={setFilters}
+            professionals={options?.professionals ?? []}
+            services={options?.services ?? []}
+            loading={loadingOptions}
+          />
+        }
+      />
     );
   }
 
@@ -978,6 +1017,34 @@ async function loadDashboardData(
       ["pending", "confirmed"].includes(appointment.status ?? "pending"),
     ).length,
   };
+  const todayOperationalAppointments = todayAppointments.filter(isOperationalAppointment);
+  const todayOperation = {
+    total: todayOperationalAppointments.length,
+    inProgress: todayOperationalAppointments.filter(
+      (appointment: any) => appointment.status === "in_progress",
+    ).length,
+    completed: todayOperationalAppointments.filter(
+      (appointment: any) => appointment.status === "completed",
+    ).length,
+    delayed: todayOperationalAppointments.filter(
+      (appointment: any) =>
+        ["pending", "confirmed", "arrived"].includes(appointment.status ?? "pending") &&
+        new Date(appointment.start_at) < now,
+    ).length,
+  };
+  const serviceDurations = periodAppointments
+    .filter(isOperationalAppointment)
+    .map((appointment: any) => {
+      const start = new Date(appointment.start_at).getTime();
+      const end = new Date(appointment.end_at).getTime();
+      return Number.isFinite(start) && Number.isFinite(end) && end > start
+        ? (end - start) / 60_000
+        : 0;
+    })
+    .filter((minutes: number) => minutes > 0);
+  const averageServiceMinutes = serviceDurations.length
+    ? sum(serviceDurations) / serviceDurations.length
+    : 0;
 
   const scopedClientIdsInPeriod = new Set(
     periodAppointments.map((appointment: any) => appointment.client_id).filter(Boolean),
@@ -1094,7 +1161,6 @@ async function loadDashboardData(
       forecastEnd,
     ),
     periodLabel: "Período selecionado",
-
   };
   const receivableToday = forecast.days[0]?.total ?? 0;
   const receivableWeek = calculateForecastTotal(
@@ -1152,15 +1218,17 @@ async function loadDashboardData(
           (appointment: any) => appointment.professional_id === professional.id,
         ),
     );
-  const alerts = [
+  const alerts: Array<MobileCommandCenterAlert & { show: boolean }> = [
     {
       title: `${todayAppointments.filter((appointment: any) => appointment.status === "pending").length} clientes aguardando confirmação`,
       tone: "warning",
+      href: "/app/agenda" as const,
       show: todayAppointments.some((appointment: any) => appointment.status === "pending"),
     },
     {
       title: `${filteredCashMovements.filter((movement: any) => movement.kind === "in" && ["pending", "scheduled"].includes(movement.status)).length} contas a receber pendentes`,
       tone: "info",
+      href: "/app/financeiro" as const,
       show: filteredCashMovements.some(
         (movement: any) =>
           movement.kind === "in" && ["pending", "scheduled"].includes(movement.status),
@@ -1169,23 +1237,42 @@ async function loadDashboardData(
     {
       title: `${commissionsDueToday.length} comissões vencem hoje`,
       tone: "danger",
+      href: "/app/comissoes" as const,
       show: commissionsDueToday.length > 0,
     },
     {
       title: `${expiringSubscriptions.length} assinatura(s) vencem em até 3 dias`,
       tone: "warning",
+      href: "/app/assinantes" as const,
       show: expiringSubscriptions.length > 0,
     },
     {
       title: `${vacantSlots.length} horários vagos hoje`,
       tone: "success",
+      href: "/app/agenda" as const,
       show: vacantSlots.length > 0,
     },
     {
       title: `${professionalsTomorrowWithoutAgenda.length} profissional(is) sem agenda amanhã`,
       tone: "muted",
+      href: "/app/agenda" as const,
       show: professionalsTomorrowWithoutAgenda.length > 0,
     },
+  ].filter((alert) => alert.show);
+  const mobileAlerts: Array<MobileCommandCenterAlert & { show: boolean }> = [
+    {
+      title: `${todayAppointments.filter((appointment: any) => appointment.status === "arrived").length} cliente(s) aguardando atendimento`,
+      tone: "warning",
+      href: "/app/agenda" as const,
+      show: todayAppointments.some((appointment: any) => appointment.status === "arrived"),
+    },
+    {
+      title: `${filteredFutureCommandas.length} comandas abertas aguardando fechamento`,
+      tone: "warning",
+      href: "/app/comandas" as const,
+      show: filteredFutureCommandas.length > 0,
+    },
+    ...alerts,
   ].filter((alert) => alert.show);
 
   return {
@@ -1203,12 +1290,15 @@ async function loadDashboardData(
     periodCosts,
     averageTicket,
     appointments: appointmentStatus,
+    todayOperation,
+    averageServiceMinutes,
     pendingCommissions,
     pendingCommissionProfessionals,
     occupancyRate,
     chart,
     smartAgenda,
     alerts,
+    mobileAlerts,
     activities,
     professionalRanking,
     highlightProfessional,
