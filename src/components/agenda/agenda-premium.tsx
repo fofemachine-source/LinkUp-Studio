@@ -949,7 +949,7 @@ function DayTimeline({
                     const start = new Date(appointment.start_at);
                     const end = new Date(appointment.end_at);
                     const activeNow = isToday(date) && now >= start && now < end;
-                    const startMinutes = start.getHours() * 60 + start.getMinutes() - openHour * 60;
+                    const startMinutes = start.getHours() * 60 + start.getMinutes() - timelineOpenMinutes;
                     const duration = Math.max(slotMinutes, differenceInMinutes(end, start));
                     const top = Math.max(0, (startMinutes / slotMinutes) * SLOT_HEIGHT) + 4;
                     const height = Math.max(48, (duration / slotMinutes) * SLOT_HEIGHT - 8);
