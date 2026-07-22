@@ -68,6 +68,7 @@ function buildComandaItems(input: AppointmentComandaInput, commandaId: string) {
         name: service!.name,
         quantity: 1,
         unit_price: price,
+        unit_cost: 0,
         professional_id: input.professionalId || null,
         commission_pct: commissionPct,
         commission_value: (price * commissionPct) / 100,
