@@ -1762,7 +1762,7 @@ function EmptyState({
 
 function buildTimes(openHour: number, closeHour: number, slotMinutes: number) {
   const result: string[] = [];
-  for (let minutes = openHour * 60; minutes < closeHour * 60; minutes += slotMinutes) {
+  for (let minutes = openHour * 60; minutes <= closeHour * 60; minutes += slotMinutes) {
     result.push(
       `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
     );
