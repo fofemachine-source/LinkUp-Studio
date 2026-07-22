@@ -763,15 +763,29 @@ function DayTimeline({
   onEditAppointment: (appointment: AgendaAppointment) => void;
   onStatusChange: (appointment: AgendaAppointment, status: string) => Promise<void>;
 }) {
-  const times = useMemo(
+  const allTimes = useMemo(
     () => buildTimes(openHour, closeHour, slotMinutes),
     [closeHour, openHour, slotMinutes],
   );
+  const isTodayView = isToday(date);
+  const nowSlotMinutes = isTodayView
+    ? Math.floor((now.getHours() * 60 + now.getMinutes()) / slotMinutes) * slotMinutes
+    : -1;
+  const times = useMemo(() => {
+    if (!isTodayView) return allTimes;
+    return allTimes.filter((t) => {
+      const [hh, mm] = t.split(":").map(Number);
+      return hh * 60 + mm >= nowSlotMinutes;
+    });
+  }, [allTimes, isTodayView, nowSlotMinutes]);
+  const timelineOpenMinutes = times.length > 0
+    ? (() => { const [h, m] = times[0].split(":").map(Number); return h * 60 + m; })()
+    : openHour * 60;
   const bodyHeight = times.length * SLOT_HEIGHT;
-  const totalMinutes = Math.max(1, (closeHour - openHour) * 60);
-  const nowMinutes = now.getHours() * 60 + now.getMinutes() - openHour * 60;
+  const totalMinutes = Math.max(1, times.length * slotMinutes);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes() - timelineOpenMinutes;
   const nowTop = (nowMinutes / slotMinutes) * SLOT_HEIGHT;
-  const showNowLine = isToday(date) && nowMinutes >= 0 && nowMinutes <= totalMinutes;
+  const showNowLine = isTodayView && nowMinutes >= 0 && nowMinutes <= totalMinutes;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const scrollSignature = useMemo(
     () =>
@@ -890,7 +904,13 @@ function DayTimeline({
 
             {professionals.map((professional) => {
               const professionalAppointments = appointments.filter(
-                (appointment) => appointment.professional_id === professional.id,
+                (appointment) => {
+                  if (appointment.professional_id !== professional.id) return false;
+                  if (!isTodayView) return true;
+                  // Hide past appointments already ended in the "now onward" view.
+                  const end = new Date(appointment.end_at);
+                  return end.getHours() * 60 + end.getMinutes() > nowSlotMinutes;
+                },
               );
               const off = isProfessionalOff(professional, date);
               return (
@@ -935,7 +955,7 @@ function DayTimeline({
                     const start = new Date(appointment.start_at);
                     const end = new Date(appointment.end_at);
                     const activeNow = isToday(date) && now >= start && now < end;
-                    const startMinutes = start.getHours() * 60 + start.getMinutes() - openHour * 60;
+                    const startMinutes = start.getHours() * 60 + start.getMinutes() - timelineOpenMinutes;
                     const duration = Math.max(slotMinutes, differenceInMinutes(end, start));
                     const top = Math.max(0, (startMinutes / slotMinutes) * SLOT_HEIGHT) + 4;
                     const height = Math.max(48, (duration / slotMinutes) * SLOT_HEIGHT - 8);
@@ -1742,7 +1762,7 @@ function EmptyState({
 
 function buildTimes(openHour: number, closeHour: number, slotMinutes: number) {
   const result: string[] = [];
-  for (let minutes = openHour * 60; minutes < closeHour * 60; minutes += slotMinutes) {
+  for (let minutes = openHour * 60; minutes <= closeHour * 60; minutes += slotMinutes) {
     result.push(
       `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
     );
