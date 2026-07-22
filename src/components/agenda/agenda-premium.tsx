@@ -763,15 +763,29 @@ function DayTimeline({
   onEditAppointment: (appointment: AgendaAppointment) => void;
   onStatusChange: (appointment: AgendaAppointment, status: string) => Promise<void>;
 }) {
-  const times = useMemo(
+  const allTimes = useMemo(
     () => buildTimes(openHour, closeHour, slotMinutes),
     [closeHour, openHour, slotMinutes],
   );
+  const isTodayView = isToday(date);
+  const nowSlotMinutes = isTodayView
+    ? Math.floor((now.getHours() * 60 + now.getMinutes()) / slotMinutes) * slotMinutes
+    : -1;
+  const times = useMemo(() => {
+    if (!isTodayView) return allTimes;
+    return allTimes.filter((t) => {
+      const [hh, mm] = t.split(":").map(Number);
+      return hh * 60 + mm >= nowSlotMinutes;
+    });
+  }, [allTimes, isTodayView, nowSlotMinutes]);
+  const timelineOpenMinutes = times.length > 0
+    ? (() => { const [h, m] = times[0].split(":").map(Number); return h * 60 + m; })()
+    : openHour * 60;
   const bodyHeight = times.length * SLOT_HEIGHT;
-  const totalMinutes = Math.max(1, (closeHour - openHour) * 60);
-  const nowMinutes = now.getHours() * 60 + now.getMinutes() - openHour * 60;
+  const totalMinutes = Math.max(1, times.length * slotMinutes);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes() - timelineOpenMinutes;
   const nowTop = (nowMinutes / slotMinutes) * SLOT_HEIGHT;
-  const showNowLine = isToday(date) && nowMinutes >= 0 && nowMinutes <= totalMinutes;
+  const showNowLine = isTodayView && nowMinutes >= 0 && nowMinutes <= totalMinutes;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const scrollSignature = useMemo(
     () =>
