@@ -23,6 +23,7 @@ import {
 } from "@/lib/booking-weekdays";
 import { WhatsAppSettings } from "@/components/whatsapp/whatsapp-settings";
 import { ProfessionalTimeOffManager } from "@/components/config/professional-time-off-manager";
+import { ImageCropDialog } from "@/components/ui/image-crop-dialog";
 
 export const Route = createFileRoute("/_authenticated/app/configuracoes")({ component: ConfigPage });
 
@@ -50,6 +51,7 @@ function IdentityTab() {
   const initial = { name: "", subtitle: "", primary_color: "#2563eb", slot_minutes: 30, pix_key: "", pix_holder: "" };
   const [f, setF] = useState(initial);
   const [logo, setLogo] = useState<File | null>(null);
+  const [logoCropSource, setLogoCropSource] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const brandingQueryKey = ["tenant-booking-branding", t?.id];
@@ -113,6 +115,20 @@ function IdentityTab() {
 
   const displayedLogo = logoPreview || t?.logo_url || null;
 
+  const handleLogoFile = (selectedFile?: File) => {
+    if (!selectedFile) return;
+    const acceptedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!acceptedTypes.includes(selectedFile.type)) {
+      toast.error("Use uma imagem JPG, PNG ou WEBP.");
+      return;
+    }
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      toast.error("A imagem precisa ter no máximo 5 MB.");
+      return;
+    }
+    setLogoCropSource(selectedFile);
+  };
+
   async function save() {
     if (!t?.id) return toast.error("Empresa não carregada. Recarregue a página e tente novamente.");
     setIsSaving(true);
@@ -151,6 +167,7 @@ function IdentityTab() {
     }
   }
   return (
+    <>
     <div className="space-y-6">
       <Card><CardContent className="p-6 space-y-4">
         <div className="grid md:grid-cols-2 gap-4">
@@ -169,7 +186,7 @@ function IdentityTab() {
             ) : (
               <div className="h-16 w-16 rounded-lg border border-dashed grid place-items-center text-xs text-muted-foreground">Sem logo</div>
             )}
-            <Input type="file" accept="image/*" disabled={isSaving} onChange={(e)=>setLogo(e.target.files?.[0]??null)}/>
+            <Input type="file" accept="image/png,image/jpeg,image/webp" disabled={isSaving} onChange={(e)=>{handleLogoFile(e.target.files?.[0] ?? undefined); e.currentTarget.value = "";}}/>
           </div>
           {logo && (
             <p className="text-xs text-primary mt-2">
@@ -222,6 +239,17 @@ function IdentityTab() {
         />
       )}
     </div>
+    <ImageCropDialog
+      file={logoCropSource}
+      aspect={1}
+      outputWidth={900}
+      onCancel={() => setLogoCropSource(null)}
+      onConfirm={(croppedFile) => {
+        setLogo(croppedFile);
+        setLogoCropSource(null);
+      }}
+    />
+    </>
   );
 }
 

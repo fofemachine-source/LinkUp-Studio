@@ -42,6 +42,7 @@ import { toast } from "sonner";
 import { authUserQueryKey, fetchAuthUser } from "@/lib/auth-cache";
 import { ensureAppointmentPushSubscription } from "@/lib/appointment-push";
 import { dynamicSupabase, errorMessage } from "@/lib/supabase-dynamic";
+import { ImageCropDialog } from "@/components/ui/image-crop-dialog";
 
 type AppNotificationRow = {
   id: string;
@@ -103,6 +104,7 @@ export function AppHeader() {
 
   const [photoOpen, setPhotoOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [cropSource, setCropSource] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -327,8 +329,19 @@ export function AppHeader() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      setFile(selectedFile);
-      setPreviewUrl(URL.createObjectURL(selectedFile));
+      const acceptedTypes = ["image/jpeg", "image/png", "image/webp"];
+      if (!acceptedTypes.includes(selectedFile.type)) {
+        toast.error("Use uma imagem JPG, PNG ou WEBP.");
+        e.currentTarget.value = "";
+        return;
+      }
+      if (selectedFile.size > 5 * 1024 * 1024) {
+        toast.error("A imagem precisa ter no máximo 5 MB.");
+        e.currentTarget.value = "";
+        return;
+      }
+      setCropSource(selectedFile);
+      e.currentTarget.value = "";
     }
   };
 
@@ -614,7 +627,7 @@ export function AppHeader() {
                 </Label>
                 <Input
                   type="file"
-                  accept="image/*"
+                  accept="image/png,image/jpeg,image/webp"
                   onChange={handleFileChange}
                   className="cursor-pointer"
                 />
@@ -630,6 +643,8 @@ export function AppHeader() {
               onClick={() => {
                 setPhotoOpen(false);
                 setFile(null);
+                setCropSource(null);
+                setPreviewUrl(null);
               }}
             >
               Cancelar
@@ -640,6 +655,17 @@ export function AppHeader() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ImageCropDialog
+        file={cropSource}
+        aspect={1}
+        outputWidth={900}
+        onCancel={() => setCropSource(null)}
+        onConfirm={(croppedFile) => {
+          setFile(croppedFile);
+          setPreviewUrl(URL.createObjectURL(croppedFile));
+          setCropSource(null);
+        }}
+      />
     </header>
   );
 }

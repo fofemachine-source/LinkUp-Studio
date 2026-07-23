@@ -85,20 +85,33 @@ type CustomerAccessMode = "register" | "login";
 const DEFAULT_SERVICE_CATEGORY = "Serviços";
 
 function serviceCategory(service: any) {
-  const category = String(service?.category ?? "").trim();
+  const category = String(
+    service?.service_category?.name ?? service?.category_name ?? service?.category ?? "",
+  ).trim();
   return category || DEFAULT_SERVICE_CATEGORY;
 }
 
+function serviceCategoryOrder(service: any) {
+  const value = Number(service?.service_category?.display_order ?? service?.category_order);
+  return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+}
+
 function groupServicesByCategory(services: any[]) {
-  const groups = new Map<string, any[]>();
+  const groups = new Map<string, { category: string; items: any[]; order: number }>();
   for (const service of services) {
     const category = serviceCategory(service);
-    groups.set(category, [...(groups.get(category) ?? []), service]);
+    const order = serviceCategoryOrder(service);
+    const existing = groups.get(category);
+    if (existing) {
+      existing.items.push(service);
+      existing.order = Math.min(existing.order, order);
+    } else {
+      groups.set(category, { category, items: [service], order });
+    }
   }
-  return Array.from(groups, ([category, items]) => ({
-    category,
-    items,
-  }));
+  return Array.from(groups.values())
+    .sort((a, b) => a.order - b.order || a.category.localeCompare(b.category, "pt-BR", { sensitivity: "base" }))
+    .map(({ category, items }) => ({ category, items }));
 }
 
 function canBookWithVip(vipInfo: any) {

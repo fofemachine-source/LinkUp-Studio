@@ -239,7 +239,8 @@ export function ImageCropDialog({
 
         <div className="space-y-5">
           <div
-            className="relative mx-auto aspect-[4/3] w-full max-w-xl touch-none cursor-grab overflow-hidden rounded-xl bg-slate-950 active:cursor-grabbing"
+            className="relative mx-auto w-full max-w-xl touch-none cursor-grab overflow-hidden rounded-xl bg-slate-950 active:cursor-grabbing"
+            style={{ aspectRatio: String(aspect) }}
             onPointerDown={pointerDown}
             onPointerMove={pointerMove}
             onPointerUp={pointerEnd}

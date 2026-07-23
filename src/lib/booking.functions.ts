@@ -415,7 +415,7 @@ export const getPublicTenant = createServerFn({ method: "GET" })
     const loadServices = async () => {
       const richResult = await supabase
         .from("services")
-        .select("id,name,price,duration_min,vip_only,category,description,image_url,display_order")
+        .select("id,name,price,duration_min,vip_only,category,category_id,description,image_url,display_order")
         .eq("tenant_id", t.id)
         .eq("active", true)
         .order("category", { ascending: true, nullsFirst: false })
@@ -423,8 +423,26 @@ export const getPublicTenant = createServerFn({ method: "GET" })
         .order("name");
       if (!richResult.error) return richResult;
 
-      const canFallback = /description|image_url|display_order|schema cache|column/i.test(richResult.error.message);
+      const canFallback = /category_id|description|image_url|display_order|schema cache|column/i.test(richResult.error.message);
       if (!canFallback) return richResult;
+
+      const fallbackResult = await supabase
+        .from("services")
+        .select("id,name,price,duration_min,vip_only,category,description,image_url,display_order")
+        .eq("tenant_id", t.id)
+        .eq("active", true)
+        .order("category", { ascending: true, nullsFirst: false })
+        .order("display_order", { ascending: true, nullsFirst: false })
+        .order("name");
+      if (!fallbackResult.error) {
+        return {
+          ...fallbackResult,
+          data: (fallbackResult.data ?? []).map((service: any) => ({
+            ...service,
+            category_id: null,
+          })),
+        };
+      }
 
       const legacyResult = await supabase
         .from("services")
@@ -433,20 +451,34 @@ export const getPublicTenant = createServerFn({ method: "GET" })
         .eq("active", true)
         .order("category", { ascending: true, nullsFirst: false })
         .order("name");
-
       return {
         ...legacyResult,
         data: (legacyResult.data ?? []).map((service: any) => ({
           ...service,
+          category_id: null,
           description: null,
           image_url: null,
           display_order: null,
         })),
       };
     };
-    const [professionalsResult, servicesResult, settingsResult, brandingResult, timeOffResult] = await Promise.all([
+    const loadServiceCategories = async () => {
+      const categoriesResult = await db
+        .from("service_categories")
+        .select("id,name,display_order,active")
+        .eq("tenant_id", t.id)
+        .eq("active", true)
+        .order("display_order", { ascending: true, nullsFirst: false })
+        .order("name");
+      if (!categoriesResult.error) return categoriesResult;
+      const canFallback = /service_categories|schema cache|does not exist|could not find/i.test(categoriesResult.error.message);
+      if (canFallback) return { ...categoriesResult, error: null, data: [] };
+      return categoriesResult;
+    };
+    const [professionalsResult, servicesResult, categoriesResult, settingsResult, brandingResult, timeOffResult] = await Promise.all([
       supabase.from("professionals").select("id,full_name,photo_url,role_label,work_days,blocked_dates").eq("tenant_id", t.id).eq("active", true).order("full_name"),
       loadServices(),
+      loadServiceCategories(),
       loadPublicTenantSettings(supabase, t.id),
       db
         .from("tenant_booking_branding")
@@ -463,12 +495,25 @@ export const getPublicTenant = createServerFn({ method: "GET" })
     ]);
     if (professionalsResult.error) throw new Error(professionalsResult.error.message);
     if (servicesResult.error) throw new Error(servicesResult.error.message);
+    if (categoriesResult.error) throw new Error(categoriesResult.error.message);
     if (brandingResult.error) throw new Error(brandingResult.error.message);
+    const categories = categoriesResult.data ?? [];
+    const categoryById = new Map(categories.map((category: any) => [category.id, category]));
+    const services = (servicesResult.data ?? []).map((service: any) => {
+      const linkedCategory = service.category_id ? categoryById.get(service.category_id) : null;
+      return {
+        ...service,
+        service_category: linkedCategory ?? null,
+        category_name: linkedCategory?.name ?? service.category ?? null,
+        category_order: linkedCategory?.display_order ?? null,
+      };
+    });
 
     return {
       tenant: t,
       professionals: professionalsResult.data ?? [],
-      services: servicesResult.data ?? [],
+      services,
+      serviceCategories: categories,
       settings: settingsResult.data,
       branding: brandingResult.data,
       timeOff: timeOffResult.data ?? [],

@@ -17,6 +17,7 @@ import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { brl, cpfMask } from "@/lib/format";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ImageCropDialog } from "@/components/ui/image-crop-dialog";
 import { deleteProfessional } from "@/lib/professionals.functions";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -385,6 +386,8 @@ function ProDialog({ pro, tenantId, onDone }: any) {
     blocked_dates: pro?.blocked_dates ?? [],
   });
   const [file, setFile] = useState<File | null>(null);
+  const [cropSource, setCropSource] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [professionalId, setProfessionalId] = useState<string | null>(pro?.id ?? null);
   const [persistedAuthUserId, setPersistedAuthUserId] = useState<string | null>(pro?.auth_user_id ?? null);
   const [allowAccess, setAllowAccess] = useState(Boolean(pro?.auth_user_id));
@@ -392,9 +395,32 @@ function ProDialog({ pro, tenantId, onDone }: any) {
   const [saving, setSaving] = useState(false);
   const [newBlockedDate, setNewBlockedDate] = useState("");
   const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-  const previewUrl = file ? URL.createObjectURL(file) : f.photo_url;
+  useEffect(() => {
+    if (!file) {
+      setFilePreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setFilePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  const previewUrl = filePreviewUrl || f.photo_url;
   const hasSystemAccess = Boolean(persistedAuthUserId);
   const systemAccessEnabled = allowAccess;
+
+  const handleProfessionalImageFile = (selectedFile?: File) => {
+    if (!selectedFile) return;
+    const acceptedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!acceptedTypes.includes(selectedFile.type)) {
+      toast.error("Use uma imagem JPG, PNG ou WEBP.");
+      return;
+    }
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      toast.error("A imagem precisa ter no máximo 5 MB.");
+      return;
+    }
+    setCropSource(selectedFile);
+  };
   function updateProfessionalCache(savedProfessional: any) {
     qc.setQueryData<any[]>(["pros-all", tenantId], (current) => {
       if (!current) return [savedProfessional];
@@ -503,7 +529,8 @@ function ProDialog({ pro, tenantId, onDone }: any) {
     setSaving(false);
     await onDone();
   }
-  return (<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle className="flex items-center gap-2 text-primary uppercase text-sm tracking-wide">✓ {pro?"Editar":"Novo"} Registro</DialogTitle></DialogHeader>
+  return (<>
+  <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle className="flex items-center gap-2 text-primary uppercase text-sm tracking-wide">✓ {pro?"Editar":"Novo"} Registro</DialogTitle></DialogHeader>
     <div className="space-y-4">
       <div>
         <Label className="text-xs uppercase tracking-wide text-muted-foreground">Nome Colaborador</Label>
@@ -604,8 +631,8 @@ function ProDialog({ pro, tenantId, onDone }: any) {
             <div className="h-16 w-16 rounded-md bg-muted flex items-center justify-center text-muted-foreground text-xs">Sem foto</div>
           )}
           <div className="flex-1">
-            <Input type="file" accept="image/*" onChange={(e)=>setFile(e.target.files?.[0]??null)}/>
-            <p className="text-[11px] text-muted-foreground mt-1">Carregue foto quadrada para exibição perfeita no quadrante de horários.</p>
+            <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e)=>{handleProfessionalImageFile(e.target.files?.[0] ?? undefined); e.currentTarget.value = "";}}/>
+            <p className="text-[11px] text-muted-foreground mt-1">Ajuste o enquadramento antes do upload para a foto aparecer igual na agenda e no perfil.</p>
             {file && <p className="text-[11px] text-primary mt-1">✓ {file.name} pronto para upload</p>}
           </div>
         </div>
@@ -630,12 +657,25 @@ function ProDialog({ pro, tenantId, onDone }: any) {
         )}
       </div>
     </div>
-    <DialogFooter className="gap-2"><Button variant="outline" onClick={onDone} disabled={saving}>Fechar</Button><Button onClick={save} disabled={saving}>{saving ? "SALVANDO..." : "SALVAR MUDANÇAS"}</Button></DialogFooter></DialogContent>);
+    <DialogFooter className="gap-2"><Button variant="outline" onClick={onDone} disabled={saving}>Fechar</Button><Button onClick={save} disabled={saving}>{saving ? "SALVANDO..." : "SALVAR MUDANÇAS"}</Button></DialogFooter></DialogContent>
+    <ImageCropDialog
+      file={cropSource}
+      aspect={1}
+      outputWidth={900}
+      onCancel={() => setCropSource(null)}
+      onConfirm={(croppedFile) => {
+        setFile(croppedFile);
+        setCropSource(null);
+      }}
+    />
+  </>);
 }
 
 function ServicesTab() {
   const tenantId = useTenantId(); const qc = useQueryClient();
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [categoryEdit, setCategoryEdit] = useState<any>(null);
   const { data } = useQuery({
     queryKey: ["services-all", tenantId],
     enabled: !!tenantId,
@@ -673,13 +713,112 @@ function ServicesTab() {
       }));
     },
   });
-  return (<Card className="premium-card"><CardContent className="p-6 space-y-4">
-    <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} serviços</h3>
+  const { data: categories = [] } = useQuery({
+    queryKey: ["service-categories", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const result = await (supabase as any)
+        .from("service_categories")
+        .select("*")
+        .eq("tenant_id", tenantId!)
+        .order("display_order", { ascending: true, nullsFirst: false })
+        .order("name");
+      if (!result.error) return result.data ?? [];
+
+      const canFallback = /service_categories|schema cache|does not exist|could not find/i.test(result.error.message);
+      if (!canFallback) toast.error(result.error.message);
+      return [];
+    },
+  });
+  const services = data ?? [];
+  const normalizeCategoryName = (value: unknown) => String(value ?? "").trim().toLocaleLowerCase("pt-BR");
+  const categoriesById = useMemo(
+    () => new Map((categories ?? []).map((category: any) => [category.id, category])),
+    [categories],
+  );
+  const serviceCategoryName = (service: any) => {
+    const linked = service.category_id ? categoriesById.get(service.category_id) : null;
+    return linked?.name ?? service.category ?? "ServiÃ§os";
+  };
+  const deleteCategory = async (category: any) => {
+    const usageCount = services.filter((service: any) => {
+      if (service.category_id === category.id) return true;
+      if (!service.category_id && normalizeCategoryName(service.category) === normalizeCategoryName(category.name)) return true;
+      return false;
+    }).length;
+    if (usageCount > 0) {
+      toast.error(`Categoria em uso por ${usageCount} serviÃ§o(s). Troque a categoria desses serviÃ§os antes de excluir.`);
+      return;
+    }
+    if (!confirm(`Excluir a categoria "${category.name}"?`)) return;
+    const { error } = await (supabase as any)
+      .from("service_categories")
+      .delete()
+      .eq("id", category.id)
+      .eq("tenant_id", tenantId);
+    if (error) return toast.error(error.message);
+    toast.success("Categoria excluÃ­da.");
+    qc.invalidateQueries({ queryKey: ["service-categories", tenantId] });
+  };
+  return (<Card className="premium-card"><CardContent className="p-6 space-y-5">
+    <div className="rounded-2xl border bg-muted/10 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="font-semibold">Categorias de serviços</h3>
+          <p className="text-sm text-muted-foreground">Cadastre categorias e vincule os serviços para organizar a vitrine.</p>
+        </div>
+        <Dialog open={categoryOpen} onOpenChange={(v)=>{setCategoryOpen(v); if(!v) setCategoryEdit(null);}}>
+          <DialogTrigger asChild><Button variant="outline"><Plus className="h-4 w-4 mr-2"/>Nova categoria</Button></DialogTrigger>
+          <CategoryDialog
+            key={categoryEdit?.id ?? "new-category"}
+            category={categoryEdit}
+            tenantId={tenantId}
+            onDone={()=>{
+              setCategoryOpen(false);
+              setCategoryEdit(null);
+              qc.invalidateQueries({ queryKey: ["service-categories", tenantId] });
+              qc.invalidateQueries({ queryKey: ["services-all", tenantId] });
+            }}
+          />
+        </Dialog>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {categories.length === 0 ? (
+          <div className="w-full rounded-xl border border-dashed bg-background/70 p-4 text-sm text-muted-foreground">
+            Nenhuma categoria cadastrada ainda. Crie pelo menos uma categoria para vincular aos serviços.
+          </div>
+        ) : (
+          categories.map((category: any) => {
+            const usageCount = services.filter((service: any) => service.category_id === category.id || (!service.category_id && normalizeCategoryName(service.category) === normalizeCategoryName(category.name))).length;
+            return (
+              <div key={category.id} className="flex items-center gap-2 rounded-full border bg-background px-3 py-2 text-sm shadow-sm">
+                <span className="font-medium">{category.name}</span>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{usageCount}</span>
+                {!category.active && <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">Inativa</span>}
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={()=>{setCategoryEdit(category);setCategoryOpen(true);}}><Pencil className="h-3.5 w-3.5"/></Button>
+                <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={()=>deleteCategory(category)}><Trash2 className="h-3.5 w-3.5"/></Button>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+    <div className="flex justify-between"><h3 className="font-semibold">{services.length} serviços</h3>
       <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2"/>Novo</Button></DialogTrigger>
-        <ServiceDialog key={edit?.id ?? "new"} svc={edit} tenantId={tenantId} onDone={()=>{setOpen(false);setEdit(null);qc.invalidateQueries({queryKey:["services-all"]});}}/></Dialog></div>
+        <ServiceDialog
+          key={edit?.id ?? "new"}
+          svc={edit}
+          tenantId={tenantId}
+          categories={categories}
+          onDone={()=>{
+            setOpen(false);
+            setEdit(null);
+            qc.invalidateQueries({queryKey:["services-all", tenantId]});
+          }}
+        /></Dialog></div>
     <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
       <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Categoria</TableHead><TableHead>Preço</TableHead><TableHead>Duração</TableHead><TableHead>Ordem</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
-        <TableBody>{(data ?? []).map((s:any) => (
+        <TableBody>{services.map((s:any) => (
           <TableRow key={s.id}><TableCell className="font-medium whitespace-nowrap">
             <div className="flex items-center gap-3">
               {s.image_url ? (
@@ -694,7 +833,7 @@ function ServicesTab() {
                 {s.description && <div className="max-w-[240px] truncate text-xs font-normal text-muted-foreground">{s.description}</div>}
               </div>
             </div>
-          </TableCell><TableCell className="whitespace-nowrap">{s.category || "Serviços"}</TableCell><TableCell className="whitespace-nowrap">{brl(s.price)}</TableCell><TableCell className="whitespace-nowrap">{s.duration_min} min</TableCell><TableCell className="whitespace-nowrap">{s.display_order ?? "—"}</TableCell>
+          </TableCell><TableCell className="whitespace-nowrap">{serviceCategoryName(s)}</TableCell><TableCell className="whitespace-nowrap">{brl(s.price)}</TableCell><TableCell className="whitespace-nowrap">{s.duration_min} min</TableCell><TableCell className="whitespace-nowrap">{s.display_order ?? "—"}</TableCell>
           <TableCell className="whitespace-nowrap">{s.vip_only && <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">VIP</span>}</TableCell>
           <TableCell className="text-right whitespace-nowrap">
             <Button size="icon" variant="ghost" onClick={()=>{setEdit(s);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
@@ -705,9 +844,52 @@ function ServicesTab() {
   </CardContent></Card>);
 }
 
-function ServiceDialog({ svc, tenantId, onDone }: any) {
+function CategoryDialog({ category, tenantId, onDone }: any) {
+  const [f, setF] = useState({
+    name: category?.name ?? "",
+    description: category?.description ?? "",
+    display_order: category?.display_order ?? "",
+    active: category?.active ?? true,
+  });
+  const [saving, setSaving] = useState(false);
+  async function save() {
+    if (saving) return;
+    if (!tenantId) return toast.error("Empresa não carregada. Recarregue a página e tente novamente.");
+    if (!f.name.trim()) return toast.error("Informe o nome da categoria.");
+    setSaving(true);
+    const payload = {
+      name: f.name.trim(),
+      description: f.description.trim() || null,
+      display_order: f.display_order === "" ? null : Number(f.display_order),
+      active: Boolean(f.active),
+    };
+    const client = (supabase as any).from("service_categories");
+    const { error } = category
+      ? await client.update(payload).eq("id", category.id).eq("tenant_id", tenantId)
+      : await client.insert({ ...payload, tenant_id: tenantId });
+    setSaving(false);
+    if (error) return toast.error(error.message);
+    toast.success("Categoria salva.");
+    onDone();
+  }
+  return (
+    <DialogContent className="max-w-lg">
+      <DialogHeader><DialogTitle>{category ? "Editar" : "Nova"} categoria</DialogTitle></DialogHeader>
+      <div className="space-y-3">
+        <div><Label>Nome da categoria</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})} placeholder="Ex: Cabelo, Barba, Tratamentos..." /></div>
+        <div><Label>Descrição opcional</Label><Textarea rows={3} value={f.description} onChange={e=>setF({...f,description:e.target.value})} placeholder="Texto interno para organizar os serviços." /></div>
+        <div><Label>Ordem na vitrine</Label><Input type="number" value={f.display_order} onChange={e=>setF({...f,display_order:e.target.value === "" ? "" : Number(e.target.value)})} placeholder="Opcional" /></div>
+        <div className="flex items-center gap-2"><Switch checked={f.active} onCheckedChange={(v)=>setF({...f,active:v})}/><Label>Ativa na vitrine</Label></div>
+      </div>
+      <DialogFooter><Button onClick={save} disabled={saving}>{saving ? "Salvando..." : "Salvar categoria"}</Button></DialogFooter>
+    </DialogContent>
+  );
+}
+
+function ServiceDialog({ svc, tenantId, categories = [], onDone }: any) {
   const [f, setF] = useState({
     name: svc?.name ?? "",
+    category_id: svc?.category_id ?? "",
     category: svc?.category ?? "",
     description: svc?.description ?? "",
     image_url: svc?.image_url ?? "",
@@ -718,13 +900,19 @@ function ServiceDialog({ svc, tenantId, onDone }: any) {
     active: svc?.active ?? true,
   });
   const [file, setFile] = useState<File | null>(null);
+  const [cropSource, setCropSource] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
-  const suggestions = ["Cabelo", "Barba", "Combo", "Coloração", "Sobrancelha", "Tratamento", "Infantil"];
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : f.image_url), [file, f.image_url]);
+  const normalizeCategoryName = (value: unknown) => String(value ?? "").trim().toLocaleLowerCase("pt-BR");
   useEffect(() => {
     if (!file || !previewUrl) return;
     return () => URL.revokeObjectURL(previewUrl);
   }, [file, previewUrl]);
+  useEffect(() => {
+    if (f.category_id || !f.category || categories.length === 0) return;
+    const match = categories.find((category: any) => normalizeCategoryName(category.name) === normalizeCategoryName(f.category));
+    if (match) setF((current) => current.category_id ? current : { ...current, category_id: match.id });
+  }, [categories, f.category, f.category_id]);
   const handleServiceImageFile = (selectedFile?: File) => {
     if (!selectedFile) {
       setFile(null);
@@ -741,7 +929,7 @@ function ServiceDialog({ svc, tenantId, onDone }: any) {
       setFile(null);
       return;
     }
-    setFile(selectedFile);
+    setCropSource(selectedFile);
   };
   async function save() {
     if (saving) return;
@@ -764,9 +952,11 @@ function ServiceDialog({ svc, tenantId, onDone }: any) {
       }
       image_url = signed.signedUrl;
     }
+    const selectedCategory = categories.find((category: any) => category.id === f.category_id);
     const payload = {
       name: f.name.trim(),
-      category: f.category.trim() || null,
+      category_id: f.category_id || null,
+      category: (selectedCategory?.name ?? f.category.trim()) || null,
       description: f.description.trim() || null,
       image_url: image_url || null,
       display_order: f.display_order === "" ? null : Number(f.display_order),
@@ -775,19 +965,37 @@ function ServiceDialog({ svc, tenantId, onDone }: any) {
       vip_only: Boolean(f.vip_only),
       active: Boolean(f.active),
     };
-    const { error } = svc ? await supabase.from("services").update(payload).eq("id", svc.id) : await supabase.from("services").insert({ ...payload, tenant_id: tenantId });
+    const client = (supabase as any).from("services");
+    const { error } = svc ? await client.update(payload).eq("id", svc.id) : await client.insert({ ...payload, tenant_id: tenantId });
     setSaving(false);
     if (error) return toast.error(error.message);
     toast.success("Salvo"); onDone();
   }
-  return (<DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{svc?"Editar":"Novo"} serviço</DialogTitle></DialogHeader>
+  return (<>
+  <DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{svc?"Editar":"Novo"} serviço</DialogTitle></DialogHeader>
     <div className="space-y-3">
       <div><Label>Nome</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></div>
       <div><Label>Descrição</Label><Textarea rows={3} value={f.description} onChange={e=>setF({...f,description:e.target.value})} placeholder="Explique rapidamente o que está incluso neste serviço." /></div>
       <div>
-        <Label>Categoria (digite ou escolha)</Label>
-        <Input list="svc-categories" value={f.category} onChange={e=>setF({...f,category:e.target.value})} placeholder="Ex: Cabelo, Barba, Combo..." />
-        <datalist id="svc-categories">{suggestions.map(s => <option key={s} value={s} />)}</datalist>
+        <Label>Categoria</Label>
+        {categories.length > 0 ? (
+          <select
+            value={f.category_id}
+            onChange={(event)=>{
+              const category = categories.find((item: any) => item.id === event.target.value);
+              setF({...f, category_id: event.target.value, category: category?.name ?? ""});
+            }}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value="">Sem categoria</option>
+            {categories.filter((category: any) => category.active || category.id === f.category_id).map((category: any) => (
+              <option key={category.id} value={category.id}>{category.name}{!category.active ? " (inativa)" : ""}</option>
+            ))}
+          </select>
+        ) : (
+          <Input value={f.category} onChange={e=>setF({...f,category:e.target.value})} placeholder="Cadastre categorias acima para vincular melhor." />
+        )}
+        <p className="mt-1 text-xs text-muted-foreground">As categorias cadastradas aqui aparecem agrupando os serviços na vitrine.</p>
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div><Label>Preço</Label><Input type="number" step="0.01" value={f.price} onChange={e=>setF({...f,price:Number(e.target.value)})}/></div>
@@ -805,10 +1013,10 @@ function ServiceDialog({ svc, tenantId, onDone }: any) {
             </div>
           )}
           <div className="min-w-0 flex-1 space-y-2">
-            <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event)=>handleServiceImageFile(event.target.files?.[0] ?? undefined)} />
-            <p className="text-xs text-muted-foreground">Use uma foto horizontal ou quadrada. JPG, PNG ou WEBP, atÃ© 5 MB.</p>
+            <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event)=>{handleServiceImageFile(event.target.files?.[0] ?? undefined); event.currentTarget.value = "";}} />
+            <p className="text-xs text-muted-foreground">Ajuste o enquadramento antes do upload. JPG, PNG ou WEBP, até 5 MB.</p>
             {(previewUrl || file) && (
-              <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={()=>{setF({...f,image_url:""});setFile(null);}}>
+              <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={()=>{setF({...f,image_url:""});setFile(null);setCropSource(null);}}>
                 Remover imagem
               </Button>
             )}
@@ -819,7 +1027,18 @@ function ServiceDialog({ svc, tenantId, onDone }: any) {
         <div className="flex items-center gap-2"><Switch checked={f.vip_only} onCheckedChange={(v)=>setF({...f,vip_only:v})}/><Label>Exclusivo VIP</Label></div>
         <div className="flex items-center gap-2"><Switch checked={f.active} onCheckedChange={(v)=>setF({...f,active:v})}/><Label>Ativo na vitrine</Label></div>
       </div>
-    </div><DialogFooter><Button onClick={save} disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button></DialogFooter></DialogContent>);
+    </div><DialogFooter><Button onClick={save} disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button></DialogFooter></DialogContent>
+    <ImageCropDialog
+      file={cropSource}
+      aspect={1}
+      outputWidth={900}
+      onCancel={() => setCropSource(null)}
+      onConfirm={(croppedFile) => {
+        setFile(croppedFile);
+        setCropSource(null);
+      }}
+    />
+  </>);
 }
 
 
