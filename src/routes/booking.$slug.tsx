@@ -561,9 +561,6 @@ function BookingPage() {
     : [];
   const visibleServices = isVip ? includedVipServices : regularServices;
   const serviceCategoryGroups = groupServicesByCategory(visibleServices);
-  const serviceCategorySignature = serviceCategoryGroups
-    .map((group) => `${group.category}:${group.items.map((service: any) => service.id).join(",")}`)
-    .join("|");
   const activeServiceCategory =
     selectedServiceCategory && serviceCategoryGroups.some((group) => group.category === selectedServiceCategory)
       ? selectedServiceCategory
@@ -619,17 +616,6 @@ function BookingPage() {
     setDate(undefined);
     setTime("");
   };
-
-  useEffect(() => {
-    if (step !== "service") return;
-    if (!serviceCategoryGroups.length) {
-      if (selectedServiceCategory) setSelectedServiceCategory("");
-      return;
-    }
-    if (selectedServiceCategory !== activeServiceCategory) {
-      setSelectedServiceCategory(activeServiceCategory);
-    }
-  }, [activeServiceCategory, selectedServiceCategory, serviceCategoryGroups.length, serviceCategorySignature, step]);
 
   const timeSlots = date && slotsQuery.data
     ? buildSlots(
