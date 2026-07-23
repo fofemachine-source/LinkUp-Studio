@@ -57,6 +57,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QrCode } from "@/lib/qr";
 import { brl } from "@/lib/format";
 import {
@@ -66,6 +74,7 @@ import {
 } from "@/lib/booking-weekdays";
 
 export type AgendaViewMode = "day" | "threeDays" | "week" | "agenda";
+type MobileScheduleView = "day" | "week" | "list";
 
 export type AgendaProfessional = {
   id: string;
@@ -238,6 +247,9 @@ export function AgendaPremium({
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [mobileProfessionalId, setMobileProfessionalId] = useState<string | null>(null);
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+  const [mobileScheduleView, setMobileScheduleView] = useState<MobileScheduleView>("day");
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
@@ -349,6 +361,18 @@ export function AgendaPremium({
     [date, professionals],
   );
 
+  const lateAppointments = useMemo(
+    () =>
+      isToday(date)
+        ? appointments.filter(
+            (appointment) =>
+              new Date(appointment.start_at) < now &&
+              ["pending", "confirmed"].includes(appointment.status ?? "pending"),
+          )
+        : [],
+    [appointments, date, now],
+  );
+
   const metrics = useMemo(() => {
     const operational = appointments.filter(
       (appointment) =>
@@ -414,8 +438,33 @@ export function AgendaPremium({
     { label: "Tempo médio", value: `${metrics.averageDuration} min`, icon: Timer },
   ];
 
+  const mobileKpis = [
+    { label: "Atendimentos", value: String(metrics.appointments), icon: CalendarDays },
+    { label: "Profissionais", value: String(metrics.workingProfessionals), icon: UsersRound },
+    { label: "Ocupação", value: `${metrics.occupancy}%`, icon: Gauge },
+    {
+      label: "Atrasados",
+      value: String(lateAppointments.length),
+      icon: Bell,
+      tone: lateAppointments.length ? "danger" : undefined,
+    },
+  ];
+
   const step = viewMode === "week" ? 7 : viewMode === "threeDays" ? 3 : 1;
   const dateLabel = getDateLabel(date, viewMode);
+  const selectedMobileProfessional = visibleProfessionals.find(
+    (professional) => professional.id === mobileProfessionalId,
+  );
+
+  useEffect(() => {
+    if (
+      mobileProfessionalId &&
+      !visibleProfessionals.some((professional) => professional.id === mobileProfessionalId)
+    ) {
+      setMobileSheetOpen(false);
+      setMobileProfessionalId(null);
+    }
+  }, [mobileProfessionalId, visibleProfessionals]);
 
   function changeDate(direction: number) {
     onDateChange(addDays(date, direction * step));
@@ -450,13 +499,46 @@ export function AgendaPremium({
                   {isToday(date) ? "Hoje" : format(date, "EEEE", { locale: ptBR })} •{" "}
                   {format(date, "dd 'de' MMMM", { locale: ptBR })}
                 </p>
+                <div className="mt-3 flex items-center gap-2 md:hidden">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 rounded-full"
+                    onClick={() => changeDate(-1)}
+                    aria-label="Dia anterior"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="h-9 flex-1 rounded-full px-4 text-xs font-semibold"
+                    onClick={() => onDateChange(new Date())}
+                  >
+                    {isToday(date) ? "Hoje" : "Voltar para hoje"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 rounded-full"
+                    onClick={() => changeDate(1)}
+                    aria-label="Próximo dia"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               <div className="rounded-full border bg-muted/35 px-3 py-1.5 text-xs font-medium text-muted-foreground">
                 Atualizado às {format(now, "HH:mm")}
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 2xl:grid-cols-6">
+            <div className="grid grid-cols-2 gap-2.5 md:hidden">
+              {mobileKpis.map((kpi, index) => (
+                <MobileKpiCard key={kpi.label} kpi={kpi} index={index} />
+              ))}
+            </div>
+
+            <div className="hidden grid-cols-2 gap-2.5 md:grid md:grid-cols-3 2xl:grid-cols-6">
               {kpis.map((kpi, index) => {
                 const Icon = kpi.icon;
                 return (
@@ -480,7 +562,7 @@ export function AgendaPremium({
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/20 p-3.5">
+          <div className="hidden flex-col gap-3 rounded-2xl border border-border/60 bg-muted/20 p-3.5 xl:flex">
             <Button className="h-11 rounded-xl shadow-sm" onClick={() => onNewAppointment()}>
               <Plus className="mr-2 h-4 w-4" /> Novo agendamento
             </Button>
@@ -529,7 +611,22 @@ export function AgendaPremium({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-border/70 bg-card p-3 shadow-[0_12px_36px_-34px_rgba(15,23,42,0.4)]">
+      <MobileProfessionalsPanel
+        date={date}
+        now={now}
+        professionals={visibleProfessionals}
+        appointments={dayAppointments}
+        services={services}
+        commandasByAppointment={commandasByAppointment}
+        onSelect={(professional) => {
+          setMobileProfessionalId(professional.id);
+          setMobileScheduleView("day");
+          setMobileSheetOpen(true);
+          if (viewMode !== "day") onViewModeChange("day");
+        }}
+      />
+
+      <section className="hidden rounded-2xl border border-border/70 bg-card p-3 shadow-[0_12px_36px_-34px_rgba(15,23,42,0.4)] md:block">
         <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
           <div className="flex items-center gap-1.5">
             <Button
@@ -645,7 +742,7 @@ export function AgendaPremium({
         </div>
       </section>
 
-      <div className="grid items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="hidden items-start gap-4 md:grid 2xl:grid-cols-[minmax(0,1fr)_300px]">
         <AnimatePresence mode="wait">
           <motion.div
             key={viewMode}
@@ -703,6 +800,39 @@ export function AgendaPremium({
         />
       </div>
 
+      <MobileProfessionalScheduleSheet
+        open={mobileSheetOpen && Boolean(selectedMobileProfessional)}
+        onOpenChange={setMobileSheetOpen}
+        view={mobileScheduleView}
+        onViewChange={(value) => {
+          setMobileScheduleView(value);
+          if (value === "week") {
+            onViewModeChange("week");
+          } else if (viewMode !== "day") {
+            onViewModeChange("day");
+          }
+        }}
+        date={date}
+        onDateChange={onDateChange}
+        now={now}
+        professional={selectedMobileProfessional ?? null}
+        appointments={filteredAppointments}
+        services={services}
+        commandasByAppointment={commandasByAppointment}
+        clientHistory={clientHistory}
+        openHour={openHour}
+        closeHour={closeHour}
+        slotMinutes={slotMinutes}
+        onNewAppointment={(slot) => {
+          setMobileSheetOpen(false);
+          onNewAppointment(slot);
+        }}
+        onEditAppointment={(appointment) => {
+          setMobileSheetOpen(false);
+          onEditAppointment(appointment);
+        }}
+      />
+
       <Dialog open={qrOpen} onOpenChange={setQrOpen}>
         <DialogContent className="max-w-sm rounded-3xl">
           <DialogHeader>
@@ -723,6 +853,610 @@ export function AgendaPremium({
           </Button>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function MobileKpiCard({
+  kpi,
+  index,
+}: {
+  kpi: { label: string; value: string; icon: typeof CalendarDays; tone?: string };
+  index: number;
+}) {
+  const Icon = kpi.icon;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.035, duration: 0.24 }}
+      className={`rounded-2xl border p-3 shadow-[0_10px_28px_-24px_rgba(15,23,42,0.45)] ${
+        kpi.tone === "danger"
+          ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300"
+          : "border-border/65 bg-background/85"
+      }`}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="text-xl font-semibold tracking-tight">{kpi.value}</div>
+      </div>
+      <div className="truncate text-[11px] font-medium text-muted-foreground">{kpi.label}</div>
+    </motion.div>
+  );
+}
+
+function MobileProfessionalsPanel({
+  date,
+  now,
+  professionals,
+  appointments,
+  services,
+  commandasByAppointment,
+  onSelect,
+}: {
+  date: Date;
+  now: Date;
+  professionals: AgendaProfessional[];
+  appointments: AgendaAppointment[];
+  services: AgendaService[];
+  commandasByAppointment: Map<string, AgendaComanda>;
+  onSelect: (professional: AgendaProfessional) => void;
+}) {
+  const orderedProfessionals = [...professionals].sort((a, b) => {
+    const stateA = getProfessionalOperationalState(a, appointments, date, now).rank;
+    const stateB = getProfessionalOperationalState(b, appointments, date, now).rank;
+    if (stateA !== stateB) return stateA - stateB;
+    return a.full_name.localeCompare(b.full_name, "pt-BR");
+  });
+
+  return (
+    <section className="space-y-3 rounded-[26px] border border-border/70 bg-card p-4 shadow-[0_16px_44px_-38px_rgba(15,23,42,0.45)] md:hidden">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight">Profissionais</h2>
+          <p className="text-xs text-muted-foreground">Toque para abrir a timeline do dia.</p>
+        </div>
+        <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+          {orderedProfessionals.length}
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        {orderedProfessionals.map((professional, index) => (
+          <MobileProfessionalCard
+            key={professional.id}
+            professional={professional}
+            date={date}
+            now={now}
+            appointments={appointments.filter(
+              (appointment) => appointment.professional_id === professional.id,
+            )}
+            services={services}
+            commandasByAppointment={commandasByAppointment}
+            index={index}
+            onSelect={() => onSelect(professional)}
+          />
+        ))}
+
+        {!orderedProfessionals.length && (
+          <EmptyState
+            icon={UsersRound}
+            title="Nenhum profissional para exibir"
+            description="Ajuste os filtros ou cadastre profissionais ativos."
+            compact
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MobileProfessionalCard({
+  professional,
+  date,
+  now,
+  appointments,
+  services,
+  commandasByAppointment,
+  index,
+  onSelect,
+}: {
+  professional: AgendaProfessional;
+  date: Date;
+  now: Date;
+  appointments: AgendaAppointment[];
+  services: AgendaService[];
+  commandasByAppointment: Map<string, AgendaComanda>;
+  index: number;
+  onSelect: () => void;
+}) {
+  const state = getProfessionalOperationalState(professional, appointments, date, now);
+  const revenue = appointments
+    .filter((appointment) => appointment.status !== "cancelled" && appointment.status !== "no_show")
+    .reduce(
+      (total, appointment) =>
+        total + getAppointmentValue(appointment, commandasByAppointment, services),
+      0,
+    );
+
+  return (
+    <motion.button
+      type="button"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.035, duration: 0.22 }}
+      onClick={onSelect}
+      className="group flex w-full items-center gap-3 rounded-2xl border border-border/70 bg-background/90 p-3 text-left shadow-[0_12px_30px_-28px_rgba(15,23,42,0.5)] transition-all active:scale-[0.99]"
+    >
+      <div className="relative shrink-0">
+        <Avatar className="h-12 w-12 border border-border/70">
+          <AvatarImage src={professional.photo_url ?? undefined} />
+          <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
+            {getInitials(professional.full_name)}
+          </AvatarFallback>
+        </Avatar>
+        <span
+          className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-background ${state.dot}`}
+        />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold">{professional.full_name}</div>
+        <div className="truncate text-[11px] text-muted-foreground">
+          {professional.specialty || professional.role_label || "Profissional"}
+        </div>
+        <div className={`mt-1 flex items-center gap-1.5 text-[11px] font-semibold ${state.text}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${state.dot}`} />
+          <span className="truncate">{state.label}</span>
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        <div className="text-right">
+          <div className="text-xs font-semibold">
+            {appointments.length} {appointments.length === 1 ? "cliente" : "clientes"}
+          </div>
+          <div className="text-[10px] text-muted-foreground">{brl(revenue)}</div>
+        </div>
+        <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-active:translate-x-0.5" />
+      </div>
+    </motion.button>
+  );
+}
+
+function MobileProfessionalScheduleSheet({
+  open,
+  onOpenChange,
+  view,
+  onViewChange,
+  date,
+  onDateChange,
+  now,
+  professional,
+  appointments,
+  services,
+  commandasByAppointment,
+  clientHistory,
+  openHour,
+  closeHour,
+  slotMinutes,
+  onNewAppointment,
+  onEditAppointment,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  view: MobileScheduleView;
+  onViewChange: (view: MobileScheduleView) => void;
+  date: Date;
+  onDateChange: (date: Date) => void;
+  now: Date;
+  professional: AgendaProfessional | null;
+  appointments: AgendaAppointment[];
+  services: AgendaService[];
+  commandasByAppointment: Map<string, AgendaComanda>;
+  clientHistory: AgendaHistoryItem[];
+  openHour: number;
+  closeHour: number;
+  slotMinutes: number;
+  onNewAppointment: (slot?: { professionalId: string; time: string }) => void;
+  onEditAppointment: (appointment: AgendaAppointment) => void;
+}) {
+  if (!professional) return null;
+
+  const professionalAppointments = appointments
+    .filter((appointment) => appointment.professional_id === professional.id)
+    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+  const dayProfessionalAppointments = professionalAppointments.filter((appointment) =>
+    isSameDay(new Date(appointment.start_at), date),
+  );
+  const weekProfessionalAppointments = professionalAppointments.filter((appointment) => {
+    const start = new Date(appointment.start_at);
+    return start >= startOfDay(date) && start < addDays(startOfDay(date), 7);
+  });
+  const state = getProfessionalOperationalState(professional, dayProfessionalAppointments, date, now);
+  const off = isProfessionalOff(professional, date);
+  const defaultTime =
+    getFirstFreeMobileTime(
+      professional,
+      dayProfessionalAppointments,
+      date,
+      now,
+      openHour,
+      closeHour,
+      slotMinutes,
+    ) ?? `${String(openHour).padStart(2, "0")}:00`;
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="bottom"
+        className="flex h-[90dvh] max-h-[90dvh] w-full max-w-none flex-col gap-0 overflow-hidden rounded-t-[30px] border-border/80 bg-background p-0 md:hidden [&>button]:right-5 [&>button]:top-5 [&>button]:z-20 [&>button]:flex [&>button]:h-9 [&>button]:w-9 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-full [&>button]:bg-muted/80 [&>button]:opacity-100 [&>button]:shadow-sm [&>button]:backdrop-blur"
+      >
+        <div className="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-muted" />
+        <SheetHeader className="shrink-0 border-b px-5 pb-4 pt-4 text-left">
+          <div className="flex min-w-0 items-center gap-3 pr-12">
+            <div className="relative shrink-0">
+              <Avatar className="h-12 w-12 border border-border/70">
+                <AvatarImage src={professional.photo_url ?? undefined} />
+                <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
+                  {getInitials(professional.full_name)}
+                </AvatarFallback>
+              </Avatar>
+              <span
+                className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-background ${state.dot}`}
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <SheetTitle className="truncate text-lg">{professional.full_name}</SheetTitle>
+              <SheetDescription className="truncate text-xs">
+                {professional.specialty || professional.role_label || "Profissional"} • {state.label}
+              </SheetDescription>
+            </div>
+          </div>
+        </SheetHeader>
+
+        <Tabs
+          value={view}
+          onValueChange={(value) => onViewChange(value as MobileScheduleView)}
+          className="flex min-h-0 min-w-0 flex-1 flex-col"
+        >
+          <div className="shrink-0 border-b px-4 py-3">
+            <TabsList className="grid h-10 w-full grid-cols-3 rounded-2xl">
+              <TabsTrigger className="rounded-xl text-xs" value="day">
+                Dia
+              </TabsTrigger>
+              <TabsTrigger className="rounded-xl text-xs" value="week">
+                Semana
+              </TabsTrigger>
+              <TabsTrigger className="rounded-xl text-xs" value="list">
+                Lista
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <div className="shrink-0 border-b bg-muted/20 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0 rounded-full"
+                onClick={() => onDateChange(addDays(date, -1))}
+                aria-label="Dia anterior"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="min-w-0 flex-1 text-center">
+                <div className="truncate text-sm font-semibold capitalize">
+                  {format(date, "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {isToday(date) ? "Hoje" : format(date, "dd/MM/yyyy")}
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0 rounded-full"
+                onClick={() => onDateChange(addDays(date, 1))}
+                aria-label="Próximo dia"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-28 pt-3">
+            <TabsContent value="day" className="m-0 min-w-0">
+              <MobileDayTimeline
+                date={date}
+                now={now}
+                professional={professional}
+                appointments={dayProfessionalAppointments}
+                services={services}
+                commandasByAppointment={commandasByAppointment}
+                clientHistory={clientHistory}
+                openHour={openHour}
+                closeHour={closeHour}
+                slotMinutes={slotMinutes}
+                onNewAppointment={onNewAppointment}
+                onEditAppointment={onEditAppointment}
+              />
+            </TabsContent>
+
+            <TabsContent value="week" className="m-0 min-w-0">
+              <MobileAppointmentList
+                appointments={weekProfessionalAppointments}
+                services={services}
+                commandasByAppointment={commandasByAppointment}
+                emptyTitle="Semana livre"
+                emptyDescription="Nenhum agendamento carregado para este profissional nesta semana."
+                onEditAppointment={onEditAppointment}
+              />
+            </TabsContent>
+
+            <TabsContent value="list" className="m-0 min-w-0">
+              <MobileAppointmentList
+                appointments={dayProfessionalAppointments}
+                services={services}
+                commandasByAppointment={commandasByAppointment}
+                emptyTitle="Dia livre"
+                emptyDescription="Nenhum agendamento para este profissional nesta data."
+                onEditAppointment={onEditAppointment}
+              />
+            </TabsContent>
+          </div>
+        </Tabs>
+
+        <div className="absolute inset-x-0 bottom-0 z-10 border-t bg-background/95 p-4 backdrop-blur">
+          <Button
+            className="h-12 w-full rounded-2xl text-sm font-semibold shadow-lg"
+            disabled={off}
+            onClick={() => onNewAppointment({ professionalId: professional.id, time: defaultTime })}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Novo agendamento
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function MobileDayTimeline({
+  date,
+  now,
+  professional,
+  appointments,
+  services,
+  commandasByAppointment,
+  clientHistory,
+  openHour,
+  closeHour,
+  slotMinutes,
+  onNewAppointment,
+  onEditAppointment,
+}: {
+  date: Date;
+  now: Date;
+  professional: AgendaProfessional;
+  appointments: AgendaAppointment[];
+  services: AgendaService[];
+  commandasByAppointment: Map<string, AgendaComanda>;
+  clientHistory: AgendaHistoryItem[];
+  openHour: number;
+  closeHour: number;
+  slotMinutes: number;
+  onNewAppointment: (slot?: { professionalId: string; time: string }) => void;
+  onEditAppointment: (appointment: AgendaAppointment) => void;
+}) {
+  const off = isProfessionalOff(professional, date);
+  const blockingAppointments = appointments.filter(
+    (appointment) => appointment.status !== "cancelled" && appointment.status !== "no_show",
+  );
+  const activeAppointment = blockingAppointments.find((appointment) => {
+    const start = new Date(appointment.start_at);
+    const end = new Date(appointment.end_at);
+    return isToday(date) && now >= start && now < end;
+  });
+  const allTimes = buildTimes(openHour, closeHour, slotMinutes);
+  const nowBlockMinutes = Math.floor((now.getHours() * 60 + now.getMinutes()) / slotMinutes) * slotMinutes;
+  const activeStartMinutes = activeAppointment
+    ? Math.floor(
+        (new Date(activeAppointment.start_at).getHours() * 60 +
+          new Date(activeAppointment.start_at).getMinutes()) /
+          slotMinutes,
+      ) * slotMinutes
+    : null;
+  const timelineStartMinutes = isToday(date)
+    ? Math.max(openHour * 60, activeStartMinutes ?? nowBlockMinutes)
+    : openHour * 60;
+  const times = isToday(date)
+    ? allTimes.filter((time) => timeToMinutes(time) >= timelineStartMinutes)
+    : allTimes;
+
+  if (!times.length) {
+    return (
+      <EmptyState
+        icon={Clock3}
+        title="Expediente encerrado"
+        description="Não há mais horários disponíveis para exibir hoje."
+        compact
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="mb-3 rounded-2xl border bg-muted/25 p-3">
+        <div className="text-xs font-semibold capitalize">
+          {format(date, "EEEE, dd 'de' MMMM", { locale: ptBR })}
+        </div>
+        <div className="mt-0.5 text-[11px] text-muted-foreground">
+          Timeline vertical do profissional selecionado.
+        </div>
+      </div>
+
+      {times.map((time) => {
+        const [hour, minute] = time.split(":").map(Number);
+        const slotStart = new Date(date);
+        slotStart.setHours(hour, minute, 0, 0);
+        const slotEnd = new Date(slotStart.getTime() + slotMinutes * 60_000);
+        const appointment = blockingAppointments.find(
+          (item) => new Date(item.start_at) < slotEnd && new Date(item.end_at) > slotStart,
+        );
+        const startsHere =
+          appointment &&
+          new Date(appointment.start_at) >= slotStart &&
+          new Date(appointment.start_at) < slotEnd;
+        const isContinuation = Boolean(appointment && !startsHere);
+        const showNowLine = isToday(date) && now >= slotStart && now < slotEnd;
+        const history = appointment
+          ? clientHistory.filter((item) =>
+              appointment.client_id
+                ? item.client_id === appointment.client_id
+                : item.client_name === appointment.client_name,
+            )
+          : [];
+
+        return (
+          <div key={time} className="space-y-2">
+            {showNowLine && (
+              <div className="flex items-center gap-2 py-1">
+                <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                  Agora • {format(now, "HH:mm")}
+                </span>
+                <div className="h-px flex-1 bg-rose-500" />
+              </div>
+            )}
+
+            <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
+              <div className="pt-3 text-right text-xs font-semibold text-muted-foreground">{time}</div>
+              {off ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-900/40">
+                  Profissional indisponível nesta data.
+                </div>
+              ) : appointment && startsHere ? (
+                <button
+                  type="button"
+                  onClick={() => onEditAppointment(appointment)}
+                  className="w-full rounded-2xl border border-l-[4px] border-border/75 border-l-primary bg-card p-3 text-left shadow-[0_14px_32px_-28px_rgba(15,23,42,0.55)]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold">{getClientName(appointment)}</div>
+                      <div className="mt-1 truncate text-xs text-muted-foreground">
+                        {getServiceName(appointment)}
+                      </div>
+                    </div>
+                    <span className="text-xs font-semibold">
+                      {brl(getAppointmentValue(appointment, commandasByAppointment, services))}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+                    <span>
+                      {format(new Date(appointment.start_at), "HH:mm")} —{" "}
+                      {format(new Date(appointment.end_at), "HH:mm")}
+                    </span>
+                    <span className="rounded-full bg-muted px-2 py-0.5">
+                      {history.length} visita{history.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                </button>
+              ) : isContinuation ? (
+                <div className="rounded-2xl border bg-muted/35 p-3 text-xs text-muted-foreground">
+                  Horário ocupado pelo atendimento em andamento.
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onNewAppointment({ professionalId: professional.id, time })}
+                  className="flex w-full items-center justify-between rounded-2xl border border-dashed border-border bg-background/75 p-3 text-left transition-colors active:bg-primary/10"
+                >
+                  <div>
+                    <div className="text-sm font-semibold">Livre</div>
+                    <div className="text-xs text-muted-foreground">Criar agendamento neste horário</div>
+                  </div>
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <Plus className="h-4 w-4" />
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MobileAppointmentList({
+  appointments,
+  services,
+  commandasByAppointment,
+  emptyTitle,
+  emptyDescription,
+  onEditAppointment,
+}: {
+  appointments: AgendaAppointment[];
+  services: AgendaService[];
+  commandasByAppointment: Map<string, AgendaComanda>;
+  emptyTitle: string;
+  emptyDescription: string;
+  onEditAppointment: (appointment: AgendaAppointment) => void;
+}) {
+  if (!appointments.length) {
+    return (
+      <EmptyState
+        icon={ListChecks}
+        title={emptyTitle}
+        description={emptyDescription}
+        compact
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {appointments.map((appointment) => {
+        const meta = STATUS_META[appointment.status ?? "pending"] ?? STATUS_META.pending;
+        return (
+          <button
+            key={appointment.id}
+            type="button"
+            onClick={() => onEditAppointment(appointment)}
+            className={`w-full rounded-2xl border border-l-[4px] ${meta.border} bg-card p-3 text-left shadow-sm`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">{getClientName(appointment)}</div>
+                <div className="mt-1 truncate text-xs text-muted-foreground">
+                  {getServiceName(appointment)}
+                </div>
+              </div>
+              <div className="shrink-0 text-right">
+                <div className="text-xs font-semibold">
+                  {format(new Date(appointment.start_at), "HH:mm")}
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  {format(new Date(appointment.start_at), "dd/MM")}
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2 text-[10px]">
+              <span className={`rounded-full px-2 py-1 font-semibold ${meta.soft}`}>
+                {meta.label}
+              </span>
+              <span className="font-semibold">
+                {brl(getAppointmentValue(appointment, commandasByAppointment, services))}
+              </span>
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1761,6 +2495,95 @@ function EmptyState({
   );
 }
 
+function getProfessionalOperationalState(
+  professional: AgendaProfessional,
+  appointments: AgendaAppointment[],
+  date: Date,
+  now: Date,
+) {
+  const off = isProfessionalOff(professional, date);
+  if (off) {
+    return {
+      label: "Indisponível",
+      dot: "bg-slate-400",
+      text: "text-slate-500",
+      rank: 4,
+    };
+  }
+
+  const operationalAppointments = appointments
+    .filter((appointment) => appointment.status !== "cancelled" && appointment.status !== "no_show")
+    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+  const active = operationalAppointments.find((appointment) => {
+    const start = new Date(appointment.start_at);
+    const end = new Date(appointment.end_at);
+    return ACTIVE_STATUSES.has(appointment.status ?? "pending") && now >= start && now < end;
+  });
+
+  if (active) {
+    return {
+      label: `Em atendimento até ${format(new Date(active.end_at), "HH:mm")}`,
+      dot: "bg-violet-500",
+      text: "text-violet-600 dark:text-violet-300",
+      rank: 0,
+    };
+  }
+
+  const next = operationalAppointments.find(
+    (appointment) =>
+      ACTIVE_STATUSES.has(appointment.status ?? "pending") && new Date(appointment.start_at) > now,
+  );
+
+  if (next) {
+    return {
+      label: `Livre • próximo ${format(new Date(next.start_at), "HH:mm")}`,
+      dot: "bg-emerald-500",
+      text: "text-emerald-600 dark:text-emerald-300",
+      rank: 1,
+    };
+  }
+
+  return {
+    label: "Livre hoje",
+    dot: "bg-emerald-500",
+    text: "text-emerald-600 dark:text-emerald-300",
+    rank: 2,
+  };
+}
+
+function getFirstFreeMobileTime(
+  professional: AgendaProfessional,
+  appointments: AgendaAppointment[],
+  date: Date,
+  now: Date,
+  openHour: number,
+  closeHour: number,
+  slotMinutes: number,
+) {
+  if (isProfessionalOff(professional, date)) return null;
+
+  const blockingAppointments = appointments.filter(
+    (appointment) => appointment.status !== "cancelled" && appointment.status !== "no_show",
+  );
+  const allTimes = buildTimes(openHour, closeHour, slotMinutes);
+  const nowBlockMinutes = Math.floor((now.getHours() * 60 + now.getMinutes()) / slotMinutes) * slotMinutes;
+  const candidateTimes = isToday(date)
+    ? allTimes.filter((time) => timeToMinutes(time) >= Math.max(openHour * 60, nowBlockMinutes))
+    : allTimes;
+
+  return (
+    candidateTimes.find((time) => {
+      const [hour, minute] = time.split(":").map(Number);
+      const slotStart = new Date(date);
+      slotStart.setHours(hour, minute, 0, 0);
+      const slotEnd = new Date(slotStart.getTime() + slotMinutes * 60_000);
+      return !blockingAppointments.some(
+        (appointment) => new Date(appointment.start_at) < slotEnd && new Date(appointment.end_at) > slotStart,
+      );
+    }) ?? null
+  );
+}
+
 function buildTimes(openHour: number, closeHour: number, slotMinutes: number) {
   const result: string[] = [];
   for (let minutes = openHour * 60; minutes <= closeHour * 60; minutes += slotMinutes) {
@@ -1769,6 +2592,11 @@ function buildTimes(openHour: number, closeHour: number, slotMinutes: number) {
     );
   }
   return result;
+}
+
+function timeToMinutes(time: string) {
+  const [hour, minute] = time.split(":").map(Number);
+  return hour * 60 + minute;
 }
 
 function isProfessionalOff(professional: AgendaProfessional, date: Date) {
