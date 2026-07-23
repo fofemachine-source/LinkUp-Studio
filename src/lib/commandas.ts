@@ -62,12 +62,14 @@ async function nextComandaNumber(db: DbClient, tenantId: string) {
 function buildComandaItems(input: AppointmentComandaInput, commandaId: string) {
   const professional = input.professionals?.find((p) => p.id === input.professionalId);
   const commissionPct = Number(professional?.commission_pct ?? 0);
+  const covered = coveredServiceIdSet(input);
 
   const serviceItems = input.serviceIds
     .map((id) => input.services.find((service) => service.id === id))
     .filter(Boolean)
     .map((service) => {
       const price = Number(service!.price ?? 0);
+      const coveredBySubscription = covered.has(service!.id);
       return {
         commanda_id: commandaId,
         tenant_id: input.tenantId,
@@ -77,6 +79,10 @@ function buildComandaItems(input: AppointmentComandaInput, commandaId: string) {
         quantity: 1,
         unit_price: price,
         unit_cost: 0,
+        covered_by_subscription: coveredBySubscription,
+        subscription_id: coveredBySubscription ? (input.subscriptionId ?? null) : null,
+        subscription_benefit_id: null,
+        billable_amount: coveredBySubscription ? 0 : price,
         professional_id: input.professionalId || null,
         commission_pct: commissionPct,
         commission_value: (price * commissionPct) / 100,
@@ -96,6 +102,10 @@ function buildComandaItems(input: AppointmentComandaInput, commandaId: string) {
       quantity: 1,
       unit_price: Number(product!.price ?? 0),
       unit_cost: Number(product!.cost_price ?? 0),
+      covered_by_subscription: false,
+      subscription_id: null,
+      subscription_benefit_id: null,
+      billable_amount: Number(product!.price ?? 0),
       professional_id: null,
       commission_pct: 0,
       commission_value: 0,

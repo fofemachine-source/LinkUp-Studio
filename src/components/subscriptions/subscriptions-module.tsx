@@ -273,6 +273,29 @@ function DueDateIndicator({
   );
 }
 
+function ChargeDateIndicator({ charge }: { charge: any }) {
+  if (charge?.status !== "paid") {
+    return <DueDateIndicator value={charge?.due_date} />;
+  }
+
+  const paidDate = charge?.paid_at ?? charge?.updated_at ?? charge?.due_date;
+
+  return (
+    <div className="flex min-w-max flex-col items-start gap-1">
+      <span className="text-sm">Pago em {dateLabel(paidDate)}</span>
+      {charge?.due_date && (
+        <span className="text-xs text-muted-foreground">
+          Vencia em {dateLabel(charge.due_date)}
+        </span>
+      )}
+      <Badge variant="outline" className={statusClass("paid")}>
+        <Check className="mr-1 h-3 w-3" />
+        Recebida
+      </Badge>
+    </div>
+  );
+}
+
 function isOpenCharge(charge: any) {
   return ["pending", "overdue"].includes(charge?.status);
 }
@@ -1579,7 +1602,7 @@ function FinanceTab({
                   return (
                     <TableRow key={charge.id}>
                       <TableCell>
-                        <DueDateIndicator value={charge.due_date} />
+                        <ChargeDateIndicator charge={charge} />
                       </TableCell>
                       <TableCell className="font-medium">
                         {contract?.subscriber_name ?? "Cliente removido"}
@@ -3283,7 +3306,7 @@ function ContractDetailDialog({
                     <div>
                       <strong>{charge.description ?? "Cobrança"}</strong>
                       <div className="mt-1">
-                        <DueDateIndicator value={charge.due_date} />
+                        <ChargeDateIndicator charge={charge} />
                       </div>
                       <div className="mt-2">
                         <ProofStatusBadge charge={charge} />

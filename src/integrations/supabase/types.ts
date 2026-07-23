@@ -515,6 +515,8 @@ export type Database = {
       }
       commanda_items: {
         Row: {
+          billable_amount: number | null
+          covered_by_subscription: boolean
           commanda_id: string
           commission_pct: number | null
           commission_status: string | null
@@ -526,11 +528,15 @@ export type Database = {
           professional_id: string | null
           quantity: number | null
           ref_id: string | null
+          subscription_benefit_id: string | null
+          subscription_id: string | null
           tenant_id: string
           unit_cost: number
           unit_price: number
         }
         Insert: {
+          billable_amount?: number | null
+          covered_by_subscription?: boolean
           commanda_id: string
           commission_pct?: number | null
           commission_status?: string | null
@@ -542,11 +548,15 @@ export type Database = {
           professional_id?: string | null
           quantity?: number | null
           ref_id?: string | null
+          subscription_benefit_id?: string | null
+          subscription_id?: string | null
           tenant_id: string
           unit_cost?: number
           unit_price?: number
         }
         Update: {
+          billable_amount?: number | null
+          covered_by_subscription?: boolean
           commanda_id?: string
           commission_pct?: number | null
           commission_status?: string | null
@@ -558,6 +568,8 @@ export type Database = {
           professional_id?: string | null
           quantity?: number | null
           ref_id?: string | null
+          subscription_benefit_id?: string | null
+          subscription_id?: string | null
           tenant_id?: string
           unit_cost?: number
           unit_price?: number
@@ -2508,8 +2520,11 @@ export type Database = {
           active: boolean | null
           category: string | null
           created_at: string
+          description: string | null
+          display_order: number | null
           duration_min: number
           id: string
+          image_url: string | null
           name: string
           price: number
           tenant_id: string
@@ -2519,8 +2534,11 @@ export type Database = {
           active?: boolean | null
           category?: string | null
           created_at?: string
+          description?: string | null
+          display_order?: number | null
           duration_min?: number
           id?: string
+          image_url?: string | null
           name: string
           price?: number
           tenant_id: string
@@ -2530,8 +2548,11 @@ export type Database = {
           active?: boolean | null
           category?: string | null
           created_at?: string
+          description?: string | null
+          display_order?: number | null
           duration_min?: number
           id?: string
+          image_url?: string | null
           name?: string
           price?: number
           tenant_id?: string

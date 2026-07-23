@@ -54,6 +54,7 @@ import {
   ShieldCheck,
   UserPlus,
   UserRound,
+  Clock,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -81,9 +82,31 @@ export const Route = createFileRoute("/booking/$slug")({
 
 type Step = "vip" | "service" | "pro" | "date" | "form" | "done";
 type CustomerAccessMode = "register" | "login";
+const DEFAULT_SERVICE_CATEGORY = "Serviços";
+
+function serviceCategory(service: any) {
+  const category = String(service?.category ?? "").trim();
+  return category || DEFAULT_SERVICE_CATEGORY;
+}
+
+function groupServicesByCategory(services: any[]) {
+  const groups = new Map<string, any[]>();
+  for (const service of services) {
+    const category = serviceCategory(service);
+    groups.set(category, [...(groups.get(category) ?? []), service]);
+  }
+  return Array.from(groups, ([category, items]) => ({
+    category,
+    items,
+  }));
+}
 
 function canBookWithVip(vipInfo: any) {
   return Boolean(vipInfo && (vipInfo.can_book ?? vipInfo.status === "active"));
+}
+
+function shouldShowVipRenewalPayment(vipInfo: any) {
+  return Boolean(vipInfo?.renewal && !canBookWithVip(vipInfo));
 }
 
 function vipSubscriptionStatusLabel(status: string) {
@@ -138,6 +161,7 @@ function BookingPage() {
   const [serviceId, setServiceId] = useState<string>("");
   const [extraServiceIds, setExtraServiceIds] = useState<string[]>([]);
   const [showExtraServices, setShowExtraServices] = useState(false);
+  const [selectedServiceCategory, setSelectedServiceCategory] = useState("");
   const [proId, setProId] = useState<string>("");
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [time, setTime] = useState<string>("");
@@ -175,6 +199,7 @@ function BookingPage() {
     setServiceId("");
     setExtraServiceIds([]);
     setShowExtraServices(false);
+    setSelectedServiceCategory("");
     setProId("");
     setDate(undefined);
     setTime("");
@@ -233,6 +258,7 @@ function BookingPage() {
       setServiceId("");
       setExtraServiceIds([]);
       setShowExtraServices(false);
+      setSelectedServiceCategory("");
       setProId("");
       setDate(undefined);
       setTime("");
@@ -421,8 +447,9 @@ function BookingPage() {
       toast.error(error.message ?? "Não foi possível enviar o comprovante."),
   });
 
+  const showVipRenewalPayment = shouldShowVipRenewalPayment(vipInfo);
   let inactivePixPayload = "";
-  if ((vipInfo as any)?.renewal && (vipInfo as any)?.payment) {
+  if (showVipRenewalPayment && (vipInfo as any)?.payment) {
     const payment = (vipInfo as any).payment;
     const key = String(payment.pix_key || "").trim();
     const holder = String(payment.pix_holder || "BARBEARIA").substring(0, 25);
@@ -532,11 +559,17 @@ function BookingPage() {
   const extraVipServices = canAddVipExtras
     ? services.filter((service: any) => !coveredServiceIds.has(service.id))
     : [];
-  const visibleServices = isVip
-    ? showExtraServices
-      ? [...includedVipServices, ...extraVipServices]
-      : includedVipServices
-    : regularServices;
+  const visibleServices = isVip ? includedVipServices : regularServices;
+  const serviceCategoryGroups = groupServicesByCategory(visibleServices);
+  const serviceCategorySignature = serviceCategoryGroups
+    .map((group) => `${group.category}:${group.items.map((service: any) => service.id).join(",")}`)
+    .join("|");
+  const activeServiceCategory =
+    selectedServiceCategory && serviceCategoryGroups.some((group) => group.category === selectedServiceCategory)
+      ? selectedServiceCategory
+      : serviceCategoryGroups[0]?.category ?? "";
+  const visibleServicesInCategory =
+    serviceCategoryGroups.find((group) => group.category === activeServiceCategory)?.items ?? visibleServices;
   const selectedExtraServices = services.filter((service: any) =>
     extraServiceIds.includes(service.id),
   );
@@ -586,6 +619,17 @@ function BookingPage() {
     setDate(undefined);
     setTime("");
   };
+
+  useEffect(() => {
+    if (step !== "service") return;
+    if (!serviceCategoryGroups.length) {
+      if (selectedServiceCategory) setSelectedServiceCategory("");
+      return;
+    }
+    if (selectedServiceCategory !== activeServiceCategory) {
+      setSelectedServiceCategory(activeServiceCategory);
+    }
+  }, [activeServiceCategory, selectedServiceCategory, serviceCategoryGroups.length, serviceCategorySignature, step]);
 
   const timeSlots = date && slotsQuery.data
     ? buildSlots(
@@ -953,7 +997,7 @@ function BookingPage() {
                       {(vipInfo as any).booking_block_reason}
                     </div>
                   )}
-                  {vipInfo && (vipInfo as any).renewal && (
+                  {showVipRenewalPayment && (
                     <div className="p-5 rounded-xl bg-black/40 border border-white/10 text-sm flex flex-col gap-5 text-center mt-4">
                       <div className="flex flex-col items-center gap-1">
                         <div className={`font-semibold text-base ${(vipInfo as any).status === "active" ? "text-amber-400" : "text-red-500"}`}>
@@ -1144,8 +1188,31 @@ function BookingPage() {
               </div>
             )}
 
-            <div className="grid sm:grid-cols-2 gap-3">
-              {visibleServices.map((service: any) => {
+            {serviceCategoryGroups.length > 1 && (
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                {serviceCategoryGroups.map((group) => (
+                  <button
+                    key={group.category}
+                    type="button"
+                    onClick={() => setSelectedServiceCategory(group.category)}
+                    className={`min-h-11 shrink-0 rounded-full border px-4 py-2 text-xs font-semibold transition ${
+                      activeServiceCategory === group.category
+                        ? "border-primary bg-primary text-primary-foreground shadow-lg"
+                        : "border-white/15 bg-white/5 text-white/70 hover:border-primary/50 hover:text-white"
+                    }`}
+                    aria-pressed={activeServiceCategory === group.category}
+                  >
+                    {group.category}
+                    <span className="ml-2 rounded-full bg-black/20 px-1.5 py-0.5 text-[10px]">
+                      {group.items.length}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {visibleServicesInCategory.map((service: any) => {
                 const covered = isVip && coveredServiceIds.has(service.id);
                 const extraSelected = isVip && extraServiceIds.includes(service.id);
                 const serviceBenefit = vipBenefitByService.get(service.id);
@@ -1156,10 +1223,14 @@ function BookingPage() {
                 const unavailable =
                   covered && (vipCoveredBalanceExhausted || benefitBalanceExhausted);
                 return (
-                  <button
+                  <ServiceOptionCard
                     key={service.id}
-                    type="button"
+                    service={service}
+                    selected={serviceId === service.id || extraSelected}
                     disabled={unavailable}
+                    covered={covered}
+                    extra={isVip && !covered}
+                    vipOnly={service.vip_only}
                     onClick={() => {
                       if (isVip) {
                         if (covered) {
@@ -1198,54 +1269,62 @@ function BookingPage() {
                         setStep("pro");
                       }
                     }}
-                    className={`rounded-xl border-2 p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                      serviceId === service.id || extraSelected
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:border-primary/50"
-                    }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="font-medium">{service.name}</div>
-                      {covered ? (
-                        <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-400">
-                          INCLUSO
-                        </span>
-                      ) : isVip ? (
-                        <span className="rounded-full bg-amber-500/15 px-2 py-1 text-[10px] font-semibold text-amber-300">
-                          EXTRA
-                        </span>
-                      ) : service.vip_only ? (
-                        <Crown className="h-4 w-4 text-primary" />
-                      ) : null}
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {service.duration_min} min
-                    </div>
-                    <div className="mt-2 font-semibold text-primary">
-                      {covered ? "Coberto pela assinatura" : brl(service.price)}
-                    </div>
                     {covered && serviceBenefit?.quantity != null && !unavailable && (
-                      <div className="mt-1 text-[11px] text-emerald-300">
+                      <div className="mt-2 text-[11px] text-emerald-300">
                         {serviceBenefit.available_quantity} de {serviceBenefit.quantity} disponível(is)
                         neste ciclo
                       </div>
                     )}
                     {unavailable && (
-                      <div className="mt-1 text-[11px] text-red-300">
+                      <div className="mt-2 text-[11px] text-red-300">
                         {benefitBalanceExhausted
                           ? `Benefício esgotado neste ciclo: ${serviceBenefit.used_quantity ?? 0} usado(s) e ${serviceBenefit.reserved_quantity ?? 0} reservado(s).`
                           : "Sem saldo livre: as sessões foram usadas ou já estão reservadas."}
                       </div>
                     )}
                     {isVip && !covered && (
-                      <div className="mt-1 text-[11px] text-amber-400">
+                      <div className="mt-2 text-[11px] text-amber-400">
                         Será cobrado no fechamento da comanda.
                       </div>
                     )}
-                  </button>
+                  </ServiceOptionCard>
                 );
               })}
             </div>
+
+            {isVip && chosenService && showExtraServices && extraVipServices.length > 0 && (
+              <div className="space-y-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+                <div>
+                  <div className="text-sm font-semibold text-amber-200">
+                    Serviços extras
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-white/55">
+                    Escolha apenas se quiser adicionar algo fora da assinatura. Esses itens serão
+                    cobrados no fechamento da comanda.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {extraVipServices.map((service: any) => {
+                    const extraSelected = extraServiceIds.includes(service.id);
+                    return (
+                      <ServiceOptionCard
+                        key={service.id}
+                        service={service}
+                        selected={extraSelected}
+                        extra
+                        onClick={() => toggleExtraService(service.id)}
+                      >
+                        <div className="mt-2 text-[11px] text-amber-400">
+                          Será cobrado no fechamento da comanda.
+                        </div>
+                      </ServiceOptionCard>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {isVip && selectedServices.length > 0 && (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
@@ -1952,6 +2031,87 @@ function StepHeader({ title, onBack }: { title: string; onBack: () => void }) {
       </button>
       <h2 className="font-semibold text-xl">{title}</h2>
     </div>
+  );
+}
+
+function ServiceOptionCard({
+  service,
+  selected,
+  disabled,
+  covered,
+  extra,
+  vipOnly,
+  onClick,
+  children,
+}: {
+  service: any;
+  selected?: boolean;
+  disabled?: boolean;
+  covered?: boolean;
+  extra?: boolean;
+  vipOnly?: boolean;
+  onClick: () => void;
+  children?: any;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = typeof service.image_url === "string" ? service.image_url.trim() : "";
+  const showImage = Boolean(imageUrl) && !imageFailed;
+  const selectedClass = selected
+    ? extra
+      ? "border-amber-400 bg-amber-500/10 shadow-[0_0_18px_rgba(245,158,11,0.12)]"
+      : "border-primary bg-primary/10 shadow-[0_0_18px_rgba(37,99,235,0.12)]"
+    : "border-white/15 bg-white/[0.03] hover:border-primary/60 hover:bg-white/[0.06]";
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`w-full rounded-2xl border-2 p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${selectedClass}`}
+    >
+      <div className="flex min-w-0 gap-3">
+        {showImage && (
+          <img
+            src={imageUrl}
+            alt={service.name}
+            loading="lazy"
+            onError={() => setImageFailed(true)}
+            className="h-24 w-24 shrink-0 rounded-2xl object-cover bg-white/5 sm:h-28 sm:w-32"
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="min-w-0 text-base font-semibold leading-tight text-white">
+              {service.name}
+            </h3>
+            {covered ? (
+              <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-300">
+                INCLUSO
+              </span>
+            ) : extra ? (
+              <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-1 text-[10px] font-semibold text-amber-300">
+                EXTRA
+              </span>
+            ) : vipOnly ? (
+              <Crown className="h-4 w-4 shrink-0 text-primary" />
+            ) : null}
+          </div>
+          {service.description && (
+            <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-white/55">
+              {service.description}
+            </p>
+          )}
+          <div className="mt-3 flex items-center gap-2 text-xs text-white/50">
+            <Clock className="h-4 w-4 text-amber-400" />
+            <span>{service.duration_min} min</span>
+          </div>
+          <div className={`mt-3 text-base font-semibold ${covered ? "text-blue-400" : "text-primary"}`}>
+            {covered ? "Coberto pela assinatura" : brl(service.price)}
+          </div>
+          {children}
+        </div>
+      </div>
+    </button>
   );
 }
 

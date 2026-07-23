@@ -53,11 +53,16 @@ type RepairCommanda = {
 };
 
 type RepairCommandaItem = {
+  id: string;
   commanda_id: string;
   kind: string | null;
   ref_id: string | null;
   quantity: number | null;
   unit_price: number | null;
+  billable_amount?: number | null;
+  covered_by_subscription?: boolean | null;
+  subscription_benefit_id?: string | null;
+  subscription_id?: string | null;
 };
 
 function money(value: unknown) {
@@ -183,7 +188,9 @@ async function adjustOpenCoveredSubscriptionCommandas(
 
   const { data: items, error: itemsError } = await db
     .from("commanda_items")
-    .select("commanda_id,kind,ref_id,quantity,unit_price")
+    .select(
+      "id,commanda_id,kind,ref_id,quantity,unit_price,billable_amount,covered_by_subscription,subscription_benefit_id,subscription_id",
+    )
     .eq("tenant_id", tenantId)
     .in("commanda_id", openCommandaIds);
 
@@ -211,21 +218,44 @@ async function adjustOpenCoveredSubscriptionCommandas(
     const commandaItems = itemsByCommandaId.get(commanda.id) ?? [];
     if (commandaItems.length === 0) continue;
 
-    const catalogSubtotal = money(
-      commandaItems.reduce(
-        (sum, item) => sum + money(item.unit_price) * Number(item.quantity ?? 1),
-        0,
-      ),
-    );
-    const coveredSubtotal = money(
-      commandaItems
-        .filter((item) => item.kind === "service" && item.ref_id && covered.has(item.ref_id))
-        .reduce((sum, item) => sum + money(item.unit_price) * Number(item.quantity ?? 1), 0),
-    );
+    let coveredSubtotal = 0;
+    let nextSubtotal = 0;
+
+    for (const item of commandaItems) {
+      const lineTotal = money(money(item.unit_price) * Number(item.quantity ?? 1));
+      const coveredItem = Boolean(
+        item.kind === "service" && item.ref_id && covered.has(item.ref_id),
+      );
+
+      if (coveredItem) {
+        coveredSubtotal = money(coveredSubtotal + lineTotal);
+      } else {
+        nextSubtotal = money(nextSubtotal + lineTotal);
+      }
+
+      const needsItemSnapshot =
+        Boolean(item.covered_by_subscription) !== coveredItem ||
+        money(item.billable_amount) !== (coveredItem ? 0 : lineTotal) ||
+        (coveredItem ? item.subscription_id !== appointment.subscription_id : item.subscription_id !== null);
+
+      if (needsItemSnapshot) {
+        const { error: itemUpdateError } = await db
+          .from("commanda_items")
+          .update({
+            covered_by_subscription: coveredItem,
+            subscription_id: coveredItem ? (appointment.subscription_id ?? null) : null,
+            subscription_benefit_id: null,
+            billable_amount: coveredItem ? 0 : lineTotal,
+          })
+          .eq("tenant_id", tenantId)
+          .eq("id", item.id);
+
+        if (itemUpdateError) throw new Error(itemUpdateError.message);
+      }
+    }
 
     if (coveredSubtotal <= 0) continue;
 
-    const nextSubtotal = money(Math.max(0, catalogSubtotal - coveredSubtotal));
     const nextTotal = money(
       Math.max(0, nextSubtotal - money(commanda.discount) + money(commanda.addition)),
     );

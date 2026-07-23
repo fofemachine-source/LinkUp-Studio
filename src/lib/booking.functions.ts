@@ -412,9 +412,41 @@ export const getPublicTenant = createServerFn({ method: "GET" })
     const { data: t, error: tenantError } = await supabase.from("tenants").select("id,name,subtitle,logo_url,banner_url,slug,primary_color,slot_minutes,whatsapp,city").eq("slug", data.slug).eq("status", "active").maybeSingle();
     if (tenantError) throw new Error(tenantError.message);
     if (!t) return null;
+    const loadServices = async () => {
+      const richResult = await supabase
+        .from("services")
+        .select("id,name,price,duration_min,vip_only,category,description,image_url,display_order")
+        .eq("tenant_id", t.id)
+        .eq("active", true)
+        .order("category", { ascending: true, nullsFirst: false })
+        .order("display_order", { ascending: true, nullsFirst: false })
+        .order("name");
+      if (!richResult.error) return richResult;
+
+      const canFallback = /description|image_url|display_order|schema cache|column/i.test(richResult.error.message);
+      if (!canFallback) return richResult;
+
+      const legacyResult = await supabase
+        .from("services")
+        .select("id,name,price,duration_min,vip_only,category")
+        .eq("tenant_id", t.id)
+        .eq("active", true)
+        .order("category", { ascending: true, nullsFirst: false })
+        .order("name");
+
+      return {
+        ...legacyResult,
+        data: (legacyResult.data ?? []).map((service: any) => ({
+          ...service,
+          description: null,
+          image_url: null,
+          display_order: null,
+        })),
+      };
+    };
     const [professionalsResult, servicesResult, settingsResult, brandingResult, timeOffResult] = await Promise.all([
       supabase.from("professionals").select("id,full_name,photo_url,role_label,work_days,blocked_dates").eq("tenant_id", t.id).eq("active", true).order("full_name"),
-      supabase.from("services").select("id,name,price,duration_min,vip_only").eq("tenant_id", t.id).eq("active", true).order("name"),
+      loadServices(),
       loadPublicTenantSettings(supabase, t.id),
       db
         .from("tenant_booking_branding")

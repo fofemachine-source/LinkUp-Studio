@@ -992,23 +992,37 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
       .filter((benefit: any) => benefit.benefit_type === "service" && benefit.service_id)
       .map((benefit: any) => benefit.service_id),
   );
-  const isItemCoveredBySubscription = (item: any) =>
-    Boolean(
+  const isItemCoveredBySubscription = (item: any) => {
+    if (item.covered_by_subscription === true) return true;
+    if (item.covered_by_subscription === false && item.subscription_id) return false;
+
+    return Boolean(
       activeSubscription &&
         item.kind === "service" &&
         item.ref_id &&
         coveredServiceIds.has(item.ref_id),
     );
+  };
+  const itemBillableTotal = (item: any) => {
+    const storedBillable = Number(item.billable_amount);
+    if (item.billable_amount !== null && item.billable_amount !== undefined && Number.isFinite(storedBillable)) {
+      return money(storedBillable);
+    }
+
+    return isItemCoveredBySubscription(item) ? 0 : itemLineTotal(item);
+  };
   const subscriptionCoveredSubtotal = money(
     items
       .filter(isItemCoveredBySubscription)
       .reduce((sum, item) => sum + itemLineTotal(item), 0),
   );
-  const subscriptionExtraSubtotal = money(Math.max(0, subtotal - subscriptionCoveredSubtotal));
-  const hasSubscriptionCoverage = subscriptionCoveredSubtotal > 0;
+  const subscriptionExtraSubtotal = money(
+    items.reduce((sum, item) => sum + itemBillableTotal(item), 0),
+  );
   const subscriptionCoveredItemCount = items
     .filter(isItemCoveredBySubscription)
     .reduce((sum, item) => sum + Number(item.quantity ?? 1), 0);
+  const hasSubscriptionCoverage = subscriptionCoveredItemCount > 0 || subscriptionCoveredSubtotal > 0;
   const rawSessionsRemaining = activeSubscription?.sessions_remaining;
   const subscriptionRemainingBefore =
     rawSessionsRemaining === null || rawSessionsRemaining === undefined
@@ -1089,16 +1103,19 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
       item.kind === "service" && money(item.commission_pct) > 0
         ? money((money(item.unit_price) * nextQuantity * money(item.commission_pct)) / 100)
         : money(item.commission_value);
+    const billableAmount = isItemCoveredBySubscription(item)
+      ? 0
+      : money(money(item.unit_price) * nextQuantity);
     const { error } = await supabase
       .from("commanda_items")
-      .update({ quantity: nextQuantity, commission_value: commissionValue })
+      .update({ quantity: nextQuantity, commission_value: commissionValue, billable_amount: billableAmount })
       .eq("id", item.id)
       .eq("tenant_id", tenantId);
     if (error) return toast.error(error.message);
     setItems((current) =>
       current.map((entry) =>
         entry.id === item.id
-          ? { ...entry, quantity: nextQuantity, commission_value: commissionValue }
+          ? { ...entry, quantity: nextQuantity, commission_value: commissionValue, billable_amount: billableAmount }
           : entry,
       ),
     );
@@ -1113,16 +1130,19 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
       item.kind === "service" && money(item.commission_pct) > 0
         ? money((newPrice * Number(item.quantity ?? 1) * money(item.commission_pct)) / 100)
         : money(item.commission_value);
+    const billableAmount = isItemCoveredBySubscription(item)
+      ? 0
+      : money(newPrice * Number(item.quantity ?? 1));
     const { error } = await supabase
       .from("commanda_items")
-      .update({ unit_price: newPrice, commission_value: commissionValue })
+      .update({ unit_price: newPrice, commission_value: commissionValue, billable_amount: billableAmount })
       .eq("id", itemId)
       .eq("tenant_id", tenantId);
     if (error) return toast.error(error.message);
     setItems((current) =>
       current.map((entry) =>
         entry.id === itemId
-          ? { ...entry, unit_price: newPrice, commission_value: commissionValue }
+          ? { ...entry, unit_price: newPrice, commission_value: commissionValue, billable_amount: billableAmount }
           : entry,
       ),
     );
@@ -1143,6 +1163,7 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
       const commissionValue = money(
         (money(reference.price) * Math.max(1, quantity) * commissionPct) / 100,
       );
+      const billableAmount = money(money(reference.price) * Math.max(1, quantity));
       const { data, error } = await supabase
         .from("commanda_items")
         .insert({
@@ -1157,6 +1178,10 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
           professional_id: tab === "service" ? professionalId || null : null,
           commission_pct: commissionPct,
           commission_value: commissionValue,
+          covered_by_subscription: false,
+          subscription_id: null,
+          subscription_benefit_id: null,
+          billable_amount: billableAmount,
         })
         .select("*, professionals(full_name)")
         .single();
@@ -1189,7 +1214,7 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
     const { error } = await supabase
       .from("commandas")
       .update({
-        subtotal,
+        subtotal: checkoutSubtotal,
         discount: money(discount),
         addition: money(addition),
         total,
@@ -1239,10 +1264,10 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
       .from("commandas")
       .update({
         status: "no_show",
-        subtotal,
+        subtotal: checkoutSubtotal,
         discount: money(discount),
         addition: money(addition),
-        total: Math.max(0, adjustedTotal),
+        total,
         cancellation_reason: "Cliente não compareceu",
         updated_at: new Date().toISOString(),
       })

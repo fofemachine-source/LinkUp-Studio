@@ -6,13 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Users, Scissors, Sparkles, Package, UserCog, KeyRound } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Plus, Pencil, Trash2, Users, Scissors, Sparkles, Package, UserCog, KeyRound, ImageIcon } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { brl, cpfMask } from "@/lib/format";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -635,15 +636,65 @@ function ProDialog({ pro, tenantId, onDone }: any) {
 function ServicesTab() {
   const tenantId = useTenantId(); const qc = useQueryClient();
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
-  const { data } = useQuery({ queryKey: ["services-all", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("services").select("*").eq("tenant_id", tenantId!).order("name")).data ?? [] });
+  const { data } = useQuery({
+    queryKey: ["services-all", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const result = await supabase
+        .from("services")
+        .select("*")
+        .eq("tenant_id", tenantId!)
+        .order("category", { ascending: true, nullsFirst: false })
+        .order("display_order", { ascending: true, nullsFirst: false })
+        .order("name");
+      if (!result.error) return result.data ?? [];
+
+      const canFallback = /display_order|schema cache|column/i.test(result.error.message);
+      if (!canFallback) {
+        toast.error(result.error.message);
+        return [];
+      }
+
+      const legacyResult = await supabase
+        .from("services")
+        .select("*")
+        .eq("tenant_id", tenantId!)
+        .order("category", { ascending: true, nullsFirst: false })
+        .order("name");
+      if (legacyResult.error) {
+        toast.error(legacyResult.error.message);
+        return [];
+      }
+      return (legacyResult.data ?? []).map((service: any) => ({
+        ...service,
+        description: null,
+        image_url: null,
+        display_order: null,
+      }));
+    },
+  });
   return (<Card className="premium-card"><CardContent className="p-6 space-y-4">
     <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} serviços</h3>
       <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2"/>Novo</Button></DialogTrigger>
         <ServiceDialog key={edit?.id ?? "new"} svc={edit} tenantId={tenantId} onDone={()=>{setOpen(false);setEdit(null);qc.invalidateQueries({queryKey:["services-all"]});}}/></Dialog></div>
     <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
-      <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Preço</TableHead><TableHead>Duração</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
+      <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Categoria</TableHead><TableHead>Preço</TableHead><TableHead>Duração</TableHead><TableHead>Ordem</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
         <TableBody>{(data ?? []).map((s:any) => (
-          <TableRow key={s.id}><TableCell className="font-medium whitespace-nowrap">{s.name}</TableCell><TableCell className="whitespace-nowrap">{brl(s.price)}</TableCell><TableCell className="whitespace-nowrap">{s.duration_min} min</TableCell>
+          <TableRow key={s.id}><TableCell className="font-medium whitespace-nowrap">
+            <div className="flex items-center gap-3">
+              {s.image_url ? (
+                <img src={s.image_url} alt="" className="h-10 w-10 rounded-xl object-cover" loading="lazy" />
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                  <ImageIcon className="h-4 w-4" />
+                </div>
+              )}
+              <div>
+                <div>{s.name}</div>
+                {s.description && <div className="max-w-[240px] truncate text-xs font-normal text-muted-foreground">{s.description}</div>}
+              </div>
+            </div>
+          </TableCell><TableCell className="whitespace-nowrap">{s.category || "Serviços"}</TableCell><TableCell className="whitespace-nowrap">{brl(s.price)}</TableCell><TableCell className="whitespace-nowrap">{s.duration_min} min</TableCell><TableCell className="whitespace-nowrap">{s.display_order ?? "—"}</TableCell>
           <TableCell className="whitespace-nowrap">{s.vip_only && <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">VIP</span>}</TableCell>
           <TableCell className="text-right whitespace-nowrap">
             <Button size="icon" variant="ghost" onClick={()=>{setEdit(s);setOpen(true);}}><Pencil className="h-4 w-4"/></Button>
@@ -655,27 +706,120 @@ function ServicesTab() {
 }
 
 function ServiceDialog({ svc, tenantId, onDone }: any) {
-  const [f, setF] = useState({ name: svc?.name ?? "", category: svc?.category ?? "", price: svc?.price ?? 0, duration_min: svc?.duration_min ?? 30, vip_only: svc?.vip_only ?? false, active: svc?.active ?? true });
+  const [f, setF] = useState({
+    name: svc?.name ?? "",
+    category: svc?.category ?? "",
+    description: svc?.description ?? "",
+    image_url: svc?.image_url ?? "",
+    display_order: svc?.display_order ?? "",
+    price: svc?.price ?? 0,
+    duration_min: svc?.duration_min ?? 30,
+    vip_only: svc?.vip_only ?? false,
+    active: svc?.active ?? true,
+  });
+  const [file, setFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
   const suggestions = ["Cabelo", "Barba", "Combo", "Coloração", "Sobrancelha", "Tratamento", "Infantil"];
+  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : f.image_url), [file, f.image_url]);
+  useEffect(() => {
+    if (!file || !previewUrl) return;
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [file, previewUrl]);
+  const handleServiceImageFile = (selectedFile?: File) => {
+    if (!selectedFile) {
+      setFile(null);
+      return;
+    }
+    const acceptedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!acceptedTypes.includes(selectedFile.type)) {
+      toast.error("Use uma imagem JPG, PNG ou WEBP.");
+      setFile(null);
+      return;
+    }
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      toast.error("A imagem precisa ter no mÃ¡ximo 5 MB.");
+      setFile(null);
+      return;
+    }
+    setFile(selectedFile);
+  };
   async function save() {
-    const { error } = svc ? await supabase.from("services").update(f).eq("id", svc.id) : await supabase.from("services").insert({ ...f, tenant_id: tenantId });
+    if (saving) return;
+    if (!tenantId) return toast.error("Empresa não carregada. Recarregue a página e tente novamente.");
+    if (!f.name.trim()) return toast.error("Informe o nome do serviço.");
+    setSaving(true);
+    let image_url = f.image_url;
+    if (file) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${tenantId}/services/${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage.from("assets").upload(path, file, { upsert: true, contentType: file.type || "image/jpeg" });
+      if (uploadError) {
+        setSaving(false);
+        return toast.error("Erro no upload: " + uploadError.message);
+      }
+      const { data: signed, error: signedError } = await supabase.storage.from("assets").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
+      if (signedError || !signed?.signedUrl) {
+        setSaving(false);
+        return toast.error("Imagem enviada, mas não foi possível gerar o link de exibição.");
+      }
+      image_url = signed.signedUrl;
+    }
+    const payload = {
+      name: f.name.trim(),
+      category: f.category.trim() || null,
+      description: f.description.trim() || null,
+      image_url: image_url || null,
+      display_order: f.display_order === "" ? null : Number(f.display_order),
+      price: Number(f.price || 0),
+      duration_min: Number(f.duration_min || 30),
+      vip_only: Boolean(f.vip_only),
+      active: Boolean(f.active),
+    };
+    const { error } = svc ? await supabase.from("services").update(payload).eq("id", svc.id) : await supabase.from("services").insert({ ...payload, tenant_id: tenantId });
+    setSaving(false);
     if (error) return toast.error(error.message);
     toast.success("Salvo"); onDone();
   }
-  return (<DialogContent><DialogHeader><DialogTitle>{svc?"Editar":"Novo"} serviço</DialogTitle></DialogHeader>
+  return (<DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{svc?"Editar":"Novo"} serviço</DialogTitle></DialogHeader>
     <div className="space-y-3">
       <div><Label>Nome</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></div>
+      <div><Label>Descrição</Label><Textarea rows={3} value={f.description} onChange={e=>setF({...f,description:e.target.value})} placeholder="Explique rapidamente o que está incluso neste serviço." /></div>
       <div>
         <Label>Categoria (digite ou escolha)</Label>
         <Input list="svc-categories" value={f.category} onChange={e=>setF({...f,category:e.target.value})} placeholder="Ex: Cabelo, Barba, Combo..." />
         <datalist id="svc-categories">{suggestions.map(s => <option key={s} value={s} />)}</datalist>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div><Label>Preço</Label><Input type="number" step="0.01" value={f.price} onChange={e=>setF({...f,price:Number(e.target.value)})}/></div>
         <div><Label>Duração (min)</Label><Input type="number" value={f.duration_min} onChange={e=>setF({...f,duration_min:Number(e.target.value)})}/></div>
+        <div><Label>Ordem</Label><Input type="number" value={f.display_order} onChange={e=>setF({...f,display_order:e.target.value === "" ? "" : Number(e.target.value)})} placeholder="Opcional"/></div>
       </div>
-      <div className="flex items-center gap-2"><Switch checked={f.vip_only} onCheckedChange={(v)=>setF({...f,vip_only:v})}/><Label>Exclusivo VIP</Label></div>
-    </div><DialogFooter><Button onClick={save}>Salvar</Button></DialogFooter></DialogContent>);
+      <div className="rounded-xl border bg-muted/20 p-3">
+        <Label>Imagem do serviço (opcional)</Label>
+        <div className="mt-3 flex items-center gap-3">
+          {previewUrl ? (
+            <img src={previewUrl} alt="Prévia do serviço" className="h-20 w-24 rounded-xl object-cover" />
+          ) : (
+            <div className="flex h-20 w-24 items-center justify-center rounded-xl bg-background text-muted-foreground">
+              <ImageIcon className="h-5 w-5" />
+            </div>
+          )}
+          <div className="min-w-0 flex-1 space-y-2">
+            <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event)=>handleServiceImageFile(event.target.files?.[0] ?? undefined)} />
+            <p className="text-xs text-muted-foreground">Use uma foto horizontal ou quadrada. JPG, PNG ou WEBP, atÃ© 5 MB.</p>
+            {(previewUrl || file) && (
+              <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={()=>{setF({...f,image_url:""});setFile(null);}}>
+                Remover imagem
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="flex items-center gap-2"><Switch checked={f.vip_only} onCheckedChange={(v)=>setF({...f,vip_only:v})}/><Label>Exclusivo VIP</Label></div>
+        <div className="flex items-center gap-2"><Switch checked={f.active} onCheckedChange={(v)=>setF({...f,active:v})}/><Label>Ativo na vitrine</Label></div>
+      </div>
+    </div><DialogFooter><Button onClick={save} disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button></DialogFooter></DialogContent>);
 }
 
 
