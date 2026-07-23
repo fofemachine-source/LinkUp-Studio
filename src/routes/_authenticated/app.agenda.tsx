@@ -39,6 +39,42 @@ import {
 
 export const Route = createFileRoute("/_authenticated/app/agenda")({ component: AgendaPage });
 
+async function loadCoveredServiceIds(
+  db: typeof supabase,
+  tenantId: string | null | undefined,
+  subscriptionId: string | null | undefined,
+  serviceIds: string[],
+) {
+  if (!tenantId || !subscriptionId || serviceIds.length === 0) return [];
+
+  const { data: subscription, error: subscriptionError } = await db
+    .from("client_subscriptions")
+    .select("id,plan_id")
+    .eq("tenant_id", tenantId)
+    .eq("id", subscriptionId)
+    .maybeSingle();
+
+  if (subscriptionError || !subscription?.plan_id) return [];
+
+  const { data: benefits, error: benefitsError } = await db
+    .from("subscription_plan_benefits")
+    .select("service_id,benefit_type,active")
+    .eq("tenant_id", tenantId)
+    .eq("plan_id", subscription.plan_id)
+    .eq("benefit_type", "service")
+    .eq("active", true);
+
+  if (benefitsError) return [];
+
+  const covered = new Set(
+    (benefits ?? [])
+      .map((benefit) => benefit.service_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  return serviceIds.filter((serviceId) => covered.has(serviceId));
+}
+
 function AgendaPage() {
   const { data: tenant } = useCurrentTenant();
   const qc = useQueryClient();
@@ -174,41 +210,6 @@ function AgendaPage() {
   const bookingSlug = tenant?.slug || "ernesth";
   const bookingLink = getPublicBookingUrl(bookingSlug);
 
-  async function loadCoveredServiceIds(
-    subscriptionId: string | null | undefined,
-    serviceIds: string[],
-  ) {
-    if (!tenantId || !subscriptionId || serviceIds.length === 0) return [];
-
-    const { data: subscription, error: subscriptionError } = await supabase
-      .from("client_subscriptions")
-      .select("id,plan_id")
-      .eq("tenant_id", tenantId)
-      .eq("id", subscriptionId)
-      .maybeSingle();
-
-    if (subscriptionError || !subscription?.plan_id) return [];
-
-    const { data: benefits, error: benefitsError } = await supabase
-      .from("subscription_plan_benefits")
-      .select("service_id,benefit_type,active")
-      .eq("tenant_id", tenantId)
-      .eq("plan_id", subscription.plan_id)
-      .eq("benefit_type", "service")
-      .eq("active", true);
-
-    if (benefitsError) return [];
-
-    const covered = new Set(
-      (benefits ?? [])
-        .map((benefit) => benefit.service_id)
-        .filter((id): id is string => Boolean(id)),
-    );
-
-    return serviceIds.filter((serviceId) => covered.has(serviceId));
-  }
-
-
   async function syncOperationalAppointment(appointment: AgendaAppointment) {
     if (!tenantId) throw new Error("Salão não identificado.");
 
@@ -234,6 +235,8 @@ function AgendaPage() {
 
     const uniqueServiceIds = [...new Set(serviceIds)];
     const coveredServiceIds = await loadCoveredServiceIds(
+      supabase,
+      tenantId,
       appointment.subscription_id ?? null,
       uniqueServiceIds,
     );
@@ -704,7 +707,12 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
           .maybeSingle();
 
         linkedSubscriptionId = subscription?.id ?? null;
-        coveredServiceIds = await loadCoveredServiceIds(linkedSubscriptionId, selectedSvcs);
+        coveredServiceIds = await loadCoveredServiceIds(
+          supabase,
+          tenantId,
+          linkedSubscriptionId,
+          selectedSvcs,
+        );
       }
 
       const { data: appt, error } = await supabase.from("appointments").insert({
@@ -1116,6 +1124,8 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
       if (error) throw error;
 
       const coveredServiceIds = await loadCoveredServiceIds(
+        supabase,
+        tenantId,
         linkedSubscriptionId,
         selectedSvcs,
       );
