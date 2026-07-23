@@ -992,24 +992,26 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
       .filter((benefit: any) => benefit.benefit_type === "service" && benefit.service_id)
       .map((benefit: any) => benefit.service_id),
   );
-  const isItemCoveredBySubscription = (item: any) => {
-    if (item.covered_by_subscription === true) return true;
-    if (item.covered_by_subscription === false && item.subscription_id) return false;
-
-    return Boolean(
+  const isCoveredByActiveSubscriptionPlan = (item: any) =>
+    Boolean(
       activeSubscription &&
         item.kind === "service" &&
         item.ref_id &&
         coveredServiceIds.has(item.ref_id),
     );
+  const isItemCoveredBySubscription = (item: any) => {
+    if (item.covered_by_subscription === true) return true;
+    return isCoveredByActiveSubscriptionPlan(item);
   };
   const itemBillableTotal = (item: any) => {
+    if (isItemCoveredBySubscription(item)) return 0;
+
     const storedBillable = Number(item.billable_amount);
     if (item.billable_amount !== null && item.billable_amount !== undefined && Number.isFinite(storedBillable)) {
       return money(storedBillable);
     }
 
-    return isItemCoveredBySubscription(item) ? 0 : itemLineTotal(item);
+    return itemLineTotal(item);
   };
   const subscriptionCoveredSubtotal = money(
     items
@@ -1471,10 +1473,16 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
                   className={
                     hasSubscriptionCoverage
                       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : isSubscriberClient
+                        ? "border-amber-200 bg-amber-50 text-amber-700"
                       : "border-slate-200 bg-slate-50 text-slate-600"
                   }
                 >
-                  {hasSubscriptionCoverage ? "Assinatura VIP" : "Pagamento avulso"}
+                  {hasSubscriptionCoverage
+                    ? "Assinatura VIP"
+                    : isSubscriberClient
+                      ? "Extra de assinante"
+                      : "Pagamento avulso"}
                 </Badge>
               </div>
               <p className="mt-1 truncate text-sm text-muted-foreground">
@@ -2225,12 +2233,12 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
           </div>
         </div>
         {canEditSale ? (
-          <div className="flex gap-2">
+          <div className="grid grid-cols-[3rem_minmax(0,1fr)] gap-2 sm:flex">
             {isAdmin && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-11 w-full shrink-0 text-destructive sm:w-11"
+                className="order-1 h-12 w-12 shrink-0 text-destructive sm:h-11 sm:w-11"
                 onClick={deleteComanda}
                 disabled={saving}
                 aria-label="Excluir comanda"
@@ -2242,14 +2250,16 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
               variant="outline"
               onClick={saveDraft}
               disabled={saving}
-              className="h-11 flex-1 text-base font-semibold"
+              className="order-3 col-span-2 h-11 min-w-0 text-base font-semibold sm:order-2 sm:col-span-1 sm:flex-1"
             >
               Salvar alteraÃ§Ãµes
             </Button>
             <Button
               onClick={finalizeSale}
               disabled={saving || !items.length}
-              className="h-11 flex-1 text-base font-semibold"
+              className={`order-2 h-12 min-w-0 text-base font-semibold sm:order-3 sm:h-11 sm:flex-1 ${
+                isAdmin ? "" : "col-span-2"
+              }`}
             >
               {saving ? "Processando..." : primaryActionLabel}
             </Button>
