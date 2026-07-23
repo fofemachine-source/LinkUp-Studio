@@ -723,7 +723,7 @@ function CommandaCard({
             {items.reduce((sum: number, item: any) => sum + Number(item.quantity ?? 1), 0)} itens
             {cmd.clients?.whatsapp ? ` · ${cmd.clients.whatsapp}` : ""}
           </span>
-          <div className="flex gap-2">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
             <Button variant="ghost" size="sm" className="h-8" onClick={onOpen}>
               Abrir
             </Button>
@@ -982,27 +982,65 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
     },
   });
 
-  useEffect(() => {
-    if (isSubscriberClient && !cmd.payment_method) setPaymentMode("vip");
-  }, [isSubscriberClient, cmd.payment_method]);
-
   const subtotal = money(
     items.reduce((sum, item) => sum + money(item.unit_price) * Number(item.quantity ?? 1), 0),
   );
+  const itemLineTotal = (item: any) =>
+    money(money(item.unit_price) * Number(item.quantity ?? 1));
   const coveredServiceIds = new Set(
     (activeSubscription?.benefits ?? [])
       .filter((benefit: any) => benefit.benefit_type === "service" && benefit.service_id)
       .map((benefit: any) => benefit.service_id),
   );
+  const isItemCoveredBySubscription = (item: any) =>
+    Boolean(
+      activeSubscription &&
+        item.kind === "service" &&
+        item.ref_id &&
+        coveredServiceIds.has(item.ref_id),
+    );
   const subscriptionCoveredSubtotal = money(
     items
-      .filter((item) => item.kind === "service" && item.ref_id && coveredServiceIds.has(item.ref_id))
-      .reduce((sum, item) => sum + money(item.unit_price) * Number(item.quantity ?? 1), 0),
+      .filter(isItemCoveredBySubscription)
+      .reduce((sum, item) => sum + itemLineTotal(item), 0),
   );
   const subscriptionExtraSubtotal = money(Math.max(0, subtotal - subscriptionCoveredSubtotal));
-  const checkoutSubtotal = paymentMode === "vip" ? subscriptionExtraSubtotal : subtotal;
+  const hasSubscriptionCoverage = subscriptionCoveredSubtotal > 0;
+  const subscriptionCoveredItemCount = items
+    .filter(isItemCoveredBySubscription)
+    .reduce((sum, item) => sum + Number(item.quantity ?? 1), 0);
+  const rawSessionsRemaining = activeSubscription?.sessions_remaining;
+  const subscriptionRemainingBefore =
+    rawSessionsRemaining === null || rawSessionsRemaining === undefined
+      ? null
+      : Number(rawSessionsRemaining);
+  const subscriptionRemainingAfter =
+    subscriptionRemainingBefore === null || Number.isNaN(subscriptionRemainingBefore)
+      ? null
+      : Math.max(0, subscriptionRemainingBefore - subscriptionCoveredItemCount);
+  const checkoutSubtotal = hasSubscriptionCoverage ? subscriptionExtraSubtotal : subtotal;
   const adjustedTotal = money(checkoutSubtotal - money(discount) + money(addition));
   const total = Math.max(0, adjustedTotal);
+  const fullyCoveredBySubscription = hasSubscriptionCoverage && total <= 0.009;
+  const usesSubscriptionSettlement = canEditSale && hasSubscriptionCoverage;
+  const primaryActionLabel = usesSubscriptionSettlement
+    ? fullyCoveredBySubscription
+      ? "Confirmar utilização e fechar"
+      : `Receber ${brl(total)} e fechar`
+    : "Receber e fechar comanda";
+
+  useEffect(() => {
+    if (hasSubscriptionCoverage && !cmd.payment_method) setPaymentMode("vip");
+  }, [hasSubscriptionCoverage, cmd.payment_method]);
+
+  useEffect(() => {
+    if (hasSubscriptionCoverage && subscriptionExtraPayment === "cash" && cashReceived < total)
+      setCashReceived(total);
+  }, [hasSubscriptionCoverage, subscriptionExtraPayment, cashReceived, total]);
+
+  useEffect(() => {
+    if (!hasSubscriptionCoverage && paymentMode === "vip") setPaymentMode("pix");
+  }, [hasSubscriptionCoverage, paymentMode]);
   const selectedCatalog = tab === "service" ? services : products;
   const selectedSubtotal = money(
     selectedCatalog
@@ -1250,14 +1288,43 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
 
   async function finalizeSale() {
     if (!items.length) return toast.error("Adicione pelo menos um item antes de finalizar.");
-    if (paymentMode !== "vip" && adjustedTotal < 0)
+    if (adjustedTotal < 0)
       return toast.error("O desconto não pode superar o valor da comanda.");
+    if (paymentMode === "vip" && !usesSubscriptionSettlement)
+      return toast.error("A assinatura só pode ser usada em serviços inclusos no plano.");
 
     let paymentPayload: Array<{ method: PaymentMethod; amount: number; received: number }>;
     let amountReceived = total;
     let changeAmount = 0;
 
-    if (paymentMode === "mixed") {
+    if (usesSubscriptionSettlement) {
+      if (!activeSubscription)
+        return toast.error("Este cliente nÃ£o possui uma assinatura ativa.");
+      if (subscriptionCoveredSubtotal <= 0)
+        return toast.error("Nenhum serviÃ§o desta comanda estÃ¡ coberto pela assinatura.");
+      if (
+        subscriptionRemainingBefore !== null &&
+        subscriptionRemainingBefore < subscriptionCoveredItemCount
+      )
+        return toast.error("Este cliente nÃ£o possui utilizaÃ§Ãµes disponÃ­veis para este benefÃ­cio.");
+      if (total > 0 && subscriptionExtraPayment === "cash" && cashReceived < total)
+        return toast.error("O valor recebido em dinheiro Ã© menor que o excedente.");
+
+      paymentPayload = [{ method: "vip", amount: 0, received: 0 }];
+      if (total > 0) {
+        const received = subscriptionExtraPayment === "cash" ? money(cashReceived) : total;
+        paymentPayload.push({
+          method: subscriptionExtraPayment,
+          amount: total,
+          received,
+        });
+        amountReceived = received;
+        changeAmount =
+          subscriptionExtraPayment === "cash" ? money(Math.max(0, received - total)) : 0;
+      } else {
+        amountReceived = 0;
+      }
+    } else if (paymentMode === "mixed") {
       if (Math.abs(remaining) > 0.009)
         return toast.error(`Distribua o valor restante de ${brl(Math.abs(remaining))}.`);
       paymentPayload = splits
@@ -1310,10 +1377,9 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
     }
 
     setSaving(true);
-    const rpcName =
-      paymentMode === "vip"
-        ? "finalize_commanda_with_subscription"
-        : "finalize_commanda";
+    const rpcName = usesSubscriptionSettlement
+      ? "finalize_commanda_with_subscription"
+      : "finalize_commanda";
     const rpcPayload: any = {
       p_commanda_id: cmd.id,
       p_tenant_id: tenantId,
@@ -1326,12 +1392,16 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
       p_change_amount: changeAmount,
       p_payments: paymentPayload,
     };
-    if (paymentMode === "vip")
+    if (usesSubscriptionSettlement)
       rpcPayload.p_subscription_id = activeSubscription.id;
     const { error } = await (supabase as any).rpc(rpcName, rpcPayload);
     setSaving(false);
     if (error) return toast.error(error.message);
-    toast.success("Pagamento recebido e comanda fechada.");
+    toast.success(
+      usesSubscriptionSettlement
+        ? "Comanda fechada e benefÃ­cio consumido com sucesso."
+        : "Pagamento recebido e comanda fechada.",
+    );
     onDone();
   }
 
@@ -1361,15 +1431,25 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
   }
 
   return (
-    <SheetContent className="flex w-full flex-col overflow-hidden p-0 sm:max-w-[760px] md:w-[76vw]">
-      <div className="border-b bg-card px-5 py-4">
+    <SheetContent className="inset-0 flex h-[100dvh] w-screen max-w-none flex-col overflow-hidden p-0 sm:inset-y-0 sm:left-auto sm:right-0 sm:w-[min(880px,70vw)] sm:max-w-none">
+      <div className="border-b bg-card px-4 py-4 sm:px-5">
         <SheetHeader>
-          <div className="flex items-start justify-between gap-4 pr-8">
+          <div className="flex items-start justify-between gap-4 pr-9">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <SheetTitle className="truncate text-xl">Comanda #{cmd.number}</SheetTitle>
                 <Badge variant="outline" className={meta.tone}>
                   {meta.label}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className={
+                    hasSubscriptionCoverage
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-slate-200 bg-slate-50 text-slate-600"
+                  }
+                >
+                  {hasSubscriptionCoverage ? "Assinatura VIP" : "Pagamento avulso"}
                 </Badge>
               </div>
               <p className="mt-1 truncate text-sm text-muted-foreground">
@@ -1377,7 +1457,7 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
               </p>
             </div>
             <div className="shrink-0 text-right">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">Total</div>
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">A receber</div>
               <div className="text-2xl font-bold text-primary">{brl(total)}</div>
             </div>
           </div>
@@ -1386,6 +1466,76 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
 
       <div className="flex-1 overflow-y-auto bg-muted/15">
         <div className="space-y-4 p-4 md:p-5">
+          <section
+            className={`rounded-2xl border p-4 ${
+              hasSubscriptionCoverage ? "border-emerald-200 bg-emerald-50/70" : "bg-card"
+            }`}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">
+                  {hasSubscriptionCoverage ? "Baixa de benefÃ­cio" : "Resumo financeiro"}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {hasSubscriptionCoverage
+                    ? "O valor coberto pela assinatura nÃ£o serÃ¡ lanÃ§ado novamente no caixa."
+                    : "Valores considerados no fechamento desta comanda."}
+                </p>
+              </div>
+              {activeSubscription?.plan?.name && (
+                <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                  {activeSubscription.plan.name}
+                </Badge>
+              )}
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border bg-white/80 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Valor comercial
+                </div>
+                <div className="mt-1 text-lg font-bold">{brl(subtotal)}</div>
+              </div>
+              <div className="rounded-xl border bg-white/80 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Coberto pela assinatura
+                </div>
+                <div className="mt-1 text-lg font-bold text-emerald-700">
+                  {brl(subscriptionCoveredSubtotal)}
+                </div>
+              </div>
+              <div className="rounded-xl border bg-white/80 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Valor a receber agora
+                </div>
+                <div className="mt-1 text-lg font-bold text-primary">{brl(total)}</div>
+              </div>
+            </div>
+
+            {hasSubscriptionCoverage && (
+              <div className="mt-3 grid gap-2 rounded-xl border border-emerald-200 bg-white/70 p-3 text-sm text-emerald-900 sm:grid-cols-3">
+                <div>
+                  <div className="text-xs opacity-70">UtilizaÃ§Ãµes nesta baixa</div>
+                  <strong>{subscriptionCoveredItemCount}</strong>
+                </div>
+                <div>
+                  <div className="text-xs opacity-70">DisponÃ­vel antes</div>
+                  <strong>
+                    {subscriptionRemainingBefore === null || Number.isNaN(subscriptionRemainingBefore)
+                      ? "Ilimitado"
+                      : subscriptionRemainingBefore}
+                  </strong>
+                </div>
+                <div>
+                  <div className="text-xs opacity-70">DisponÃ­vel depois</div>
+                  <strong>
+                    {subscriptionRemainingAfter === null ? "Ilimitado" : subscriptionRemainingAfter}
+                  </strong>
+                </div>
+              </div>
+            )}
+          </section>
+
           <section className="rounded-xl border bg-card p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1450,7 +1600,11 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
                 items.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center gap-3 rounded-lg border bg-background p-3"
+                    className={`grid gap-3 rounded-lg border p-3 sm:flex sm:items-center ${
+                      isItemCoveredBySubscription(item)
+                        ? "border-emerald-200 bg-emerald-50/40"
+                        : "bg-background"
+                    }`}
                   >
                     <div
                       className={`rounded-lg p-2 ${item.kind === "service" ? "bg-primary/10 text-primary" : "bg-sky-50 text-sky-700"}`}
@@ -1462,7 +1616,21 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{item.name}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="min-w-0 flex-1 truncate text-sm font-medium">
+                          {item.name}
+                        </div>
+                        {isItemCoveredBySubscription(item) && (
+                          <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                            Coberto pela assinatura
+                          </Badge>
+                        )}
+                        {!isItemCoveredBySubscription(item) && hasSubscriptionCoverage && (
+                          <Badge variant="outline" className="border-amber-200 text-amber-700">
+                            Extra
+                          </Badge>
+                        )}
+                      </div>
                       {editingItemId === item.id ? (
                         <div className="mt-1 flex items-center gap-1.5">
                           <Input
@@ -1531,8 +1699,21 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
                       </Button>
                     </div>
 
-                    <div className="w-24 text-right text-sm font-semibold">
-                      {brl(money(item.unit_price) * Number(item.quantity ?? 1))}
+                    <div className="text-left text-sm font-semibold sm:w-24 sm:text-right">
+                      <span
+                        className={
+                          isItemCoveredBySubscription(item)
+                            ? "text-muted-foreground line-through"
+                            : ""
+                        }
+                      >
+                        {brl(itemLineTotal(item))}
+                      </span>
+                      {isItemCoveredBySubscription(item) && (
+                        <div className="text-xs font-medium text-emerald-700">
+                          A receber R$ 0,00
+                        </div>
+                      )}
                     </div>
                     {canEditSale && (
                       <Button
@@ -1706,14 +1887,22 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
           >
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold">Recebimento</h3>
-                <p className="text-xs text-muted-foreground">Escolha como o cliente vai pagar.</p>
+                <h3 className="font-semibold">
+                  {hasSubscriptionCoverage ? "Baixa de benefÃ­cio" : "Recebimento"}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {hasSubscriptionCoverage
+                    ? "Confirme o consumo da assinatura e receba apenas valores extras."
+                    : "Escolha como o cliente vai pagar."}
+                </p>
               </div>
               <WalletCards className="h-5 w-5 text-primary" />
             </div>
 
             {canEditSale ? (
               <>
+                {!hasSubscriptionCoverage && (
+                  <>
                 <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
                   {PAYMENT_METHODS.map(({ value, compact, icon: Icon }) => (
                     <button
@@ -1726,7 +1915,7 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
                       {compact}
                     </button>
                   ))}
-                  {isSubscriberClient && (
+                  {isSubscriberClient && hasSubscriptionCoverage && (
                     <button
                       type="button"
                       onClick={() => selectPayment("vip")}
@@ -1875,11 +2064,13 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
                     </div>
                   </div>
                 )}
+                  </>
+                )}
 
-                {paymentMode === "vip" && (
+                {hasSubscriptionCoverage && (
                   <div
                     className={`mt-4 rounded-lg border p-3 text-sm ${
-                      activeSubscription?.sessions_remaining === 0
+                      subscriptionRemainingBefore === 0
                         ? "border-amber-200 bg-amber-50 text-amber-800"
                         : "border-emerald-200 bg-emerald-50 text-emerald-800"
                     }`}
@@ -1903,7 +2094,11 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
                       </div>
                       <div className="rounded-md bg-white/60 p-2">
                         <div className="text-[11px] opacity-70">Sessões restantes</div>
-                        <strong>{activeSubscription?.sessions_remaining ?? "Ilimitado"}</strong>
+                        <strong>
+                          {subscriptionRemainingBefore === null || Number.isNaN(subscriptionRemainingBefore)
+                            ? "Ilimitado"
+                            : subscriptionRemainingBefore}
+                        </strong>
                       </div>
                     </div>
                     {total > 0 && (
@@ -1947,7 +2142,7 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
                         )}
                       </div>
                     )}
-                    {activeSubscription?.sessions_remaining === 0 && (
+                    {subscriptionRemainingBefore === 0 && (
                       <p className="mt-1 text-xs">
                         O cliente não possui saldo disponível. A comanda não poderá ser fechada
                         como assinatura.
@@ -1976,16 +2171,25 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
         </div>
       </div>
 
-      <div className="border-t bg-card p-4 shadow-[0_-8px_30px_rgba(15,23,42,0.06)]">
-        <div className="mb-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
+      <div className="border-t bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(15,23,42,0.06)]">
+        <div className="mb-3 grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
           <div className="flex justify-between gap-2 text-muted-foreground sm:block">
-            <span>Subtotal</span>
+            <span>{hasSubscriptionCoverage ? "Valor comercial" : "Subtotal"}</span>
             <div className="font-medium text-foreground">{brl(subtotal)}</div>
           </div>
-          <div className="flex justify-between gap-2 text-muted-foreground sm:block">
-            <span>Desconto</span>
-            <div className="font-medium text-destructive">- {brl(discount)}</div>
-          </div>
+          {hasSubscriptionCoverage ? (
+            <div className="flex justify-between gap-2 text-muted-foreground sm:block">
+              <span>Coberto</span>
+              <div className="font-medium text-emerald-700">
+                - {brl(subscriptionCoveredSubtotal)}
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-between gap-2 text-muted-foreground sm:block">
+              <span>Desconto</span>
+              <div className="font-medium text-destructive">- {brl(discount)}</div>
+            </div>
+          )}
           <div className="flex justify-between gap-2 text-muted-foreground sm:block">
             <span>Acréscimo</span>
             <div className="font-medium text-foreground">+ {brl(addition)}</div>
@@ -2001,7 +2205,7 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-11 w-11 shrink-0 text-destructive"
+                className="h-11 w-full shrink-0 text-destructive sm:w-11"
                 onClick={deleteComanda}
                 disabled={saving}
                 aria-label="Excluir comanda"
@@ -2010,11 +2214,19 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
               </Button>
             )}
             <Button
+              variant="outline"
+              onClick={saveDraft}
+              disabled={saving}
+              className="h-11 flex-1 text-base font-semibold"
+            >
+              Salvar alteraÃ§Ãµes
+            </Button>
+            <Button
               onClick={finalizeSale}
               disabled={saving || !items.length}
               className="h-11 flex-1 text-base font-semibold"
             >
-              {saving ? "Processando..." : "Receber e fechar comanda"}
+              {saving ? "Processando..." : primaryActionLabel}
             </Button>
           </div>
         ) : (

@@ -1279,6 +1279,40 @@ function MobileDayTimeline({
     : allTimes;
 
   if (!times.length) {
+    const historicalAppointments = [...appointments].sort(
+      (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime(),
+    );
+
+    if (historicalAppointments.length > 0) {
+      return (
+        <div className="space-y-3">
+          <div className="rounded-3xl border border-primary/20 bg-primary/5 p-4">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <History className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">Histórico do dia</div>
+                <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Expediente encerrado. Veja abaixo os atendimentos registrados para este
+                  profissional nesta data.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <MobileAppointmentList
+            appointments={historicalAppointments}
+            services={services}
+            commandasByAppointment={commandasByAppointment}
+            emptyTitle="Sem histórico"
+            emptyDescription="Nenhum atendimento registrado para este profissional nesta data."
+            onEditAppointment={onEditAppointment}
+          />
+        </div>
+      );
+    }
+
     return (
       <EmptyState
         icon={Clock3}

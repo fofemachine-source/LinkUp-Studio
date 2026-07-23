@@ -136,6 +136,8 @@ function BookingPage() {
   const [isVip, setIsVip] = useState(false);
   const [vipInfo, setVipInfo] = useState<any>(null);
   const [serviceId, setServiceId] = useState<string>("");
+  const [extraServiceIds, setExtraServiceIds] = useState<string[]>([]);
+  const [showExtraServices, setShowExtraServices] = useState(false);
   const [proId, setProId] = useState<string>("");
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [time, setTime] = useState<string>("");
@@ -170,6 +172,12 @@ function BookingPage() {
     setAccessCpf("");
     setVipInfo(null);
     setIsVip(false);
+    setServiceId("");
+    setExtraServiceIds([]);
+    setShowExtraServices(false);
+    setProId("");
+    setDate(undefined);
+    setTime("");
     setStep("vip");
   }, []);
 
@@ -222,6 +230,12 @@ function BookingPage() {
       setPhone("");
       setVipInfo(null);
       setIsVip(false);
+      setServiceId("");
+      setExtraServiceIds([]);
+      setShowExtraServices(false);
+      setProId("");
+      setDate(undefined);
+      setTime("");
       setStep("vip");
       setAccessMode("login");
       setWhatsappConsent(false);
@@ -273,6 +287,7 @@ function BookingPage() {
           tenantId,
           professionalId: proId,
           serviceId,
+          extraServiceIds,
           startAt: start.toISOString(),
           isVip,
           subscriptionId: isVip ? (vipInfo as any)?.subscription_id : undefined,
@@ -511,11 +526,32 @@ function BookingPage() {
     isVip &&
     (vipInfo as any)?.available_sessions != null &&
     Number((vipInfo as any).available_sessions) <= 0;
-  const visibleServices = services.filter((service: any) => {
-    if (service.vip_only && !isVip) return false;
-    if (!isVip || coveredServiceIds.has(service.id)) return true;
-    return !(vipInfo as any)?.included_services_only || Boolean((vipInfo as any)?.allow_extras);
-  });
+  const canAddVipExtras = isVip && Boolean((vipInfo as any)?.allow_extras);
+  const regularServices = services.filter((service: any) => !service.vip_only);
+  const includedVipServices = services.filter((service: any) => coveredServiceIds.has(service.id));
+  const extraVipServices = canAddVipExtras
+    ? services.filter((service: any) => !coveredServiceIds.has(service.id))
+    : [];
+  const visibleServices = isVip
+    ? showExtraServices
+      ? [...includedVipServices, ...extraVipServices]
+      : includedVipServices
+    : regularServices;
+  const selectedExtraServices = services.filter((service: any) =>
+    extraServiceIds.includes(service.id),
+  );
+  const selectedServices = [
+    ...(chosenService ? [chosenService] : []),
+    ...selectedExtraServices,
+  ];
+  const totalServiceDuration = selectedServices.reduce(
+    (total: number, service: any) => total + Number(service?.duration_min ?? 0),
+    0,
+  );
+  const billableServicesTotal = selectedServices.reduce((total: number, service: any) => {
+    if (isVip && coveredServiceIds.has(service.id)) return total;
+    return total + Number(service?.price ?? 0);
+  }, 0);
   const availableProsForService = (() => {
     let pros = chosenService?.vip_only && !isVip ? [] : professionals;
     if (isVip && chosenService?.name?.toLowerCase().includes("corte")) {
@@ -526,8 +562,40 @@ function BookingPage() {
     }
     return pros;
   })();
+  const resetAppointmentSlot = () => {
+    setProId("");
+    setDate(undefined);
+    setTime("");
+  };
+  const goToProfessionalOrDate = () => {
+    if (!chosenService) return;
+    if (availableProsForService.length === 1) {
+      setProId(availableProsForService[0].id);
+      setStep("date");
+    } else {
+      setProId("");
+      setStep("pro");
+    }
+  };
+  const toggleExtraService = (serviceIdToToggle: string) => {
+    setExtraServiceIds((current) =>
+      current.includes(serviceIdToToggle)
+        ? current.filter((id) => id !== serviceIdToToggle)
+        : [...current, serviceIdToToggle],
+    );
+    setDate(undefined);
+    setTime("");
+  };
 
-  const timeSlots = date && slotsQuery.data ? buildSlots(date, settings, slotMin, chosenService?.duration_min ?? slotMin, slotsQuery.data) : [];
+  const timeSlots = date && slotsQuery.data
+    ? buildSlots(
+        date,
+        settings,
+        slotMin,
+        totalServiceDuration > 0 ? totalServiceDuration : chosenService?.duration_min ?? slotMin,
+        slotsQuery.data,
+      )
+    : [];
   const selectedTimeIsAvailable = timeSlots.some(
     (slot) => slot.time === time && slot.free,
   );
@@ -707,6 +775,12 @@ function BookingPage() {
                       setIsVip(value);
                       setVipInfo(null);
                       setProofFile(null);
+                      setServiceId("");
+                      setExtraServiceIds([]);
+                      setShowExtraServices(false);
+                      setProId("");
+                      setDate(undefined);
+                      setTime("");
                       if (value) validateVipMut.mutate(undefined);
                     }}
                   />
@@ -720,6 +794,12 @@ function BookingPage() {
                     setIsVip(nextVip);
                     setVipInfo(null);
                     setProofFile(null);
+                    setServiceId("");
+                    setExtraServiceIds([]);
+                    setShowExtraServices(false);
+                    setProId("");
+                    setDate(undefined);
+                    setTime("");
                     if (nextVip) validateVipMut.mutate(undefined);
                   }}
                 >
@@ -762,6 +842,8 @@ function BookingPage() {
                               : current,
                           );
                           setServiceId("");
+                          setExtraServiceIds([]);
+                          setShowExtraServices(false);
                           setProId("");
                           setDate(undefined);
                           setTime("");
@@ -1028,9 +1110,44 @@ function BookingPage() {
         {customerQuery.data && step === "service" && (
           <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
             <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
+
+            {isVip && (
+              <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/10 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-emerald-200">
+                      Escolha primeiro o que está incluso no seu plano
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-white/60">
+                      Serviços extras ficam separados e serão cobrados somente no fechamento da comanda.
+                    </p>
+                  </div>
+                  {canAddVipExtras && chosenService && extraVipServices.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowExtraServices((current) => !current)}
+                      className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-300 transition hover:bg-amber-500/15"
+                    >
+                      {showExtraServices ? "Ocultar extras" : "Adicionar serviço extra"}
+                      {extraServiceIds.length > 0 ? ` (${extraServiceIds.length})` : ""}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {visibleServices.length === 0 && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center text-sm text-white/60">
+                {isVip
+                  ? "Nenhum serviço incluso disponível para esta assinatura."
+                  : "Nenhum serviço disponível para agendamento."}
+              </div>
+            )}
+
             <div className="grid sm:grid-cols-2 gap-3">
               {visibleServices.map((service: any) => {
                 const covered = isVip && coveredServiceIds.has(service.id);
+                const extraSelected = isVip && extraServiceIds.includes(service.id);
                 const serviceBenefit = vipBenefitByService.get(service.id);
                 const benefitBalanceExhausted =
                   covered &&
@@ -1044,7 +1161,19 @@ function BookingPage() {
                     type="button"
                     disabled={unavailable}
                     onClick={() => {
+                      if (isVip) {
+                        if (covered) {
+                          setServiceId(service.id);
+                          resetAppointmentSlot();
+                          return;
+                        }
+                        toggleExtraService(service.id);
+                        return;
+                      }
+
                       setServiceId(service.id);
+                      setExtraServiceIds([]);
+                      setShowExtraServices(false);
                       setDate(undefined);
                       setTime("");
                       let availableProfessionals =
@@ -1070,7 +1199,7 @@ function BookingPage() {
                       }
                     }}
                     className={`rounded-xl border-2 p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                      serviceId === service.id
+                      serviceId === service.id || extraSelected
                         ? "border-primary bg-primary/5"
                         : "border-border hover:border-primary/50"
                     }`}
@@ -1080,6 +1209,10 @@ function BookingPage() {
                       {covered ? (
                         <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-400">
                           INCLUSO
+                        </span>
+                      ) : isVip ? (
+                        <span className="rounded-full bg-amber-500/15 px-2 py-1 text-[10px] font-semibold text-amber-300">
+                          EXTRA
                         </span>
                       ) : service.vip_only ? (
                         <Crown className="h-4 w-4 text-primary" />
@@ -1106,13 +1239,53 @@ function BookingPage() {
                     )}
                     {isVip && !covered && (
                       <div className="mt-1 text-[11px] text-amber-400">
-                        Serviço extra: haverá cobrança adicional.
+                        Será cobrado no fechamento da comanda.
                       </div>
                     )}
                   </button>
                 );
               })}
             </div>
+
+            {isVip && selectedServices.length > 0 && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
+                <div className="font-semibold text-white">Resumo do agendamento</div>
+                <div className="mt-3 space-y-2">
+                  {selectedServices.map((service: any) => {
+                    const covered = coveredServiceIds.has(service.id);
+                    return (
+                      <div key={service.id} className="flex items-center justify-between gap-3 text-white/70">
+                        <span className="truncate">{service.name}</span>
+                        <span className={covered ? "text-emerald-300" : "text-amber-300"}>
+                          {covered ? "Incluso no plano" : brl(service.price)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 grid gap-2 border-t border-white/10 pt-3 text-xs text-white/60 sm:grid-cols-2">
+                  <div>Tempo estimado: {totalServiceDuration || chosenService?.duration_min || 0} min</div>
+                  <div className="sm:text-right">
+                    A pagar no salão:{" "}
+                    <strong className="text-amber-300">
+                      {billableServicesTotal > 0 ? brl(billableServicesTotal) : "R$ 0,00"}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {isVip && (
+              <Button
+                size="lg"
+                className="w-full rounded-xl bg-amber-500 py-6 font-semibold text-black hover:bg-amber-400"
+                disabled={!chosenService}
+                onClick={goToProfessionalOrDate}
+              >
+                <span>{chosenService ? "CONTINUAR" : "ESCOLHA UM SERVIÇO INCLUSO"}</span>
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            )}
           </CardContent></Card>
         )}
 
@@ -1308,10 +1481,31 @@ function BookingPage() {
               </div>
             </div>
             <div className="p-5 rounded-xl bg-neutral-900/80 border border-white/5 text-sm space-y-3">
-              <div className="flex items-center text-white/70"><span className="w-24">Serviço:</span> <strong className="text-white font-medium">{chosenService?.name}</strong> <span className="ml-2 text-amber-500 font-medium">— {isVip && coveredServiceIds.has(chosenService?.id) ? "Incluso no plano" : brl(chosenService?.price)}</span></div>
+              <div className="space-y-2 text-white/70">
+                <div className="font-semibold text-white">Serviços</div>
+                {selectedServices.map((service: any) => {
+                  const covered = isVip && coveredServiceIds.has(service.id);
+                  return (
+                    <div key={service.id} className="flex items-center justify-between gap-3">
+                      <strong className="text-white font-medium">{service.name}</strong>
+                      <span className={covered ? "text-emerald-300 font-medium" : "text-amber-500 font-medium"}>
+                        {covered ? "Incluso no plano" : brl(service.price)}
+                      </span>
+                    </div>
+                  );
+                })}
+                {isVip && (
+                  <div className="border-t border-white/10 pt-2 text-right text-xs text-white/60">
+                    A pagar no salão:{" "}
+                    <strong className="text-amber-300">
+                      {billableServicesTotal > 0 ? brl(billableServicesTotal) : "R$ 0,00"}
+                    </strong>
+                  </div>
+                )}
+              </div>
               <div className="flex items-center text-white/70"><span className="w-24">Profissional:</span> <span className="text-white">{professionals.find((p:any)=>p.id===proId)?.full_name}</span></div>
               <div className="flex items-center text-white/70"><span className="w-24">Data:</span> <span className="text-white">{date && format(date, "dd/MM/yyyy")} às {time}</span></div>
-              {isVip && !coveredServiceIds.has(chosenService?.id) && <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-300">Este serviço não faz parte da assinatura e será cobrado normalmente no atendimento.</div>}
+              {isVip && billableServicesTotal > 0 && <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-300">Os serviços extras serão cobrados normalmente no atendimento.</div>}
             </div>
             <Button size="lg" className="w-full mt-auto py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" disabled={bookMut.isPending} onClick={() => bookMut.mutate()}>
               <span className="flex items-center">{bookMut.isPending ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null} CONFIRMAR AGENDAMENTO</span>
@@ -1376,11 +1570,15 @@ function BookingPage() {
                   </div>
                   <div>
                     <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">SERVIÇO</div>
-                    <div className="text-sm font-bold text-black">{chosenService?.name}</div>
+                    <div className="text-sm font-bold text-black">
+                      {selectedServices.map((service: any) => service.name).join(", ")}
+                    </div>
                   </div>
                   <div>
                     <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">VALOR</div>
-                    <div className="text-sm font-bold text-amber-600">{brl(chosenService?.price)}</div>
+                    <div className="text-sm font-bold text-amber-600">
+                      {isVip && billableServicesTotal <= 0 ? "Incluso no plano" : brl(billableServicesTotal)}
+                    </div>
                   </div>
                   <div>
                     <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">FORMA DE PAGAMENTO</div>

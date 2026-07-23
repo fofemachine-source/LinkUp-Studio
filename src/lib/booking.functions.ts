@@ -1114,6 +1114,7 @@ export const createBooking = createServerFn({ method: "POST" })
     tenantId: z.string().uuid(),
     professionalId: z.string().uuid(),
     serviceId: z.string().uuid(),
+    extraServiceIds: z.array(z.string().uuid()).optional().default([]),
     startAt: z.string().datetime(),
     isVip: z.boolean().default(false),
     subscriptionId: z.string().uuid().optional(),
@@ -1124,16 +1125,18 @@ export const createBooking = createServerFn({ method: "POST" })
     const { requireCustomerSession } = await import("@/lib/customer-auth.server");
     const customer = await requireCustomerSession(data.tenantId);
     const cancellationToken = crypto.randomUUID();
+    const requestedServiceIds = Array.from(
+      new Set([data.serviceId, ...(data.extraServiceIds ?? [])].filter(Boolean)),
+    );
 
-    const [{ data: t }, { data: settings }, { data: svc }, { data: pro }] = await Promise.all([
+    const [{ data: t }, { data: settings }, { data: servicesRows }, { data: pro }] = await Promise.all([
       supabase.from("tenants").select("id,name,whatsapp,slot_minutes").eq("id", data.tenantId).maybeSingle(),
       supabase.from("tenant_settings").select("vip_days,work_days,open_hour,close_hour,lunch_start,lunch_end,vip_mode,closed_dates").eq("tenant_id", data.tenantId).maybeSingle(),
       supabase
         .from("services")
         .select("id,name,duration_min,price,vip_only")
-        .eq("id", data.serviceId)
         .eq("tenant_id", data.tenantId)
-        .maybeSingle(),
+        .in("id", requestedServiceIds),
       supabase
         .from("professionals")
         .select("id,commission_pct,work_days,blocked_dates,lunch_start,lunch_end")
@@ -1142,13 +1145,21 @@ export const createBooking = createServerFn({ method: "POST" })
         .eq("active", true)
         .maybeSingle(),
     ]);
-    if (!t || !svc || !pro) throw new Error("Barbearia, serviço ou profissional inválido");
-    if (svc.vip_only && !data.isVip) {
+    const services = (servicesRows ?? []) as any[];
+    const svc = services.find((service: any) => service.id === data.serviceId);
+    if (!t || !svc || !pro || services.length !== requestedServiceIds.length) {
+      throw new Error("Barbearia, serviço ou profissional inválido");
+    }
+    if (services.some((service: any) => service.vip_only) && !data.isVip) {
       throw new Error("Este serviço é exclusivo para assinantes VIP com assinatura ativa.");
     }
 
     const start = new Date(data.startAt);
-    const end = new Date(start.getTime() + (svc.duration_min ?? t.slot_minutes ?? 30) * 60000);
+    const totalDurationMin = services.reduce(
+      (total: number, service: any) => total + Number(service.duration_min ?? t.slot_minutes ?? 30),
+      0,
+    );
+    const end = new Date(start.getTime() + Math.max(totalDurationMin, t.slot_minutes ?? 30) * 60000);
     const bookingDate = saoPauloDate(start);
     if (start.getTime() <= Date.now()) {
       throw new Error("Escolha um horário futuro para realizar o agendamento.");
@@ -1156,6 +1167,8 @@ export const createBooking = createServerFn({ method: "POST" })
 
     let activeSubscription: any = null;
     let coveredBySubscription = false;
+    let coveredServiceIdsForBooking: string[] = [];
+    let extraServiceIdsForBooking: string[] = [];
     if (data.isVip) {
       if (!data.subscriptionId) {
         throw new Error("Escolha qual assinatura deseja usar neste agendamento VIP.");
@@ -1236,11 +1249,27 @@ export const createBooking = createServerFn({ method: "POST" })
           .eq("tenant_id", data.tenantId)
           .eq("active", true),
       ]);
-      coveredBySubscription = (benefits ?? []).some(
-        (benefit: any) =>
-          benefit.benefit_type === "service" && benefit.service_id === data.serviceId,
-      );
       if (!plan) throw new Error("O plano desta assinatura não foi encontrado.");
+      const planServiceIds = Array.from(
+        new Set(
+          (benefits ?? [])
+            .filter((benefit: any) => benefit.benefit_type === "service" && benefit.service_id)
+            .map((benefit: any) => benefit.service_id),
+        ),
+      );
+      coveredServiceIdsForBooking = requestedServiceIds.filter((serviceId) =>
+        planServiceIds.includes(serviceId),
+      );
+      extraServiceIdsForBooking = requestedServiceIds.filter(
+        (serviceId) => !coveredServiceIdsForBooking.includes(serviceId),
+      );
+      coveredBySubscription = coveredServiceIdsForBooking.includes(data.serviceId);
+      if (!coveredBySubscription) {
+        throw new Error("Escolha um serviço incluso da sua assinatura antes de adicionar extras.");
+      }
+      if (extraServiceIdsForBooking.length > 0 && !plan.allow_extras) {
+        throw new Error("Este plano não permite adicionar serviços extras.");
+      }
       const benefitsWithBalance = await loadSubscriptionBenefitBalances(
         db,
         data.tenantId,
@@ -1250,25 +1279,23 @@ export const createBooking = createServerFn({ method: "POST" })
         bookingDate,
       );
       if (coveredBySubscription) {
-        const selectedBenefit = benefitsWithBalance.find(
-          (benefit) => benefit.service_id === data.serviceId,
-        );
-        if (
-          selectedBenefit?.available_quantity != null &&
-          selectedBenefit.available_quantity <= 0
-        ) {
-          throw new Error(
-            `O benefício "${selectedBenefit.name}" não possui saldo livre neste ciclo.`,
-          );
+        for (const selectedBenefit of benefitsWithBalance.filter((benefit) =>
+          coveredServiceIdsForBooking.includes(String(benefit.service_id ?? "")),
+        )) {
+          if (
+            selectedBenefit?.available_quantity != null &&
+            selectedBenefit.available_quantity <= 0
+          ) {
+            throw new Error(
+              `O benefício "${selectedBenefit.name}" não possui saldo livre neste ciclo.`,
+            );
+          }
         }
-        const coveredServiceIds = (benefits ?? [])
-          .filter((benefit: any) => benefit.benefit_type === "service" && benefit.service_id)
-          .map((benefit: any) => benefit.service_id);
         const reservedSessions = await countReservedSubscriptionSessions(
           db,
           data.tenantId,
           activeSubscription.id,
-          coveredServiceIds,
+          planServiceIds,
         );
         const sessionsRemaining =
           activeSubscription.sessions_remaining == null
@@ -1284,8 +1311,6 @@ export const createBooking = createServerFn({ method: "POST" })
           );
         }
       }
-      if (!coveredBySubscription && plan?.included_services_only && !plan?.allow_extras)
-        throw new Error("Este serviço não está incluído na sua assinatura.");
     }
 
     const bookingDayAtNoonUtc = new Date(`${bookingDate}T12:00:00Z`);
@@ -1392,9 +1417,9 @@ export const createBooking = createServerFn({ method: "POST" })
       source: "online",
       cancellation_token: cancellationToken,
       notes: data.isVip
-        ? coveredBySubscription
-          ? `Agendamento Online · Assinatura ${activeSubscription.id}`
-          : `Agendamento Online · Serviço extra da assinatura ${activeSubscription.id}`
+        ? extraServiceIdsForBooking.length > 0
+          ? `Agendamento Online · Assinatura ${activeSubscription.id} · Extras cobrados na comanda`
+          : `Agendamento Online · Assinatura ${activeSubscription.id}`
         : "Agendamento Online"
     }).select("id,cancellation_token").single();
     if (error) throw new Error(error.message);
@@ -1404,12 +1429,12 @@ export const createBooking = createServerFn({ method: "POST" })
         appointmentId: appt.id,
         tenantId: data.tenantId,
         subscriptionId: activeSubscription?.id ?? null,
-        coveredServiceIds: coveredBySubscription ? [data.serviceId] : [],
+        coveredServiceIds: coveredServiceIdsForBooking,
         clientId,
         clientName: customer.fullName,
         professionalId: data.professionalId,
-        serviceIds: [data.serviceId],
-        services: [svc],
+        serviceIds: requestedServiceIds,
+        services,
         professionals: pro ? [pro] : [],
         scheduledAt: start.toISOString(),
         status: "confirmed",
