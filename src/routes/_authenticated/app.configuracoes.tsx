@@ -471,12 +471,17 @@ function ShowcaseSettingsPanel({
   const normalizedSavedTheme = normalizeShowcaseTheme(branding.showcase_theme);
   const normalizedSavedOpacity = normalizeShowcasePanelOpacity(branding.showcase_panel_opacity);
   const isDirty = theme !== normalizedSavedTheme || panelOpacity !== normalizedSavedOpacity;
+  const backgroundOverlayOpacity = Math.max(
+    0,
+    Math.min(0.9, Number(branding.overlay_opacity ?? DEFAULT_BOOKING_BRANDING.overlay_opacity) / 100),
+  );
   const previewStyle = {
     ...getShowcaseThemeStyle({
       theme,
       panelOpacity,
       primaryColor: tenant.primary_color,
     }),
+    "--showcase-background-overlay": `rgba(0, 0, 0, ${backgroundOverlayOpacity})`,
     "--primary": tenant.primary_color ?? "#f59e0b",
     "--ring": tenant.primary_color ?? "#f59e0b",
   } as CSSProperties;
@@ -573,9 +578,10 @@ function ShowcaseSettingsPanel({
             <section className="space-y-4 rounded-2xl border bg-muted/20 p-5">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h3 className="font-semibold">Opacidade do painel</h3>
+                  <h3 className="font-semibold">Transparência do vidro</h3>
                   <p className="text-sm text-muted-foreground">
-                    Ajusta somente o fundo dos painéis. Textos, botões e ícones continuam nítidos.
+                    Ajusta somente o fundo dos painéis. Em 0%, o vidro fica transparente; textos,
+                    botões e ícones continuam nítidos.
                   </p>
                 </div>
                 <div className="rounded-full bg-background px-3 py-1 text-sm font-semibold shadow-sm">
@@ -593,8 +599,8 @@ function ShowcaseSettingsPanel({
               />
               <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
                 <span>
-                  Use de {SHOWCASE_PANEL_OPACITY_MIN}% a {SHOWCASE_PANEL_OPACITY_MAX}%. O banco só é
-                  atualizado ao salvar.
+                  Use de {SHOWCASE_PANEL_OPACITY_MIN}% a {SHOWCASE_PANEL_OPACITY_MAX}%. A alteração
+                  só entra na vitrine depois de salvar.
                 </span>
                 <span>Blur estimado: {blurValue}px</span>
               </div>
@@ -649,17 +655,11 @@ function ShowcaseSettingsPanel({
                       src={previewImageUrl}
                       alt=""
                       className="absolute inset-0 h-full w-full object-cover"
-                      style={{ opacity: theme === "dark" ? 0.58 : 0.34 }}
                     />
                   )}
                   <div
                     className="absolute inset-0"
-                    style={{
-                      background:
-                        theme === "dark"
-                          ? "linear-gradient(180deg, rgba(0,0,0,0.15), rgba(0,0,0,0.74))"
-                          : "linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.78))",
-                    }}
+                    style={{ background: "var(--showcase-background-overlay)" }}
                   />
 
                   <div className="relative space-y-4">

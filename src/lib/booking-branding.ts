@@ -11,7 +11,7 @@ export type BrandingPositionMode = "center" | "top" | "bottom" | "left" | "right
 export type BookingBrandingImageType = (typeof BOOKING_BRANDING_ALLOWED_TYPES)[number];
 export type ShowcaseTheme = "dark" | "light";
 
-export const SHOWCASE_PANEL_OPACITY_MIN = 60;
+export const SHOWCASE_PANEL_OPACITY_MIN = 0;
 export const SHOWCASE_PANEL_OPACITY_MAX = 100;
 export const SHOWCASE_PANEL_OPACITY_DEFAULT = 88;
 
@@ -348,11 +348,14 @@ function hexToRgb(value: string | null | undefined) {
 
 export function getShowcaseBackdropBlur(opacity: unknown) {
   const normalized = normalizeShowcasePanelOpacity(opacity);
-  const progress =
-    (normalized - SHOWCASE_PANEL_OPACITY_MIN) /
-    (SHOWCASE_PANEL_OPACITY_MAX - SHOWCASE_PANEL_OPACITY_MIN);
-  const blur = 22 - progress * 18;
+  if (normalized <= 0) return 0;
+  const progress = normalized / SHOWCASE_PANEL_OPACITY_MAX;
+  const blur = (4 + (1 - progress) * 24) * progress;
   return Math.round(blur * 10) / 10;
+}
+
+function alpha(value: number) {
+  return Math.round(clamp(value, 0, 1) * 1000) / 1000;
 }
 
 export function getShowcaseThemeStyle(input?: {
@@ -363,25 +366,27 @@ export function getShowcaseThemeStyle(input?: {
   const theme = normalizeShowcaseTheme(input?.theme);
   const panelOpacity = normalizeShowcasePanelOpacity(input?.panelOpacity);
   const accent = hexToRgb(input?.primaryColor);
-  const panelAlpha = panelOpacity / 100;
-  const cardAlpha =
-    theme === "light" ? Math.min(panelAlpha + 0.05, 0.98) : Math.min(panelAlpha, 0.92);
+  const panelAlpha = alpha(panelOpacity / 100);
   const blur = getShowcaseBackdropBlur(panelOpacity);
   const accentRgb = `${accent.r} ${accent.g} ${accent.b}`;
+  const lightBorderAlpha = alpha(panelAlpha * 0.18);
+  const lightBorderStrongAlpha = alpha(panelAlpha * 0.28);
+  const darkBorderAlpha = alpha(panelAlpha * 0.16);
+  const darkBorderStrongAlpha = alpha(panelAlpha * 0.24);
 
   if (theme === "light") {
     return {
       "--showcase-accent-rgb": accentRgb,
       "--showcase-page-bg": "#f8fafc",
       "--showcase-panel-background": `rgba(255, 255, 255, ${panelAlpha})`,
-      "--showcase-card-background": `rgba(255, 255, 255, ${cardAlpha})`,
-      "--showcase-subtle-background": `rgba(15, 23, 42, 0.045)`,
-      "--showcase-border-color": "rgba(15, 23, 42, 0.12)",
-      "--showcase-border-strong": "rgba(15, 23, 42, 0.2)",
+      "--showcase-card-background": `rgba(255, 255, 255, ${alpha(panelAlpha * 0.94)})`,
+      "--showcase-subtle-background": `rgba(15, 23, 42, ${alpha(panelAlpha * 0.045)})`,
+      "--showcase-border-color": `rgba(15, 23, 42, ${lightBorderAlpha})`,
+      "--showcase-border-strong": `rgba(15, 23, 42, ${lightBorderStrongAlpha})`,
       "--showcase-text-primary": "#0f172a",
       "--showcase-text-secondary": "rgba(15, 23, 42, 0.68)",
       "--showcase-text-muted": "rgba(15, 23, 42, 0.48)",
-      "--showcase-shadow": "0 24px 70px rgba(15, 23, 42, 0.16)",
+      "--showcase-shadow": `0 24px 70px rgba(15, 23, 42, ${alpha(panelAlpha * 0.16)})`,
       "--showcase-backdrop-blur": `${blur}px`,
     } as const;
   }
@@ -390,14 +395,14 @@ export function getShowcaseThemeStyle(input?: {
     "--showcase-accent-rgb": accentRgb,
     "--showcase-page-bg": "#020617",
     "--showcase-panel-background": `rgba(10, 10, 10, ${panelAlpha})`,
-    "--showcase-card-background": `rgba(255, 255, 255, ${Math.max(0.03, panelAlpha * 0.08)})`,
-    "--showcase-subtle-background": "rgba(255, 255, 255, 0.05)",
-    "--showcase-border-color": "rgba(255, 255, 255, 0.12)",
-    "--showcase-border-strong": "rgba(255, 255, 255, 0.18)",
+    "--showcase-card-background": `rgba(255, 255, 255, ${alpha(panelAlpha * 0.08)})`,
+    "--showcase-subtle-background": `rgba(255, 255, 255, ${alpha(panelAlpha * 0.05)})`,
+    "--showcase-border-color": `rgba(255, 255, 255, ${darkBorderAlpha})`,
+    "--showcase-border-strong": `rgba(255, 255, 255, ${darkBorderStrongAlpha})`,
     "--showcase-text-primary": "#ffffff",
     "--showcase-text-secondary": "rgba(255, 255, 255, 0.72)",
     "--showcase-text-muted": "rgba(255, 255, 255, 0.5)",
-    "--showcase-shadow": "0 26px 80px rgba(0, 0, 0, 0.42)",
+    "--showcase-shadow": `0 26px 80px rgba(0, 0, 0, ${alpha(panelAlpha * 0.42)})`,
     "--showcase-backdrop-blur": `${blur}px`,
   } as const;
 }
