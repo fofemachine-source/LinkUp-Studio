@@ -14,6 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_notifications: {
+        Row: {
+          acknowledged_at: string | null
+          appointment_id: string | null
+          body: string
+          created_at: string
+          data: Json
+          id: string
+          kind: string
+          read_at: string | null
+          recipient_user_id: string
+          tenant_id: string
+          title: string
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          appointment_id?: string | null
+          body: string
+          created_at?: string
+          data?: Json
+          id?: string
+          kind?: string
+          read_at?: string | null
+          recipient_user_id: string
+          tenant_id: string
+          title: string
+        }
+        Update: {
+          acknowledged_at?: string | null
+          appointment_id?: string | null
+          body?: string
+          created_at?: string
+          data?: Json
+          id?: string
+          kind?: string
+          read_at?: string | null
+          recipient_user_id?: string
+          tenant_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_notifications_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_notifications_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       appointments: {
         Row: {
           cancellation_token: string | null
@@ -2396,6 +2453,56 @@ export type Database = {
           },
         ]
       }
+      push_subscriptions: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          endpoint: string
+          id: string
+          last_seen_at: string
+          platform: string | null
+          subscription: Json
+          tenant_id: string
+          updated_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          endpoint: string
+          id?: string
+          last_seen_at?: string
+          platform?: string | null
+          subscription: Json
+          tenant_id: string
+          updated_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          endpoint?: string
+          id?: string
+          last_seen_at?: string
+          platform?: string | null
+          subscription?: Json
+          tenant_id?: string
+          updated_at?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_subscriptions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       services: {
         Row: {
           active: boolean | null
@@ -2515,7 +2622,19 @@ export type Database = {
           id: string
           notes: string | null
           paid_at: string | null
+          paid_by: string | null
           payment_method: string | null
+          payment_token: string
+          payment_token_expires_at: string
+          proof_content_type: string | null
+          proof_file_name: string | null
+          proof_rejection_reason: string | null
+          proof_reviewed_at: string | null
+          proof_reviewed_by: string | null
+          proof_size_bytes: number | null
+          proof_status: string
+          proof_storage_path: string | null
+          proof_submitted_at: string | null
           status: string
           subscription_id: string
           tenant_id: string
@@ -2535,7 +2654,19 @@ export type Database = {
           id?: string
           notes?: string | null
           paid_at?: string | null
+          paid_by?: string | null
           payment_method?: string | null
+          payment_token?: string
+          payment_token_expires_at?: string
+          proof_content_type?: string | null
+          proof_file_name?: string | null
+          proof_rejection_reason?: string | null
+          proof_reviewed_at?: string | null
+          proof_reviewed_by?: string | null
+          proof_size_bytes?: number | null
+          proof_status?: string
+          proof_storage_path?: string | null
+          proof_submitted_at?: string | null
           status?: string
           subscription_id: string
           tenant_id: string
@@ -2555,7 +2686,19 @@ export type Database = {
           id?: string
           notes?: string | null
           paid_at?: string | null
+          paid_by?: string | null
           payment_method?: string | null
+          payment_token?: string
+          payment_token_expires_at?: string
+          proof_content_type?: string | null
+          proof_file_name?: string | null
+          proof_rejection_reason?: string | null
+          proof_reviewed_at?: string | null
+          proof_reviewed_by?: string | null
+          proof_size_bytes?: number | null
+          proof_status?: string
+          proof_storage_path?: string | null
+          proof_submitted_at?: string | null
           status?: string
           subscription_id?: string
           tenant_id?: string
@@ -3225,6 +3368,8 @@ export type Database = {
       }
       tenant_settings: {
         Row: {
+          appointment_alert_repeat_seconds: number
+          appointment_reception_alerts_enabled: boolean
           close_hour: number | null
           closed_dates: string[]
           lunch_end: number | null
@@ -3241,6 +3386,8 @@ export type Database = {
           work_days: number[] | null
         }
         Insert: {
+          appointment_alert_repeat_seconds?: number
+          appointment_reception_alerts_enabled?: boolean
           close_hour?: number | null
           closed_dates?: string[]
           lunch_end?: number | null
@@ -3257,6 +3404,8 @@ export type Database = {
           work_days?: number[] | null
         }
         Update: {
+          appointment_alert_repeat_seconds?: number
+          appointment_reception_alerts_enabled?: boolean
           close_hour?: number | null
           closed_dates?: string[]
           lunch_end?: number | null
@@ -3754,6 +3903,15 @@ export type Database = {
           p_provider_resource_id: string
           p_response_payload: Json
           p_status: string
+        }
+        Returns: Json
+      }
+      confirm_subscription_payment: {
+        Args: {
+          p_charge_id: string
+          p_notes?: string
+          p_payment_method?: string
+          p_tenant_id: string
         }
         Returns: Json
       }
