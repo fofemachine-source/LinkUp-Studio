@@ -1,10 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { syncAppointmentComanda } from "@/lib/commandas";
 import { z } from "zod";
-import {
-  includesBookingWeekday,
-  isVipExclusiveBookingDay,
-} from "@/lib/booking-weekdays";
+import { includesBookingWeekday, isVipExclusiveBookingDay } from "@/lib/booking-weekdays";
 
 async function pub() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -253,8 +250,7 @@ async function resolveSubscriptionCycle(
     })
     .filter((period: any) => period.start);
   const matchingPeriod = paidPeriods.find(
-    (period: any) =>
-      period.start <= referenceDate && (!period.end || period.end >= referenceDate),
+    (period: any) => period.start <= referenceDate && (!period.end || period.end >= referenceDate),
   );
   if (matchingPeriod) {
     return { start: matchingPeriod.start as string, end: matchingPeriod.end as string | null };
@@ -296,10 +292,7 @@ async function resolveSubscriptionCycle(
       const inferredEnd = nextStart ? addDaysToDate(nextStart, -1) : null;
       return {
         start: legacyCycleStart,
-        end:
-          contractEnd && (!inferredEnd || contractEnd < inferredEnd)
-            ? contractEnd
-            : inferredEnd,
+        end: contractEnd && (!inferredEnd || contractEnd < inferredEnd) ? contractEnd : inferredEnd,
       };
     }
     legacyCycleStart = nextStart;
@@ -409,13 +402,20 @@ export const getPublicTenant = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const supabase = await pub();
     const db = supabase as any;
-    const { data: t, error: tenantError } = await supabase.from("tenants").select("id,name,subtitle,logo_url,banner_url,slug,primary_color,slot_minutes,whatsapp,city").eq("slug", data.slug).eq("status", "active").maybeSingle();
+    const { data: t, error: tenantError } = await supabase
+      .from("tenants")
+      .select("id,name,subtitle,logo_url,banner_url,slug,primary_color,slot_minutes,whatsapp,city")
+      .eq("slug", data.slug)
+      .eq("status", "active")
+      .maybeSingle();
     if (tenantError) throw new Error(tenantError.message);
     if (!t) return null;
     const loadServices = async () => {
       const richResult = await supabase
         .from("services")
-        .select("id,name,price,duration_min,vip_only,category,category_id,description,image_url,display_order")
+        .select(
+          "id,name,price,duration_min,vip_only,category,category_id,description,image_url,display_order",
+        )
         .eq("tenant_id", t.id)
         .eq("active", true)
         .order("category", { ascending: true, nullsFirst: false })
@@ -423,7 +423,10 @@ export const getPublicTenant = createServerFn({ method: "GET" })
         .order("name");
       if (!richResult.error) return richResult;
 
-      const canFallback = /category_id|description|image_url|display_order|schema cache|column/i.test(richResult.error.message);
+      const canFallback =
+        /category_id|description|image_url|display_order|schema cache|column/i.test(
+          richResult.error.message,
+        );
       if (!canFallback) return richResult;
 
       const fallbackResult = await supabase
@@ -471,19 +474,33 @@ export const getPublicTenant = createServerFn({ method: "GET" })
         .order("display_order", { ascending: true, nullsFirst: false })
         .order("name");
       if (!categoriesResult.error) return categoriesResult;
-      const canFallback = /service_categories|schema cache|does not exist|could not find/i.test(categoriesResult.error.message);
+      const canFallback = /service_categories|schema cache|does not exist|could not find/i.test(
+        categoriesResult.error.message,
+      );
       if (canFallback) return { ...categoriesResult, error: null, data: [] };
       return categoriesResult;
     };
-    const [professionalsResult, servicesResult, categoriesResult, settingsResult, brandingResult, timeOffResult] = await Promise.all([
-      supabase.from("professionals").select("id,full_name,photo_url,role_label,work_days,blocked_dates").eq("tenant_id", t.id).eq("active", true).order("full_name"),
+    const [
+      professionalsResult,
+      servicesResult,
+      categoriesResult,
+      settingsResult,
+      brandingResult,
+      timeOffResult,
+    ] = await Promise.all([
+      supabase
+        .from("professionals")
+        .select("id,full_name,photo_url,role_label,work_days,blocked_dates")
+        .eq("tenant_id", t.id)
+        .eq("active", true)
+        .order("full_name"),
       loadServices(),
       loadServiceCategories(),
       loadPublicTenantSettings(supabase, t.id),
       db
         .from("tenant_booking_branding")
         .select(
-          "background_mobile_path,background_tablet_path,background_desktop_path,hero_slogan,mobile_position_mode,mobile_position_x,mobile_position_y,mobile_zoom,desktop_position_mode,desktop_position_x,desktop_position_y,desktop_zoom,overlay_opacity,show_logo,show_name,show_subtitle,show_slogan,show_subscriber_badge,show_subscription_summary,show_primary_button",
+          "background_mobile_path,background_tablet_path,background_desktop_path,hero_slogan,mobile_position_mode,mobile_position_x,mobile_position_y,mobile_zoom,desktop_position_mode,desktop_position_x,desktop_position_y,desktop_zoom,overlay_opacity,show_logo,show_name,show_subtitle,show_slogan,show_subscriber_badge,show_subscription_summary,show_primary_button,showcase_theme,showcase_panel_opacity",
         )
         .eq("tenant_id", t.id)
         .maybeSingle(),
@@ -556,15 +573,16 @@ export const validateVip = createServerFn({ method: "POST" })
     }
     if (error) throw new Error("Não foi possível consultar sua assinatura.");
 
-    const matchingContracts = (contracts ?? []).filter(
-      (item: any) =>
-        (item.client_id
-          ? item.client_id === customer.clientId
-          : cleanCpf(String(item.cpf ?? "")) === cpf &&
-            cleanBrazilianPhone(String(item.whatsapp ?? "")) === whatsapp),
+    const matchingContracts = (contracts ?? []).filter((item: any) =>
+      item.client_id
+        ? item.client_id === customer.clientId
+        : cleanCpf(String(item.cpf ?? "")) === cpf &&
+          cleanBrazilianPhone(String(item.whatsapp ?? "")) === whatsapp,
     );
     const today = saoPauloToday();
-    const planIds = [...new Set(matchingContracts.map((item: any) => item.plan_id).filter(Boolean))];
+    const planIds = [
+      ...new Set(matchingContracts.map((item: any) => item.plan_id).filter(Boolean)),
+    ];
     const planListResult =
       planIds.length > 0
         ? await db
@@ -576,9 +594,7 @@ export const validateVip = createServerFn({ method: "POST" })
     if (planListResult.error) {
       throw new Error("Não foi possível identificar os planos das suas assinaturas.");
     }
-    const planNames = new Map(
-      (planListResult.data ?? []).map((plan: any) => [plan.id, plan.name]),
-    );
+    const planNames = new Map((planListResult.data ?? []).map((plan: any) => [plan.id, plan.name]));
     const requestedContract = data.subscriptionId
       ? matchingContracts.find((item: any) => item.id === data.subscriptionId)
       : null;
@@ -624,11 +640,7 @@ export const validateVip = createServerFn({ method: "POST" })
           ? await findOpenSubscriptionCharge(db, contract)
           : null;
 
-      if (
-        contractStatus === "active" &&
-        contract.ends_at &&
-        contract.ends_at < today
-      ) {
+      if (contractStatus === "active" && contract.ends_at && contract.ends_at < today) {
         const nextStatus = renewal ? "overdue" : "expired";
         await db
           .from("client_subscriptions")
@@ -764,9 +776,7 @@ export const validateVip = createServerFn({ method: "POST" })
       const sessionsRemaining =
         contract.sessions_remaining == null ? null : Number(contract.sessions_remaining);
       const availableSessions =
-        sessionsRemaining == null
-          ? null
-          : Math.max(0, sessionsRemaining - reservedSessions);
+        sessionsRemaining == null ? null : Math.max(0, sessionsRemaining - reservedSessions);
       let bookingBlockReason: string | null = null;
       if (contractStatus === "pending_activation") {
         bookingBlockReason =
@@ -834,10 +844,9 @@ export const validateVip = createServerFn({ method: "POST" })
               proof_file_name: exposedRenewal.proof_file_name,
               proof_rejection_reason: exposedRenewal.proof_rejection_reason,
               payment_token:
-                payment &&
-                ["none", "rejected"].includes(exposedRenewal.proof_status ?? "none")
-                ? exposedRenewal.payment_token
-                : null,
+                payment && ["none", "rejected"].includes(exposedRenewal.proof_status ?? "none")
+                  ? exposedRenewal.payment_token
+                  : null,
             }
           : null,
         plan: JSON.stringify({
@@ -861,7 +870,11 @@ export const prepareSubscriptionProofUpload = createServerFn({ method: "POST" })
         paymentToken: z.string().uuid(),
         fileName: z.string().min(1).max(255),
         contentType: z.enum(subscriptionProofTypes),
-        sizeBytes: z.number().int().min(1).max(5 * 1024 * 1024),
+        sizeBytes: z
+          .number()
+          .int()
+          .min(1)
+          .max(5 * 1024 * 1024),
       })
       .parse(d),
   )
@@ -947,7 +960,11 @@ export const submitSubscriptionProof = createServerFn({ method: "POST" })
         storagePath: z.string().min(1).max(1000),
         fileName: z.string().min(1).max(255),
         contentType: z.enum(subscriptionProofTypes),
-        sizeBytes: z.number().int().min(1).max(5 * 1024 * 1024),
+        sizeBytes: z
+          .number()
+          .int()
+          .min(1)
+          .max(5 * 1024 * 1024),
       })
       .parse(d),
   )
@@ -1092,9 +1109,7 @@ export const submitSubscriptionProof = createServerFn({ method: "POST" })
         .select("proof_storage_path,proof_status,proof_submitted_at")
         .eq("id", charge.id)
         .maybeSingle();
-      if (
-        latestCharge?.proof_storage_path === data.storagePath
-      ) {
+      if (latestCharge?.proof_storage_path === data.storagePath) {
         if (latestCharge?.proof_status !== "pending_review") {
           throw new Error("Este comprovante já foi revisado pela equipe do salão.");
         }
@@ -1175,8 +1190,12 @@ export const getBookedSlots = createServerFn({ method: "POST" })
         const e = new Date(year, month - 1, day, 23, 59, 59, 999);
         busy.push({ start_at: s.toISOString(), end_at: e.toISOString() });
       } else {
-        const [sh, sm] = String(off.start_time ?? "00:00").split(":").map(Number);
-        const [eh, em] = String(off.end_time ?? "00:00").split(":").map(Number);
+        const [sh, sm] = String(off.start_time ?? "00:00")
+          .split(":")
+          .map(Number);
+        const [eh, em] = String(off.end_time ?? "00:00")
+          .split(":")
+          .map(Number);
         const s = new Date(year, month - 1, day, sh || 0, sm || 0, 0, 0);
         const e = new Date(year, month - 1, day, eh || 0, em || 0, 0, 0);
         busy.push({ start_at: s.toISOString(), end_at: e.toISOString() });
@@ -1187,15 +1206,19 @@ export const getBookedSlots = createServerFn({ method: "POST" })
 
 // Public: create appointment. Enforces slot conflict and VIP-day rule.
 export const createBooking = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({
-    tenantId: z.string().uuid(),
-    professionalId: z.string().uuid(),
-    serviceId: z.string().uuid(),
-    extraServiceIds: z.array(z.string().uuid()).optional().default([]),
-    startAt: z.string().datetime(),
-    isVip: z.boolean().default(false),
-    subscriptionId: z.string().uuid().optional(),
-  }).parse(d))
+  .inputValidator((d) =>
+    z
+      .object({
+        tenantId: z.string().uuid(),
+        professionalId: z.string().uuid(),
+        serviceId: z.string().uuid(),
+        extraServiceIds: z.array(z.string().uuid()).optional().default([]),
+        startAt: z.string().datetime(),
+        isVip: z.boolean().default(false),
+        subscriptionId: z.string().uuid().optional(),
+      })
+      .parse(d),
+  )
   .handler(async ({ data }) => {
     const supabase = await pub();
     const db = supabase as any;
@@ -1206,22 +1229,33 @@ export const createBooking = createServerFn({ method: "POST" })
       new Set([data.serviceId, ...(data.extraServiceIds ?? [])].filter(Boolean)),
     );
 
-    const [{ data: t }, { data: settings }, { data: servicesRows }, { data: pro }] = await Promise.all([
-      supabase.from("tenants").select("id,name,whatsapp,slot_minutes").eq("id", data.tenantId).maybeSingle(),
-      supabase.from("tenant_settings").select("vip_days,work_days,open_hour,close_hour,lunch_start,lunch_end,vip_mode,closed_dates").eq("tenant_id", data.tenantId).maybeSingle(),
-      supabase
-        .from("services")
-        .select("id,name,duration_min,price,vip_only")
-        .eq("tenant_id", data.tenantId)
-        .in("id", requestedServiceIds),
-      supabase
-        .from("professionals")
-        .select("id,commission_pct,work_days,blocked_dates,lunch_start,lunch_end")
-        .eq("id", data.professionalId)
-        .eq("tenant_id", data.tenantId)
-        .eq("active", true)
-        .maybeSingle(),
-    ]);
+    const [{ data: t }, { data: settings }, { data: servicesRows }, { data: pro }] =
+      await Promise.all([
+        supabase
+          .from("tenants")
+          .select("id,name,whatsapp,slot_minutes")
+          .eq("id", data.tenantId)
+          .maybeSingle(),
+        supabase
+          .from("tenant_settings")
+          .select(
+            "vip_days,work_days,open_hour,close_hour,lunch_start,lunch_end,vip_mode,closed_dates",
+          )
+          .eq("tenant_id", data.tenantId)
+          .maybeSingle(),
+        supabase
+          .from("services")
+          .select("id,name,duration_min,price,vip_only")
+          .eq("tenant_id", data.tenantId)
+          .in("id", requestedServiceIds),
+        supabase
+          .from("professionals")
+          .select("id,commission_pct,work_days,blocked_dates,lunch_start,lunch_end")
+          .eq("id", data.professionalId)
+          .eq("tenant_id", data.tenantId)
+          .eq("active", true)
+          .maybeSingle(),
+      ]);
     const services = (servicesRows ?? []) as any[];
     const svc = services.find((service: any) => service.id === data.serviceId);
     if (!t || !svc || !pro || services.length !== requestedServiceIds.length) {
@@ -1236,7 +1270,9 @@ export const createBooking = createServerFn({ method: "POST" })
       (total: number, service: any) => total + Number(service.duration_min ?? t.slot_minutes ?? 30),
       0,
     );
-    const end = new Date(start.getTime() + Math.max(totalDurationMin, t.slot_minutes ?? 30) * 60000);
+    const end = new Date(
+      start.getTime() + Math.max(totalDurationMin, t.slot_minutes ?? 30) * 60000,
+    );
     const bookingDate = saoPauloDate(start);
     if (start.getTime() <= Date.now()) {
       throw new Error("Escolha um horário futuro para realizar o agendamento.");
@@ -1275,9 +1311,7 @@ export const createBooking = createServerFn({ method: "POST" })
       activeSubscription = selectedSubscription;
       if (activeSubscription.status !== "active") {
         if (activeSubscription.status === "pending_activation") {
-          throw new Error(
-            "Sua assinatura aguarda a confirmação do primeiro pagamento pelo salão.",
-          );
+          throw new Error("Sua assinatura aguarda a confirmação do primeiro pagamento pelo salão.");
         }
         if (activeSubscription.status === "overdue") {
           throw new Error(
@@ -1379,9 +1413,7 @@ export const createBooking = createServerFn({ method: "POST" })
             ? null
             : Number(activeSubscription.sessions_remaining);
         const availableSessions =
-          sessionsRemaining == null
-            ? null
-            : Math.max(0, sessionsRemaining - reservedSessions);
+          sessionsRemaining == null ? null : Math.max(0, sessionsRemaining - reservedSessions);
         if (availableSessions != null && availableSessions <= 0) {
           throw new Error(
             "Todas as sessões disponíveis já foram usadas ou estão reservadas em outros agendamentos.",
@@ -1419,8 +1451,12 @@ export const createBooking = createServerFn({ method: "POST" })
       if (off.all_day) {
         throw new Error("O profissional está de folga na data escolhida.");
       }
-      const [sh, sm] = String(off.start_time ?? "00:00").split(":").map(Number);
-      const [eh, em] = String(off.end_time ?? "00:00").split(":").map(Number);
+      const [sh, sm] = String(off.start_time ?? "00:00")
+        .split(":")
+        .map(Number);
+      const [eh, em] = String(off.end_time ?? "00:00")
+        .split(":")
+        .map(Number);
       const offStart = (sh || 0) * 60 + (sm || 0);
       const offEnd = (eh || 0) * 60 + (em || 0);
       if (startMinInDay < offEnd && endMinInDay > offStart) {
@@ -1452,11 +1488,10 @@ export const createBooking = createServerFn({ method: "POST" })
       !data.isVip &&
       isVipExclusiveBookingDay(settings?.work_days, settings?.vip_days, dow)
     ) {
-      throw new Error("Este dia é reservado para assinantes VIP. Escolha outro dia ou torne-se assinante.");
+      throw new Error(
+        "Este dia é reservado para assinantes VIP. Escolha outro dia ou torne-se assinante.",
+      );
     }
-
-
-
 
     // Conflict check
     const { data: conflicts } = await supabase
@@ -1467,7 +1502,8 @@ export const createBooking = createServerFn({ method: "POST" })
       .lt("start_at", end.toISOString())
       .gt("end_at", start.toISOString())
       .not("status", "in", "(cancelled,canceled,noshow)");
-    if (conflicts && conflicts.length > 0) throw new Error("Este horário já está ocupado. Escolha outro.");
+    if (conflicts && conflicts.length > 0)
+      throw new Error("Este horário já está ocupado. Escolha outro.");
 
     const cleanWhatsapp = cleanBrazilianPhone(customer.whatsapp);
     const clientId = customer.clientId;
@@ -1479,26 +1515,30 @@ export const createBooking = createServerFn({ method: "POST" })
         .eq("tenant_id", data.tenantId);
     }
 
-    const { data: appt, error } = await supabase.from("appointments").insert({
-      tenant_id: data.tenantId,
-      professional_id: data.professionalId,
-      service_id: data.serviceId,
-      client_name: customer.fullName,
-      client_whatsapp: cleanWhatsapp,
-      client_id: clientId,
-      subscription_id: activeSubscription?.id ?? null,
-      start_at: start.toISOString(),
-      end_at: end.toISOString(),
-      status: "confirmed",
-      is_vip: data.isVip,
-      source: "online",
-      cancellation_token: cancellationToken,
-      notes: data.isVip
-        ? extraServiceIdsForBooking.length > 0
-          ? `Agendamento Online · Assinatura ${activeSubscription.id} · Extras cobrados na comanda`
-          : `Agendamento Online · Assinatura ${activeSubscription.id}`
-        : "Agendamento Online"
-    }).select("id,cancellation_token").single();
+    const { data: appt, error } = await supabase
+      .from("appointments")
+      .insert({
+        tenant_id: data.tenantId,
+        professional_id: data.professionalId,
+        service_id: data.serviceId,
+        client_name: customer.fullName,
+        client_whatsapp: cleanWhatsapp,
+        client_id: clientId,
+        subscription_id: activeSubscription?.id ?? null,
+        start_at: start.toISOString(),
+        end_at: end.toISOString(),
+        status: "confirmed",
+        is_vip: data.isVip,
+        source: "online",
+        cancellation_token: cancellationToken,
+        notes: data.isVip
+          ? extraServiceIdsForBooking.length > 0
+            ? `Agendamento Online · Assinatura ${activeSubscription.id} · Extras cobrados na comanda`
+            : `Agendamento Online · Assinatura ${activeSubscription.id}`
+          : "Agendamento Online",
+      })
+      .select("id,cancellation_token")
+      .single();
     if (error) throw new Error(error.message);
 
     try {
@@ -1527,9 +1567,7 @@ export const createBooking = createServerFn({ method: "POST" })
 
 // Public: cancel an online appointment through its secret cancellation link.
 export const cancelBooking = createServerFn({ method: "POST" })
-  .inputValidator((d: { token: string }) =>
-    z.object({ token: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: { token: string }) => z.object({ token: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     const supabase = await pub();
     const { data: appointment, error: appointmentError } = await supabase
@@ -1547,7 +1585,9 @@ export const cancelBooking = createServerFn({ method: "POST" })
       return { cancelled: true, alreadyCancelled: true };
     }
     if (!new Set(["pending", "confirmed"]).has(appointment.status ?? "")) {
-      throw new Error("Este agendamento nao pode mais ser cancelado pelo link. Entre em contato com o salao.");
+      throw new Error(
+        "Este agendamento nao pode mais ser cancelado pelo link. Entre em contato com o salao.",
+      );
     }
     if (!appointment.service_id) throw new Error("Servico do agendamento nao encontrado.");
 

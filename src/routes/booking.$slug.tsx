@@ -62,6 +62,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { ImmersiveBackground } from "@/components/branding/immersive-background";
 import {
+  getShowcaseThemeStyle,
   normalizeBookingBranding,
   type BookingBranding,
 } from "@/lib/booking-branding";
@@ -76,7 +77,12 @@ export const Route = createFileRoute("/booking/$slug")({
   validateSearch: (search: Record<string, unknown>) => ({
     cancel: typeof search.cancel === "string" ? search.cancel : undefined,
   }),
-  head: ({ params }) => ({ meta: [{ title: `Agende seu horário — ${params.slug}` }, { name: "description", content: "Agendamento online rápido e prático." }] }),
+  head: ({ params }) => ({
+    meta: [
+      { title: `Agende seu horário — ${params.slug}` },
+      { name: "description", content: "Agendamento online rápido e prático." },
+    ],
+  }),
   component: BookingPage,
 });
 
@@ -110,7 +116,10 @@ function groupServicesByCategory(services: any[]) {
     }
   }
   return Array.from(groups.values())
-    .sort((a, b) => a.order - b.order || a.category.localeCompare(b.category, "pt-BR", { sensitivity: "base" }))
+    .sort(
+      (a, b) =>
+        a.order - b.order || a.category.localeCompare(b.category, "pt-BR", { sensitivity: "base" }),
+    )
     .map(({ category, items }) => ({ category, items }));
 }
 
@@ -333,7 +342,10 @@ function BookingPage() {
         },
       });
     },
-    onSuccess: () => { toast.success("Agendamento confirmado!"); setStep("done"); },
+    onSuccess: () => {
+      toast.success("Agendamento confirmado!");
+      setStep("done");
+    },
     onError: (e: any) => toast.error(e.message ?? "Erro"),
   });
 
@@ -387,12 +399,7 @@ function BookingPage() {
         throw new Error("Cobrança de renovação não encontrada. Valide seus dados novamente.");
       }
       if (!proofFile) throw new Error("Escolha uma imagem ou PDF do comprovante.");
-      const allowedTypes = new Set([
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-        "application/pdf",
-      ]);
+      const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
       if (!allowedTypes.has(proofFile.type)) {
         throw new Error("Envie um arquivo JPG, PNG, WEBP ou PDF.");
       }
@@ -406,10 +413,7 @@ function BookingPage() {
           paymentToken: renewal.payment_token,
           fileName: proofFile.name,
           contentType: proofFile.type as
-            | "image/jpeg"
-            | "image/png"
-            | "image/webp"
-            | "application/pdf",
+            "image/jpeg" | "image/png" | "image/webp" | "application/pdf",
           sizeBytes: proofFile.size,
         },
       });
@@ -422,10 +426,7 @@ function BookingPage() {
             storagePath: prepared.path,
             fileName: proofFile.name,
             contentType: proofFile.type as
-              | "image/jpeg"
-              | "image/png"
-              | "image/webp"
-              | "application/pdf",
+              "image/jpeg" | "image/png" | "image/webp" | "application/pdf",
             sizeBytes: proofFile.size,
           },
         });
@@ -456,8 +457,7 @@ function BookingPage() {
       setProofFile(null);
       toast.success("Comprovante enviado. Agora o salão fará a confirmação do pagamento.");
     },
-    onError: (error: any) =>
-      toast.error(error.message ?? "Não foi possível enviar o comprovante."),
+    onError: (error: any) => toast.error(error.message ?? "Não foi possível enviar o comprovante."),
   });
 
   const showVipRenewalPayment = shouldShowVipRenewalPayment(vipInfo);
@@ -467,11 +467,23 @@ function BookingPage() {
     const key = String(payment.pix_key || "").trim();
     const holder = String(payment.pix_holder || "BARBEARIA").substring(0, 25);
     const cityStr = String(payment.city || "SAO PAULO").substring(0, 15);
-    const txidStr = String((vipInfo as any).renewal.charge_id || "TXID").replace(/[^a-zA-Z0-9]/g, "").substring(0, 25);
+    const txidStr = String((vipInfo as any).renewal.charge_id || "TXID")
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .substring(0, 25);
     const amountNum = Number((vipInfo as any).renewal.amount ?? 0);
 
     if (key && amountNum > 0) {
-      try { inactivePixPayload = buildPixPayload({ key, merchant: holder, amount: amountNum, city: cityStr, txid: txidStr }); } catch (err) { console.error(err); }
+      try {
+        inactivePixPayload = buildPixPayload({
+          key,
+          merchant: holder,
+          amount: amountNum,
+          city: cityStr,
+          txid: txidStr,
+        });
+      } catch (err) {
+        console.error(err);
+      }
     }
   }
 
@@ -501,7 +513,12 @@ function BookingPage() {
     }
   };
 
-  if (isLoading) return <div className="min-h-screen grid place-items-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+  if (isLoading)
+    return (
+      <div className="min-h-screen grid place-items-center">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
   if (publicTenantError) {
     return (
       <div className="min-h-screen grid place-items-center p-6 text-center">
@@ -515,7 +532,15 @@ function BookingPage() {
       </div>
     );
   }
-  if (!data) return <div className="min-h-screen grid place-items-center p-6 text-center"><div><h1 className="text-2xl font-semibold">Barbearia não encontrada</h1><p className="text-muted-foreground mt-2">Verifique o link de agendamento.</p></div></div>;
+  if (!data)
+    return (
+      <div className="min-h-screen grid place-items-center p-6 text-center">
+        <div>
+          <h1 className="text-2xl font-semibold">Barbearia não encontrada</h1>
+          <p className="text-muted-foreground mt-2">Verifique o link de agendamento.</p>
+        </div>
+      </div>
+    );
 
   const {
     tenant,
@@ -527,17 +552,29 @@ function BookingPage() {
   } = data as any;
   const bookingBranding = normalizeBookingBranding(brandingRow);
   const bookingFallback = null;
-  const tenantThemeStyle = tenant.primary_color
-    ? ({
-        "--primary": tenant.primary_color,
-        "--ring": tenant.primary_color,
-      } as CSSProperties)
-    : undefined;
+  const tenantThemeStyle = {
+    ...getShowcaseThemeStyle({
+      theme: bookingBranding.showcase_theme,
+      panelOpacity: bookingBranding.showcase_panel_opacity,
+      primaryColor: tenant.primary_color,
+    }),
+    ...(tenant.primary_color
+      ? {
+          "--primary": tenant.primary_color,
+          "--ring": tenant.primary_color,
+        }
+      : {}),
+  } as CSSProperties;
   const slotMin = tenant.slot_minutes ?? 30;
 
   const chosenService = services.find((s: any) => s.id === serviceId);
   const selectedPro = professionals.find((p: any) => p.id === proId);
-  let parsedVipPlan = { name: "", services: [] as string[], professional_id: "", benefits: [] as any[] };
+  let parsedVipPlan = {
+    name: "",
+    services: [] as string[],
+    professional_id: "",
+    benefits: [] as any[],
+  };
   try {
     if (vipInfo?.plan?.startsWith("{") || vipInfo?.plan?.startsWith("[")) {
       parsedVipPlan = JSON.parse(vipInfo.plan);
@@ -575,18 +612,17 @@ function BookingPage() {
   const visibleServices = isVip ? includedVipServices : regularServices;
   const serviceCategoryGroups = groupServicesByCategory(visibleServices);
   const activeServiceCategory =
-    selectedServiceCategory && serviceCategoryGroups.some((group) => group.category === selectedServiceCategory)
+    selectedServiceCategory &&
+    serviceCategoryGroups.some((group) => group.category === selectedServiceCategory)
       ? selectedServiceCategory
-      : serviceCategoryGroups[0]?.category ?? "";
+      : (serviceCategoryGroups[0]?.category ?? "");
   const visibleServicesInCategory =
-    serviceCategoryGroups.find((group) => group.category === activeServiceCategory)?.items ?? visibleServices;
+    serviceCategoryGroups.find((group) => group.category === activeServiceCategory)?.items ??
+    visibleServices;
   const selectedExtraServices = services.filter((service: any) =>
     extraServiceIds.includes(service.id),
   );
-  const selectedServices = [
-    ...(chosenService ? [chosenService] : []),
-    ...selectedExtraServices,
-  ];
+  const selectedServices = [...(chosenService ? [chosenService] : []), ...selectedExtraServices];
   const totalServiceDuration = selectedServices.reduce(
     (total: number, service: any) => total + Number(service?.duration_min ?? 0),
     0,
@@ -630,18 +666,19 @@ function BookingPage() {
     setTime("");
   };
 
-  const timeSlots = date && slotsQuery.data
-    ? buildSlots(
-        date,
-        settings,
-        slotMin,
-        totalServiceDuration > 0 ? totalServiceDuration : chosenService?.duration_min ?? slotMin,
-        slotsQuery.data,
-      )
-    : [];
-  const selectedTimeIsAvailable = timeSlots.some(
-    (slot) => slot.time === time && slot.free,
-  );
+  const timeSlots =
+    date && slotsQuery.data
+      ? buildSlots(
+          date,
+          settings,
+          slotMin,
+          totalServiceDuration > 0
+            ? totalServiceDuration
+            : (chosenService?.duration_min ?? slotMin),
+          slotsQuery.data,
+        )
+      : [];
+  const selectedTimeIsAvailable = timeSlots.some((slot) => slot.time === time && slot.free);
   const cancellationUrl = activeCancellationToken
     ? `${getPublicBookingUrl(slug)}?cancel=${encodeURIComponent(activeCancellationToken)}`
     : "";
@@ -656,7 +693,8 @@ function BookingPage() {
         contentClassName="min-h-screen"
       >
         <div
-          className="mx-auto flex min-h-screen max-w-xl flex-col justify-center p-4 md:p-8"
+          className="booking-showcase mx-auto flex min-h-screen max-w-xl flex-col justify-center p-4 md:p-8"
+          data-showcase-theme={bookingBranding.showcase_theme}
           style={tenantThemeStyle}
         >
           <BookingIdentityHeader
@@ -667,7 +705,9 @@ function BookingPage() {
 
           <Card className="overflow-hidden rounded-3xl border-none bg-white text-black shadow-2xl">
             <CardContent className="space-y-6 p-6 text-center md:p-8">
-              <div className={`mx-auto grid h-16 w-16 place-items-center rounded-full border-2 ${bookingCancelled ? "border-rose-500 bg-rose-50" : "border-amber-500 bg-amber-50"}`}>
+              <div
+                className={`mx-auto grid h-16 w-16 place-items-center rounded-full border-2 ${bookingCancelled ? "border-rose-500 bg-rose-50" : "border-amber-500 bg-amber-50"}`}
+              >
                 {bookingCancelled ? (
                   <XCircle className="h-8 w-8 text-rose-500" />
                 ) : (
@@ -691,12 +731,20 @@ function BookingPage() {
                   disabled={cancelMut.isPending}
                   onClick={() => cancelMut.mutate()}
                 >
-                  {cancelMut.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                  {cancelMut.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <XCircle className="mr-2 h-4 w-4" />
+                  )}
                   CONFIRMAR CANCELAMENTO
                 </Button>
               )}
 
-              <Button variant="outline" className="w-full" onClick={() => window.location.assign(`/booking/${slug}`)}>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => window.location.assign(`/booking/${slug}`)}
+              >
                 VOLTAR AO AGENDAMENTO
               </Button>
             </CardContent>
@@ -705,7 +753,6 @@ function BookingPage() {
       </ImmersiveBackground>
     );
   }
-
 
   return (
     <ImmersiveBackground
@@ -716,7 +763,8 @@ function BookingPage() {
       contentClassName="min-h-screen"
     >
       <div
-        className="mx-auto flex min-h-screen max-w-xl flex-col justify-center p-4 md:p-8"
+        className="booking-showcase mx-auto flex min-h-screen max-w-xl flex-col justify-center p-4 md:p-8"
+        data-showcase-theme={bookingBranding.showcase_theme}
         style={tenantThemeStyle}
       >
         <BookingIdentityHeader tenant={tenant} branding={bookingBranding} />
@@ -766,9 +814,7 @@ function BookingPage() {
             onActivationCodeChange={setAccessActivationCode}
             onWhatsappConsentChange={setWhatsappConsent}
             onSubmit={() =>
-              accessMode === "register"
-                ? registerCustomerMut.mutate()
-                : loginCustomerMut.mutate()
+              accessMode === "register" ? registerCustomerMut.mutate() : loginCustomerMut.mutate()
             }
           />
         )}
@@ -783,7 +829,8 @@ function BookingPage() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-semibold">Olá, {customerQuery.data.fullName}</div>
                   <div className="text-xs text-white/55">
-                    {phoneMask(customerQuery.data.whatsapp)} · CPF final {customerQuery.data.cpfLast4}
+                    {phoneMask(customerQuery.data.whatsapp)} · CPF final{" "}
+                    {customerQuery.data.cpfLast4}
                   </div>
                 </div>
                 <Button
@@ -857,9 +904,7 @@ function BookingPage() {
                     disabled={validateVipMut.isPending}
                     onClick={() => validateVipMut.mutate(undefined)}
                   >
-                    {validateVipMut.isPending && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
+                    {validateVipMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {validateVipMut.isPending ? "CONSULTANDO..." : "CONSULTAR MINHA ASSINATURA"}
                   </Button>
                   {availableVipSubscriptions.length > 1 && (
@@ -896,7 +941,8 @@ function BookingPage() {
                       >
                         {availableVipSubscriptions.map((subscription: any) => (
                           <option key={subscription.id} value={subscription.id}>
-                            {subscription.plan_name} · {vipSubscriptionStatusLabel(subscription.status)}
+                            {subscription.plan_name} ·{" "}
+                            {vipSubscriptionStatusLabel(subscription.status)}
                             {subscription.sessions_remaining == null
                               ? " · saldo ilimitado"
                               : ` · saldo ${subscription.sessions_remaining}`}
@@ -911,86 +957,93 @@ function BookingPage() {
                   {bookingBranding.show_subscription_summary &&
                     vipInfo &&
                     (vipInfo as any).status === "active" && (
-                    <div className="p-4 rounded-lg bg-success/10 text-sm">
-                      <div className="flex items-center gap-2 font-medium">
-                        <Check className="h-4 w-4 text-success" />
-                        Assinatura ativa — {(() => {
-                        try {
-                          if ((vipInfo as any).plan?.startsWith("{") || (vipInfo as any).plan?.startsWith("[")) {
-                            return JSON.parse((vipInfo as any).plan).name;
-                          }
-                        } catch {
-                          // Legacy plans may be stored as plain text instead of JSON.
-                        }
-                        return (vipInfo as any).plan;
-                        })()}
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-white/70">
-                        <span>
-                          Saldo do plano:{" "}
-                          <strong className="text-white">
-                            {(vipInfo as any).sessions_remaining ?? "Ilimitado"}
-                          </strong>
-                        </span>
-                        <span>
-                          Já reservadas:{" "}
-                          <strong className="text-white">
-                            {(vipInfo as any).reserved_sessions ?? 0}
-                          </strong>
-                        </span>
-                        <span>
-                          Disponíveis agora:{" "}
-                          <strong className="text-emerald-300">
-                            {(vipInfo as any).available_sessions ?? "Ilimitado"}
-                          </strong>
-                        </span>
-                        <span>
-                          Validade:{" "}
-                          <strong className="text-white">
-                            {(vipInfo as any).ends_at
-                              ? format(
-                                  new Date(`${(vipInfo as any).ends_at}T12:00:00`),
-                                  "dd/MM/yyyy",
-                                )
-                              : "Sem prazo"}
-                          </strong>
-                        </span>
-                      </div>
-                      {vipBenefitBalances.some(
-                        (benefit: any) =>
-                          benefit.benefit_type === "service" && benefit.quantity != null,
-                      ) && (
-                        <div className="mt-4 space-y-2 border-t border-white/10 pt-3">
-                          <div className="text-[10px] font-semibold uppercase tracking-wider text-white/45">
-                            Saldo por benefício neste ciclo
-                          </div>
-                          {vipBenefitBalances
-                            .filter(
-                              (benefit: any) =>
-                                benefit.benefit_type === "service" && benefit.quantity != null,
-                            )
-                            .map((benefit: any) => (
-                              <div
-                                key={benefit.id}
-                                className="flex items-center justify-between gap-3 rounded-lg bg-black/20 px-3 py-2 text-xs"
-                              >
-                                <span className="min-w-0 truncate text-white/75">{benefit.name}</span>
-                                <span
-                                  className={
-                                    Number(benefit.available_quantity) > 0
-                                      ? "shrink-0 font-semibold text-emerald-300"
-                                      : "shrink-0 font-semibold text-red-300"
-                                  }
-                                >
-                                  {benefit.available_quantity} disponível(is) · {benefit.used_quantity} usado(s) ·{" "}
-                                  {benefit.reserved_quantity} reservado(s)
-                                </span>
-                              </div>
-                            ))}
+                      <div className="p-4 rounded-lg bg-success/10 text-sm">
+                        <div className="flex items-center gap-2 font-medium">
+                          <Check className="h-4 w-4 text-success" />
+                          Assinatura ativa —{" "}
+                          {(() => {
+                            try {
+                              if (
+                                (vipInfo as any).plan?.startsWith("{") ||
+                                (vipInfo as any).plan?.startsWith("[")
+                              ) {
+                                return JSON.parse((vipInfo as any).plan).name;
+                              }
+                            } catch {
+                              // Legacy plans may be stored as plain text instead of JSON.
+                            }
+                            return (vipInfo as any).plan;
+                          })()}
                         </div>
-                      )}
-                    </div>
-                  )}
+                        <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-white/70">
+                          <span>
+                            Saldo do plano:{" "}
+                            <strong className="text-white">
+                              {(vipInfo as any).sessions_remaining ?? "Ilimitado"}
+                            </strong>
+                          </span>
+                          <span>
+                            Já reservadas:{" "}
+                            <strong className="text-white">
+                              {(vipInfo as any).reserved_sessions ?? 0}
+                            </strong>
+                          </span>
+                          <span>
+                            Disponíveis agora:{" "}
+                            <strong className="text-emerald-300">
+                              {(vipInfo as any).available_sessions ?? "Ilimitado"}
+                            </strong>
+                          </span>
+                          <span>
+                            Validade:{" "}
+                            <strong className="text-white">
+                              {(vipInfo as any).ends_at
+                                ? format(
+                                    new Date(`${(vipInfo as any).ends_at}T12:00:00`),
+                                    "dd/MM/yyyy",
+                                  )
+                                : "Sem prazo"}
+                            </strong>
+                          </span>
+                        </div>
+                        {vipBenefitBalances.some(
+                          (benefit: any) =>
+                            benefit.benefit_type === "service" && benefit.quantity != null,
+                        ) && (
+                          <div className="mt-4 space-y-2 border-t border-white/10 pt-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-white/45">
+                              Saldo por benefício neste ciclo
+                            </div>
+                            {vipBenefitBalances
+                              .filter(
+                                (benefit: any) =>
+                                  benefit.benefit_type === "service" && benefit.quantity != null,
+                              )
+                              .map((benefit: any) => (
+                                <div
+                                  key={benefit.id}
+                                  className="flex items-center justify-between gap-3 rounded-lg bg-black/20 px-3 py-2 text-xs"
+                                >
+                                  <span className="min-w-0 truncate text-white/75">
+                                    {benefit.name}
+                                  </span>
+                                  <span
+                                    className={
+                                      Number(benefit.available_quantity) > 0
+                                        ? "shrink-0 font-semibold text-emerald-300"
+                                        : "shrink-0 font-semibold text-red-300"
+                                    }
+                                  >
+                                    {benefit.available_quantity} disponível(is) ·{" "}
+                                    {benefit.used_quantity} usado(s) · {benefit.reserved_quantity}{" "}
+                                    reservado(s)
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   {vipInfo && !canBookWithVip(vipInfo) && (vipInfo as any).booking_block_reason && (
                     <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
                       {(vipInfo as any).booking_block_reason}
@@ -999,7 +1052,9 @@ function BookingPage() {
                   {showVipRenewalPayment && (
                     <div className="p-5 rounded-xl bg-black/40 border border-white/10 text-sm flex flex-col gap-5 text-center mt-4">
                       <div className="flex flex-col items-center gap-1">
-                        <div className={`font-semibold text-base ${(vipInfo as any).status === "active" ? "text-amber-400" : "text-red-500"}`}>
+                        <div
+                          className={`font-semibold text-base ${(vipInfo as any).status === "active" ? "text-amber-400" : "text-red-500"}`}
+                        >
                           {(vipInfo as any).status === "pending_activation"
                             ? "Assinatura aguardando ativação"
                             : (vipInfo as any).status === "active"
@@ -1007,18 +1062,30 @@ function BookingPage() {
                               : "Assinatura aguardando renovação"}
                         </div>
                         <div className="text-white/70">
-                          Valor <strong className="text-primary">{brl(Number((vipInfo as any).renewal.amount))}</strong>
-                          {" · "}vencimento {format(new Date(`${(vipInfo as any).renewal.due_date}T12:00:00`), "dd/MM/yyyy")}
-                          {" · "}plano {(() => {
-                          try {
-                            if ((vipInfo as any).plan?.startsWith("{") || (vipInfo as any).plan?.startsWith("[")) {
-                              return JSON.parse((vipInfo as any).plan).name;
+                          Valor{" "}
+                          <strong className="text-primary">
+                            {brl(Number((vipInfo as any).renewal.amount))}
+                          </strong>
+                          {" · "}vencimento{" "}
+                          {format(
+                            new Date(`${(vipInfo as any).renewal.due_date}T12:00:00`),
+                            "dd/MM/yyyy",
+                          )}
+                          {" · "}plano{" "}
+                          {(() => {
+                            try {
+                              if (
+                                (vipInfo as any).plan?.startsWith("{") ||
+                                (vipInfo as any).plan?.startsWith("[")
+                              ) {
+                                return JSON.parse((vipInfo as any).plan).name;
+                              }
+                            } catch {
+                              // Legacy plans may be stored as plain text instead of JSON.
                             }
-                          } catch {
-                            // Legacy plans may be stored as plain text instead of JSON.
-                          }
-                          return (vipInfo as any).plan;
-                        })()}.
+                            return (vipInfo as any).plan;
+                          })()}
+                          .
                         </div>
                       </div>
 
@@ -1042,10 +1109,13 @@ function BookingPage() {
                           <div className="flex items-start gap-3">
                             <FileCheck2 className="mt-0.5 h-6 w-6 shrink-0 text-amber-400" />
                             <div>
-                              <div className="font-semibold text-amber-300">Comprovante recebido</div>
+                              <div className="font-semibold text-amber-300">
+                                Comprovante recebido
+                              </div>
                               <p className="mt-1 text-xs leading-relaxed text-white/65">
-                                O salão está conferindo o pagamento. Assim que ele for declarado como
-                                pago, sua assinatura ficará ativa e suas sessões serão renovadas.
+                                O salão está conferindo o pagamento. Assim que ele for declarado
+                                como pago, sua assinatura ficará ativa e suas sessões serão
+                                renovadas.
                               </p>
                               {(vipInfo as any).renewal.proof_file_name && (
                                 <p className="mt-2 truncate text-xs text-white/45">
@@ -1072,7 +1142,14 @@ function BookingPage() {
                                 <QrCode value={inactivePixPayload} size={180} />
                               </div>
 
-                              <Button variant="outline" className="w-full bg-white/5 border-white/10 text-white hover:bg-white/10 py-5" onClick={()=>{navigator.clipboard.writeText(inactivePixPayload);toast.success("Código PIX copiado!");}}>
+                              <Button
+                                variant="outline"
+                                className="w-full bg-white/5 border-white/10 text-white hover:bg-white/10 py-5"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(inactivePixPayload);
+                                  toast.success("Código PIX copiado!");
+                                }}
+                              >
                                 <Copy className="h-4 w-4 mr-2" /> Copiar Código PIX Copia-e-Cola
                               </Button>
 
@@ -1088,7 +1165,9 @@ function BookingPage() {
                                   type="file"
                                   className="sr-only"
                                   accept="image/jpeg,image/png,image/webp,application/pdf"
-                                  onChange={(event) => setProofFile(event.target.files?.[0] ?? null)}
+                                  onChange={(event) =>
+                                    setProofFile(event.target.files?.[0] ?? null)
+                                  }
                                 />
                               </label>
 
@@ -1102,7 +1181,9 @@ function BookingPage() {
                                 ) : (
                                   <FileCheck2 className="mr-2 h-4 w-4" />
                                 )}
-                                {proofMut.isPending ? "Enviando..." : "Enviar comprovante para análise"}
+                                {proofMut.isPending
+                                  ? "Enviando..."
+                                  : "Enviar comprovante para análise"}
                               </Button>
                             </>
                           ) : (
@@ -1112,26 +1193,34 @@ function BookingPage() {
                             </div>
                           )}
 
-                          <a href={`https://wa.me/55${tenant?.whatsapp?.replace(/\D/g, '')}?text=${encodeURIComponent('Olá, preciso de ajuda com a renovação da minha assinatura.')}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 text-xs text-white/55 transition hover:text-white">
+                          <a
+                            href={`https://wa.me/55${tenant?.whatsapp?.replace(/\D/g, "")}?text=${encodeURIComponent("Olá, preciso de ajuda com a renovação da minha assinatura.")}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center justify-center gap-2 text-xs text-white/55 transition hover:text-white"
+                          >
                             <MessageCircle className="h-4 w-4" /> Preciso de ajuda pelo WhatsApp
                           </a>
                         </>
                       )}
                     </div>
                   )}
-                  {vipInfo &&
-                    (vipInfo as any).status !== "active" &&
-                    !(vipInfo as any).renewal && (
-                      <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">
-                        {(vipInfo as any).status === "pending_activation"
-                          ? "O primeiro pagamento ainda não foi confirmado e não há uma cobrança disponível neste acesso. Fale com o salão para ativar a assinatura."
-                          : "Esta assinatura não possui uma cobrança disponível para renovação no momento. Fale com o salão para regularizar o cadastro."}
-                      </div>
-                    )}
+                  {vipInfo && (vipInfo as any).status !== "active" && !(vipInfo as any).renewal && (
+                    <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">
+                      {(vipInfo as any).status === "pending_activation"
+                        ? "O primeiro pagamento ainda não foi confirmado e não há uma cobrança disponível neste acesso. Fale com o salão para ativar a assinatura."
+                        : "Esta assinatura não possui uma cobrança disponível para renovação no momento. Fale com o salão para regularizar o cadastro."}
+                    </div>
+                  )}
                 </div>
               )}
               {bookingBranding.show_primary_button ? (
-                <Button className="flex w-full justify-between rounded-xl bg-primary px-6 py-6 font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90" size="lg" disabled={isVip && (validateVipMut.isPending || !canBookWithVip(vipInfo))} onClick={handleVipContinue}>
+                <Button
+                  className="flex w-full justify-between rounded-xl bg-primary px-6 py-6 font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90"
+                  size="lg"
+                  disabled={isVip && (validateVipMut.isPending || !canBookWithVip(vipInfo))}
+                  onClick={handleVipContinue}
+                >
                   <span>CONTINUAR</span>
                   <ArrowRight className="h-5 w-5" />
                 </Button>
@@ -1151,234 +1240,262 @@ function BookingPage() {
         )}
 
         {customerQuery.data && step === "service" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
-            <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl">
+            <CardContent className="p-6 space-y-6">
+              <StepHeader title="Escolha o serviço" onBack={() => setStep("vip")} />
 
-            {isVip && (
-              <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/10 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="text-sm font-semibold text-emerald-200">
-                      Escolha primeiro o que está incluso no seu plano
+              {isVip && (
+                <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/10 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-emerald-200">
+                        Escolha primeiro o que está incluso no seu plano
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-white/60">
+                        Serviços extras ficam separados e serão cobrados somente no fechamento da
+                        comanda.
+                      </p>
                     </div>
-                    <p className="mt-1 text-xs leading-relaxed text-white/60">
-                      Serviços extras ficam separados e serão cobrados somente no fechamento da comanda.
-                    </p>
+                    {canAddVipExtras && chosenService && extraVipServices.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowExtraServices((current) => !current)}
+                        className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-300 transition hover:bg-amber-500/15"
+                      >
+                        {showExtraServices ? "Ocultar extras" : "Adicionar serviço extra"}
+                        {extraServiceIds.length > 0 ? ` (${extraServiceIds.length})` : ""}
+                      </button>
+                    )}
                   </div>
-                  {canAddVipExtras && chosenService && extraVipServices.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowExtraServices((current) => !current)}
-                      className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-300 transition hover:bg-amber-500/15"
-                    >
-                      {showExtraServices ? "Ocultar extras" : "Adicionar serviço extra"}
-                      {extraServiceIds.length > 0 ? ` (${extraServiceIds.length})` : ""}
-                    </button>
-                  )}
                 </div>
-              </div>
-            )}
+              )}
 
-            {visibleServices.length === 0 && (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center text-sm text-white/60">
-                {isVip
-                  ? "Nenhum serviço incluso disponível para esta assinatura."
-                  : "Nenhum serviço disponível para agendamento."}
-              </div>
-            )}
+              {visibleServices.length === 0 && (
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center text-sm text-white/60">
+                  {isVip
+                    ? "Nenhum serviço incluso disponível para esta assinatura."
+                    : "Nenhum serviço disponível para agendamento."}
+                </div>
+              )}
 
-            {serviceCategoryGroups.length > 1 && (
-              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-                {serviceCategoryGroups.map((group) => (
-                  <button
-                    key={group.category}
-                    type="button"
-                    onClick={() => setSelectedServiceCategory(group.category)}
-                    className={`min-h-11 shrink-0 rounded-full border px-4 py-2 text-xs font-semibold transition ${
-                      activeServiceCategory === group.category
-                        ? "border-primary bg-primary text-primary-foreground shadow-lg"
-                        : "border-white/15 bg-white/5 text-white/70 hover:border-primary/50 hover:text-white"
-                    }`}
-                    aria-pressed={activeServiceCategory === group.category}
-                  >
-                    {group.category}
-                    <span className="ml-2 rounded-full bg-black/20 px-1.5 py-0.5 text-[10px]">
-                      {group.items.length}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
+              {serviceCategoryGroups.length > 1 && (
+                <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                  {serviceCategoryGroups.map((group) => (
+                    <button
+                      key={group.category}
+                      type="button"
+                      onClick={() => setSelectedServiceCategory(group.category)}
+                      className={`min-h-11 shrink-0 rounded-full border px-4 py-2 text-xs font-semibold transition ${
+                        activeServiceCategory === group.category
+                          ? "border-primary bg-primary text-primary-foreground shadow-lg"
+                          : "border-white/15 bg-white/5 text-white/70 hover:border-primary/50 hover:text-white"
+                      }`}
+                      aria-pressed={activeServiceCategory === group.category}
+                    >
+                      {group.category}
+                      <span className="ml-2 rounded-full bg-black/20 px-1.5 py-0.5 text-[10px]">
+                        {group.items.length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              {visibleServicesInCategory.map((service: any) => {
-                const covered = isVip && coveredServiceIds.has(service.id);
-                const extraSelected = isVip && extraServiceIds.includes(service.id);
-                const serviceBenefit = vipBenefitByService.get(service.id);
-                const benefitBalanceExhausted =
-                  covered &&
-                  serviceBenefit?.available_quantity != null &&
-                  Number(serviceBenefit.available_quantity) <= 0;
-                const unavailable =
-                  covered && (vipCoveredBalanceExhausted || benefitBalanceExhausted);
-                return (
-                  <ServiceOptionCard
-                    key={service.id}
-                    service={service}
-                    selected={serviceId === service.id || extraSelected}
-                    disabled={unavailable}
-                    covered={covered}
-                    extra={isVip && !covered}
-                    vipOnly={service.vip_only}
-                    onClick={() => {
-                      if (isVip) {
-                        if (covered) {
-                          setServiceId(service.id);
-                          resetAppointmentSlot();
+              <div className="grid gap-3 sm:grid-cols-2">
+                {visibleServicesInCategory.map((service: any) => {
+                  const covered = isVip && coveredServiceIds.has(service.id);
+                  const extraSelected = isVip && extraServiceIds.includes(service.id);
+                  const serviceBenefit = vipBenefitByService.get(service.id);
+                  const benefitBalanceExhausted =
+                    covered &&
+                    serviceBenefit?.available_quantity != null &&
+                    Number(serviceBenefit.available_quantity) <= 0;
+                  const unavailable =
+                    covered && (vipCoveredBalanceExhausted || benefitBalanceExhausted);
+                  return (
+                    <ServiceOptionCard
+                      key={service.id}
+                      service={service}
+                      selected={serviceId === service.id || extraSelected}
+                      disabled={unavailable}
+                      covered={covered}
+                      extra={isVip && !covered}
+                      vipOnly={service.vip_only}
+                      onClick={() => {
+                        if (isVip) {
+                          if (covered) {
+                            setServiceId(service.id);
+                            resetAppointmentSlot();
+                            return;
+                          }
+                          toggleExtraService(service.id);
                           return;
                         }
-                        toggleExtraService(service.id);
-                        return;
-                      }
 
-                      setServiceId(service.id);
-                      setExtraServiceIds([]);
-                      setShowExtraServices(false);
-                      setDate(undefined);
-                      setTime("");
-                      let availableProfessionals =
-                        service.vip_only && !isVip ? [] : professionals;
-                      if (isVip && service.name.toLowerCase().includes("corte")) {
-                        availableProfessionals = availableProfessionals.filter(
-                          (professional: any) => {
-                            const professionalName =
-                              professional.full_name?.toLowerCase() ?? "";
-                            return (
-                              professionalName.includes("françois") ||
-                              professionalName.includes("francois")
-                            );
-                          },
-                        );
-                      }
-                      if (availableProfessionals.length === 1) {
-                        setProId(availableProfessionals[0].id);
-                        setStep("date");
-                      } else {
-                        setProId("");
-                        setStep("pro");
-                      }
-                    }}
-                  >
-                    {covered && serviceBenefit?.quantity != null && !unavailable && (
-                      <div className="mt-2 text-[11px] text-emerald-300">
-                        {serviceBenefit.available_quantity} de {serviceBenefit.quantity} disponível(is)
-                        neste ciclo
-                      </div>
-                    )}
-                    {unavailable && (
-                      <div className="mt-2 text-[11px] text-red-300">
-                        {benefitBalanceExhausted
-                          ? `Benefício esgotado neste ciclo: ${serviceBenefit.used_quantity ?? 0} usado(s) e ${serviceBenefit.reserved_quantity ?? 0} reservado(s).`
-                          : "Sem saldo livre: as sessões foram usadas ou já estão reservadas."}
-                      </div>
-                    )}
-                    {isVip && !covered && (
-                      <div className="mt-2 text-[11px] text-amber-400">
-                        Será cobrado no fechamento da comanda.
-                      </div>
-                    )}
-                  </ServiceOptionCard>
-                );
-              })}
-            </div>
-
-            {isVip && chosenService && showExtraServices && extraVipServices.length > 0 && (
-              <div className="space-y-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
-                <div>
-                  <div className="text-sm font-semibold text-amber-200">
-                    Serviços extras
-                  </div>
-                  <p className="mt-1 text-xs leading-relaxed text-white/55">
-                    Escolha apenas se quiser adicionar algo fora da assinatura. Esses itens serão
-                    cobrados no fechamento da comanda.
-                  </p>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {extraVipServices.map((service: any) => {
-                    const extraSelected = extraServiceIds.includes(service.id);
-                    return (
-                      <ServiceOptionCard
-                        key={service.id}
-                        service={service}
-                        selected={extraSelected}
-                        extra
-                        onClick={() => toggleExtraService(service.id)}
-                      >
+                        setServiceId(service.id);
+                        setExtraServiceIds([]);
+                        setShowExtraServices(false);
+                        setDate(undefined);
+                        setTime("");
+                        let availableProfessionals =
+                          service.vip_only && !isVip ? [] : professionals;
+                        if (isVip && service.name.toLowerCase().includes("corte")) {
+                          availableProfessionals = availableProfessionals.filter(
+                            (professional: any) => {
+                              const professionalName = professional.full_name?.toLowerCase() ?? "";
+                              return (
+                                professionalName.includes("françois") ||
+                                professionalName.includes("francois")
+                              );
+                            },
+                          );
+                        }
+                        if (availableProfessionals.length === 1) {
+                          setProId(availableProfessionals[0].id);
+                          setStep("date");
+                        } else {
+                          setProId("");
+                          setStep("pro");
+                        }
+                      }}
+                    >
+                      {covered && serviceBenefit?.quantity != null && !unavailable && (
+                        <div className="mt-2 text-[11px] text-emerald-300">
+                          {serviceBenefit.available_quantity} de {serviceBenefit.quantity}{" "}
+                          disponível(is) neste ciclo
+                        </div>
+                      )}
+                      {unavailable && (
+                        <div className="mt-2 text-[11px] text-red-300">
+                          {benefitBalanceExhausted
+                            ? `Benefício esgotado neste ciclo: ${serviceBenefit.used_quantity ?? 0} usado(s) e ${serviceBenefit.reserved_quantity ?? 0} reservado(s).`
+                            : "Sem saldo livre: as sessões foram usadas ou já estão reservadas."}
+                        </div>
+                      )}
+                      {isVip && !covered && (
                         <div className="mt-2 text-[11px] text-amber-400">
                           Será cobrado no fechamento da comanda.
                         </div>
-                      </ServiceOptionCard>
-                    );
-                  })}
-                </div>
+                      )}
+                    </ServiceOptionCard>
+                  );
+                })}
               </div>
-            )}
 
-            {isVip && selectedServices.length > 0 && (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
-                <div className="font-semibold text-white">Resumo do agendamento</div>
-                <div className="mt-3 space-y-2">
-                  {selectedServices.map((service: any) => {
-                    const covered = coveredServiceIds.has(service.id);
-                    return (
-                      <div key={service.id} className="flex items-center justify-between gap-3 text-white/70">
-                        <span className="truncate">{service.name}</span>
-                        <span className={covered ? "text-emerald-300" : "text-amber-300"}>
-                          {covered ? "Incluso no plano" : brl(service.price)}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-4 grid gap-2 border-t border-white/10 pt-3 text-xs text-white/60 sm:grid-cols-2">
-                  <div>Tempo estimado: {totalServiceDuration || chosenService?.duration_min || 0} min</div>
-                  <div className="sm:text-right">
-                    A pagar no salão:{" "}
-                    <strong className="text-amber-300">
-                      {billableServicesTotal > 0 ? brl(billableServicesTotal) : "R$ 0,00"}
-                    </strong>
+              {isVip && chosenService && showExtraServices && extraVipServices.length > 0 && (
+                <div className="space-y-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+                  <div>
+                    <div className="text-sm font-semibold text-amber-200">Serviços extras</div>
+                    <p className="mt-1 text-xs leading-relaxed text-white/55">
+                      Escolha apenas se quiser adicionar algo fora da assinatura. Esses itens serão
+                      cobrados no fechamento da comanda.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {extraVipServices.map((service: any) => {
+                      const extraSelected = extraServiceIds.includes(service.id);
+                      return (
+                        <ServiceOptionCard
+                          key={service.id}
+                          service={service}
+                          selected={extraSelected}
+                          extra
+                          onClick={() => toggleExtraService(service.id)}
+                        >
+                          <div className="mt-2 text-[11px] text-amber-400">
+                            Será cobrado no fechamento da comanda.
+                          </div>
+                        </ServiceOptionCard>
+                      );
+                    })}
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {isVip && (
-              <Button
-                size="lg"
-                className="w-full rounded-xl bg-amber-500 py-6 font-semibold text-black hover:bg-amber-400"
-                disabled={!chosenService}
-                onClick={goToProfessionalOrDate}
-              >
-                <span>{chosenService ? "CONTINUAR" : "ESCOLHA UM SERVIÇO INCLUSO"}</span>
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            )}
-          </CardContent></Card>
+              {isVip && selectedServices.length > 0 && (
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
+                  <div className="font-semibold text-white">Resumo do agendamento</div>
+                  <div className="mt-3 space-y-2">
+                    {selectedServices.map((service: any) => {
+                      const covered = coveredServiceIds.has(service.id);
+                      return (
+                        <div
+                          key={service.id}
+                          className="flex items-center justify-between gap-3 text-white/70"
+                        >
+                          <span className="truncate">{service.name}</span>
+                          <span className={covered ? "text-emerald-300" : "text-amber-300"}>
+                            {covered ? "Incluso no plano" : brl(service.price)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-4 grid gap-2 border-t border-white/10 pt-3 text-xs text-white/60 sm:grid-cols-2">
+                    <div>
+                      Tempo estimado: {totalServiceDuration || chosenService?.duration_min || 0} min
+                    </div>
+                    <div className="sm:text-right">
+                      A pagar no salão:{" "}
+                      <strong className="text-amber-300">
+                        {billableServicesTotal > 0 ? brl(billableServicesTotal) : "R$ 0,00"}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isVip && (
+                <Button
+                  size="lg"
+                  className="w-full rounded-xl bg-amber-500 py-6 font-semibold text-black hover:bg-amber-400"
+                  disabled={!chosenService}
+                  onClick={goToProfessionalOrDate}
+                >
+                  <span>{chosenService ? "CONTINUAR" : "ESCOLHA UM SERVIÇO INCLUSO"}</span>
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              )}
+            </CardContent>
+          </Card>
         )}
 
         {customerQuery.data && step === "pro" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
-            <StepHeader title="Escolha o profissional" onBack={handleProBack} />
-            <div className="grid sm:grid-cols-2 gap-3">
-              {availableProsForService.map((p: any) => (
-                <button key={p.id} onClick={() => { setProId(p.id); setDate(undefined); setTime(""); setStep("date"); }} className={`flex items-center gap-3 p-4 rounded-xl border-2 transition ${proId === p.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
-                  <Avatar className="h-14 w-14"><AvatarImage src={p.photo_url ?? undefined} /><AvatarFallback className="bg-primary/10 text-primary font-semibold">{p.full_name.split(" ").map((w:string)=>w[0]).slice(0,2).join("")}</AvatarFallback></Avatar>
-                  <div className="text-left"><div className="font-medium">{p.full_name}</div><div className="text-xs text-muted-foreground">{p.role_label}</div></div>
-                </button>
-              ))}
-            </div>
-          </CardContent></Card>
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl">
+            <CardContent className="p-6 space-y-6">
+              <StepHeader title="Escolha o profissional" onBack={handleProBack} />
+              <div className="grid sm:grid-cols-2 gap-3">
+                {availableProsForService.map((p: any) => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      setProId(p.id);
+                      setDate(undefined);
+                      setTime("");
+                      setStep("date");
+                    }}
+                    className={`flex items-center gap-3 p-4 rounded-xl border-2 transition ${proId === p.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
+                  >
+                    <Avatar className="h-14 w-14">
+                      <AvatarImage src={p.photo_url ?? undefined} />
+                      <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                        {p.full_name
+                          .split(" ")
+                          .map((w: string) => w[0])
+                          .slice(0, 2)
+                          .join("")}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="text-left">
+                      <div className="font-medium">{p.full_name}</div>
+                      <div className="text-xs text-muted-foreground">{p.role_label}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {customerQuery.data && step === "date" && (
@@ -1391,17 +1508,19 @@ function BookingPage() {
                   </button>
                   <h2 className="font-semibold text-xl">Escolha a data e o horário</h2>
                 </div>
-                <p className="text-sm text-white/50 ml-8 mb-6">Selecione quando deseja agendar o atendimento.</p>
+                <p className="text-sm text-white/50 ml-8 mb-6">
+                  Selecione quando deseja agendar o atendimento.
+                </p>
               </div>
 
               <div className="grid md:grid-cols-[1fr_1.2fr] gap-8 px-6 pb-8">
                 {/* Lado do Calendário */}
                 <div className="dark bg-neutral-900 rounded-2xl border border-white/5 p-4 flex flex-col">
                   <div className="flex-1 w-full flex justify-center">
-                    <CalendarUI 
-                      mode="single" 
+                    <CalendarUI
+                      mode="single"
                       required
-                      selected={date} 
+                      selected={date}
                       onSelect={handleDateSelect}
                       disabled={(d) => {
                         const todayStr = format(new Date(), "yyyy-MM-dd");
@@ -1410,7 +1529,13 @@ function BookingPage() {
 
                         // Check weekly day off. Accepts both legacy 0=Dom and current 7=Dom.
                         const normalizedDay = bookingWeekdayFromDate(d);
-                        if (!includesBookingWeekday(settings?.work_days, normalizedDay, DEFAULT_BOOKING_WORK_DAYS)) {
+                        if (
+                          !includesBookingWeekday(
+                            settings?.work_days,
+                            normalizedDay,
+                            DEFAULT_BOOKING_WORK_DAYS,
+                          )
+                        ) {
                           return true;
                         }
 
@@ -1419,16 +1544,30 @@ function BookingPage() {
                         const closedDates = settings?.closed_dates ?? [];
                         if (closedDates.includes(dateStr)) return true;
 
-                        if (isVip && (vipInfo as any)?.starts_at && dateStr < (vipInfo as any).starts_at) {
+                        if (
+                          isVip &&
+                          (vipInfo as any)?.starts_at &&
+                          dateStr < (vipInfo as any).starts_at
+                        ) {
                           return true;
                         }
-                        if (isVip && (vipInfo as any)?.ends_at && dateStr > (vipInfo as any).ends_at) {
+                        if (
+                          isVip &&
+                          (vipInfo as any)?.ends_at &&
+                          dateStr > (vipInfo as any).ends_at
+                        ) {
                           return true;
                         }
 
                         // Check specific professional work_days and blocked_dates
                         if (selectedPro) {
-                          if (!includesBookingWeekday(selectedPro.work_days, normalizedDay, DEFAULT_BOOKING_WORK_DAYS)) {
+                          if (
+                            !includesBookingWeekday(
+                              selectedPro.work_days,
+                              normalizedDay,
+                              DEFAULT_BOOKING_WORK_DAYS,
+                            )
+                          ) {
                             return true;
                           }
 
@@ -1451,7 +1590,11 @@ function BookingPage() {
                         if (
                           vipMode === "strict" &&
                           isVip &&
-                          !includesBookingWeekday(settings?.vip_days, normalizedDay, settings?.work_days ?? DEFAULT_BOOKING_WORK_DAYS)
+                          !includesBookingWeekday(
+                            settings?.vip_days,
+                            normalizedDay,
+                            settings?.work_days ?? DEFAULT_BOOKING_WORK_DAYS,
+                          )
                         ) {
                           return true;
                         }
@@ -1467,31 +1610,37 @@ function BookingPage() {
                     />
                   </div>
                   <div className="mt-4 pt-4 border-t border-white/5 flex items-center gap-3 text-sm text-white/50">
-                     <CalendarIcon className="h-5 w-5 text-amber-500" />
-                     <span>Hoje, {format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: ptBR })}</span>
+                    <CalendarIcon className="h-5 w-5 text-amber-500" />
+                    <span>
+                      Hoje, {format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                    </span>
                   </div>
                 </div>
 
                 {/* Lado dos Horários */}
-                <div ref={timeSectionRef} className="flex scroll-mt-4 flex-col space-y-6" aria-live="polite">
+                <div
+                  ref={timeSectionRef}
+                  className="flex scroll-mt-4 flex-col space-y-6"
+                  aria-live="polite"
+                >
                   <div className="flex items-start gap-4">
-                     <div className="h-12 w-12 rounded-full border border-amber-500/30 flex items-center justify-center shrink-0">
-                       <CalendarIcon className="h-5 w-5 text-amber-500" />
-                     </div>
-                     <div>
-                       <h3 className="font-medium text-lg">
-                         {date
-                           ? format(date, "EEEE, d 'de' MMMM", { locale: ptBR })
-                           : "Selecione uma data"}
-                       </h3>
-                       <p className="text-sm text-white/50">
-                         {date
-                           ? "Agora escolha um horário disponível."
-                           : "Escolha o melhor dia para seu atendimento."}
-                       </p>
-                     </div>
+                    <div className="h-12 w-12 rounded-full border border-amber-500/30 flex items-center justify-center shrink-0">
+                      <CalendarIcon className="h-5 w-5 text-amber-500" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-lg">
+                        {date
+                          ? format(date, "EEEE, d 'de' MMMM", { locale: ptBR })
+                          : "Selecione uma data"}
+                      </h3>
+                      <p className="text-sm text-white/50">
+                        {date
+                          ? "Agora escolha um horário disponível."
+                          : "Escolha o melhor dia para seu atendimento."}
+                      </p>
+                    </div>
                   </div>
-                  
+
                   <div className="flex-1">
                     {slotsQuery.isFetching && <Loader2 className="h-5 w-5 animate-spin" />}
                     {slotsQuery.isError && (
@@ -1520,14 +1669,26 @@ function BookingPage() {
                             </button>
                           ))}
                         </div>
-                        {timeSlots.length === 0 && <div className="text-sm text-white/50">Sem horários disponíveis neste dia.</div>}
+                        {timeSlots.length === 0 && (
+                          <div className="text-sm text-white/50">
+                            Sem horários disponíveis neste dia.
+                          </div>
+                        )}
                       </>
                     ) : (
-                      <div className="h-full flex items-center justify-center text-white/30 text-sm">Nenhuma data selecionada.</div>
+                      <div className="h-full flex items-center justify-center text-white/30 text-sm">
+                        Nenhuma data selecionada.
+                      </div>
                     )}
                   </div>
 
-                  <Button className="w-full mt-auto py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" size="lg" disabled={!selectedTimeIsAvailable || slotsQuery.isFetching} onClick={() => setStep("form")} data-testid="booking-continue">
+                  <Button
+                    className="w-full mt-auto py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all"
+                    size="lg"
+                    disabled={!selectedTimeIsAvailable || slotsQuery.isFetching}
+                    onClick={() => setStep("form")}
+                    data-testid="booking-continue"
+                  >
                     <span>
                       {!date
                         ? "SELECIONE UMA DATA"
@@ -1546,57 +1707,91 @@ function BookingPage() {
         )}
 
         {customerQuery.data && step === "form" && (
-          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl"><CardContent className="p-6 space-y-6">
-            <StepHeader title="Seus dados" onBack={() => setStep("date")} />
-            <div className="grid gap-3 rounded-xl border border-white/10 bg-white/5 p-4 sm:grid-cols-2">
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Cliente</div>
-                <div className="mt-1 font-medium">{customerQuery.data.fullName}</div>
+          <Card className="bg-[#0a0a0a] border-white/5 text-white shadow-2xl">
+            <CardContent className="p-6 space-y-6">
+              <StepHeader title="Seus dados" onBack={() => setStep("date")} />
+              <div className="grid gap-3 rounded-xl border border-white/10 bg-white/5 p-4 sm:grid-cols-2">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                    Cliente
+                  </div>
+                  <div className="mt-1 font-medium">{customerQuery.data.fullName}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                    WhatsApp
+                  </div>
+                  <div className="mt-1 font-medium">{phoneMask(customerQuery.data.whatsapp)}</div>
+                </div>
               </div>
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-white/40">WhatsApp</div>
-                <div className="mt-1 font-medium">{phoneMask(customerQuery.data.whatsapp)}</div>
-              </div>
-            </div>
-            <div className="p-5 rounded-xl bg-neutral-900/80 border border-white/5 text-sm space-y-3">
-              <div className="space-y-2 text-white/70">
-                <div className="font-semibold text-white">Serviços</div>
-                {selectedServices.map((service: any) => {
-                  const covered = isVip && coveredServiceIds.has(service.id);
-                  return (
-                    <div key={service.id} className="flex items-center justify-between gap-3">
-                      <strong className="text-white font-medium">{service.name}</strong>
-                      <span className={covered ? "text-emerald-300 font-medium" : "text-amber-500 font-medium"}>
-                        {covered ? "Incluso no plano" : brl(service.price)}
-                      </span>
+              <div className="p-5 rounded-xl bg-neutral-900/80 border border-white/5 text-sm space-y-3">
+                <div className="space-y-2 text-white/70">
+                  <div className="font-semibold text-white">Serviços</div>
+                  {selectedServices.map((service: any) => {
+                    const covered = isVip && coveredServiceIds.has(service.id);
+                    return (
+                      <div key={service.id} className="flex items-center justify-between gap-3">
+                        <strong className="text-white font-medium">{service.name}</strong>
+                        <span
+                          className={
+                            covered ? "text-emerald-300 font-medium" : "text-amber-500 font-medium"
+                          }
+                        >
+                          {covered ? "Incluso no plano" : brl(service.price)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {isVip && (
+                    <div className="border-t border-white/10 pt-2 text-right text-xs text-white/60">
+                      A pagar no salão:{" "}
+                      <strong className="text-amber-300">
+                        {billableServicesTotal > 0 ? brl(billableServicesTotal) : "R$ 0,00"}
+                      </strong>
                     </div>
-                  );
-                })}
-                {isVip && (
-                  <div className="border-t border-white/10 pt-2 text-right text-xs text-white/60">
-                    A pagar no salão:{" "}
-                    <strong className="text-amber-300">
-                      {billableServicesTotal > 0 ? brl(billableServicesTotal) : "R$ 0,00"}
-                    </strong>
+                  )}
+                </div>
+                <div className="flex items-center text-white/70">
+                  <span className="w-24">Profissional:</span>{" "}
+                  <span className="text-white">
+                    {professionals.find((p: any) => p.id === proId)?.full_name}
+                  </span>
+                </div>
+                <div className="flex items-center text-white/70">
+                  <span className="w-24">Data:</span>{" "}
+                  <span className="text-white">
+                    {date && format(date, "dd/MM/yyyy")} às {time}
+                  </span>
+                </div>
+                {isVip && billableServicesTotal > 0 && (
+                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    Os serviços extras serão cobrados normalmente no atendimento.
                   </div>
                 )}
               </div>
-              <div className="flex items-center text-white/70"><span className="w-24">Profissional:</span> <span className="text-white">{professionals.find((p:any)=>p.id===proId)?.full_name}</span></div>
-              <div className="flex items-center text-white/70"><span className="w-24">Data:</span> <span className="text-white">{date && format(date, "dd/MM/yyyy")} às {time}</span></div>
-              {isVip && billableServicesTotal > 0 && <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-300">Os serviços extras serão cobrados normalmente no atendimento.</div>}
-            </div>
-            <Button size="lg" className="w-full mt-auto py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all" disabled={bookMut.isPending} onClick={() => bookMut.mutate()}>
-              <span className="flex items-center">{bookMut.isPending ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null} CONFIRMAR AGENDAMENTO</span>
-              {!bookMut.isPending && <Check className="h-5 w-5 text-black" />}
-            </Button>
-          </CardContent></Card>
+              <Button
+                size="lg"
+                className="w-full mt-auto py-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-[0_0_15px_rgba(245,158,11,0.15)] flex justify-between px-6 transition-all"
+                disabled={bookMut.isPending}
+                onClick={() => bookMut.mutate()}
+              >
+                <span className="flex items-center">
+                  {bookMut.isPending ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}{" "}
+                  CONFIRMAR AGENDAMENTO
+                </span>
+                {!bookMut.isPending && <Check className="h-5 w-5 text-black" />}
+              </Button>
+            </CardContent>
+          </Card>
         )}
 
         {customerQuery.data && step === "done" && (
           <Card className="bg-white border-none text-black shadow-2xl overflow-hidden rounded-3xl mx-auto w-full max-w-lg">
             <div className="bg-white p-6 md:p-8">
               <div className="text-center mb-6 mt-4">
-                <div className={`h-16 w-16 rounded-full border-2 mx-auto flex items-center justify-center mb-4 ${bookingCancelled ? "border-rose-500 bg-rose-50" : "border-amber-500"}`}>
+                <div
+                  className={`h-16 w-16 rounded-full border-2 mx-auto flex items-center justify-center mb-4 ${bookingCancelled ? "border-rose-500 bg-rose-50" : "border-amber-500"}`}
+                >
                   {bookingCancelled ? (
                     <XCircle className="h-8 w-8 text-rose-500" />
                   ) : (
@@ -1606,7 +1801,9 @@ function BookingPage() {
                 <h3 className="text-2xl font-bold uppercase tracking-wide text-black">
                   {bookingCancelled ? "RESERVA CANCELADA" : "RESERVA CONFIRMADA"}
                 </h3>
-                <p className={`text-sm font-semibold uppercase tracking-wider mt-1 ${bookingCancelled ? "text-rose-600" : "text-amber-600"}`}>
+                <p
+                  className={`text-sm font-semibold uppercase tracking-wider mt-1 ${bookingCancelled ? "text-rose-600" : "text-amber-600"}`}
+                >
                   {bookingCancelled ? "O HORARIO FOI LIBERADO" : "O SEU HORARIO FOI GARANTIDO!"}
                 </p>
               </div>
@@ -1614,20 +1811,32 @@ function BookingPage() {
               <div className="border border-amber-500/20 rounded-2xl p-5 bg-[#faf8f5] space-y-5">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">CÓDIGO DA RESERVA</div>
-                    <div className="text-sm font-bold text-black">{bookMut.data?.id?.split("-")[0].toUpperCase() || "NSFRAYOLVI"}</div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                      CÓDIGO DA RESERVA
+                    </div>
+                    <div className="text-sm font-bold text-black">
+                      {bookMut.data?.id?.split("-")[0].toUpperCase() || "NSFRAYOLVI"}
+                    </div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">DATA E HORA</div>
-                    <div className="text-sm font-bold text-black">{date && format(date, "dd/MM/yyyy")} às {time}</div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                      DATA E HORA
+                    </div>
+                    <div className="text-sm font-bold text-black">
+                      {date && format(date, "dd/MM/yyyy")} às {time}
+                    </div>
                   </div>
                 </div>
 
                 <div className="border-t border-amber-500/10 pt-4">
                   <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 shrink-0"><Scissors className="h-4 w-4" /></div>
+                    <div className="h-8 w-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 shrink-0">
+                      <Scissors className="h-4 w-4" />
+                    </div>
                     <div>
-                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">BARBEARIA / ESTABELECIMENTO</div>
+                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                        BARBEARIA / ESTABELECIMENTO
+                      </div>
                       <div className="text-sm font-bold text-black">{tenant.name}</div>
                     </div>
                   </div>
@@ -1635,39 +1844,58 @@ function BookingPage() {
 
                 <div className="grid grid-cols-2 gap-y-4 gap-x-4 border-t border-amber-500/10 pt-4">
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">CLIENTE</div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                      CLIENTE
+                    </div>
                     <div className="text-sm font-bold text-black">{name}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">TELEFONE</div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                      TELEFONE
+                    </div>
                     <div className="text-sm font-bold text-black">{phoneMask(phone)}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">BARBEIRO</div>
-                    <div className="text-sm font-bold text-black">{professionals.find((p:any)=>p.id===proId)?.full_name}</div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                      BARBEIRO
+                    </div>
+                    <div className="text-sm font-bold text-black">
+                      {professionals.find((p: any) => p.id === proId)?.full_name}
+                    </div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">SERVIÇO</div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                      SERVIÇO
+                    </div>
                     <div className="text-sm font-bold text-black">
                       {selectedServices.map((service: any) => service.name).join(", ")}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">VALOR</div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                      VALOR
+                    </div>
                     <div className="text-sm font-bold text-amber-600">
-                      {isVip && billableServicesTotal <= 0 ? "Incluso no plano" : brl(billableServicesTotal)}
+                      {isVip && billableServicesTotal <= 0
+                        ? "Incluso no plano"
+                        : brl(billableServicesTotal)}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">FORMA DE PAGAMENTO</div>
-                    <div className="text-xs font-bold leading-tight text-black">No Local (Pix, Cartão ou Dinheiro)</div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                      FORMA DE PAGAMENTO
+                    </div>
+                    <div className="text-xs font-bold leading-tight text-black">
+                      No Local (Pix, Cartão ou Dinheiro)
+                    </div>
                   </div>
                 </div>
               </div>
 
               {bookingCancelled ? (
                 <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-center text-sm font-medium text-rose-700">
-                  O cancelamento ja aparece na agenda do salao e nao conta mais como faturamento previsto.
+                  O cancelamento ja aparece na agenda do salao e nao conta mais como faturamento
+                  previsto.
                 </div>
               ) : (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1676,10 +1904,15 @@ function BookingPage() {
                     className="border-rose-200 text-xs font-bold text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                     disabled={cancelMut.isPending}
                     onClick={() => {
-                      if (window.confirm("Deseja realmente cancelar este agendamento?")) cancelMut.mutate();
+                      if (window.confirm("Deseja realmente cancelar este agendamento?"))
+                        cancelMut.mutate();
                     }}
                   >
-                    {cancelMut.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                    {cancelMut.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <XCircle className="mr-2 h-4 w-4" />
+                    )}
                     CANCELAR RESERVA
                   </Button>
                   <Button
@@ -1697,19 +1930,32 @@ function BookingPage() {
                 </div>
               )}
 
-              <div className="border border-amber-500/20 rounded-2xl p-5 mt-4 bg-[#faf8f5] cursor-pointer hover:bg-amber-50 transition-colors" onClick={() => window.open(`https://maps.google.com/?q=${tenant.name}`, "_blank")}>
-                 <div className="flex items-start gap-3">
-                    <div className="h-8 w-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 shrink-0"><MapPin className="h-4 w-4" /></div>
-                    <div>
-                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">LOCALIZAÇÃO DO ESTABELECIMENTO</div>
-                      <div className="text-sm font-bold text-black mb-1">{tenant.name}</div>
-                      <div className="text-xs text-gray-500">Toque para abrir no mapa</div>
+              <div
+                className="border border-amber-500/20 rounded-2xl p-5 mt-4 bg-[#faf8f5] cursor-pointer hover:bg-amber-50 transition-colors"
+                onClick={() => window.open(`https://maps.google.com/?q=${tenant.name}`, "_blank")}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="h-8 w-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 shrink-0">
+                    <MapPin className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                      LOCALIZAÇÃO DO ESTABELECIMENTO
                     </div>
-                 </div>
+                    <div className="text-sm font-bold text-black mb-1">{tenant.name}</div>
+                    <div className="text-xs text-gray-500">Toque para abrir no mapa</div>
+                  </div>
+                </div>
               </div>
 
               <div className="mt-6 grid grid-cols-2 gap-3">
-                <Button variant="outline" className="border-amber-500/20 hover:bg-amber-50 text-xs font-bold" onClick={() => window.open(`https://maps.google.com/?q=${tenant.name}`, "_blank")}><MapPin className="h-4 w-4 mr-2" /> GOOGLE MAPS</Button>
+                <Button
+                  variant="outline"
+                  className="border-amber-500/20 hover:bg-amber-50 text-xs font-bold"
+                  onClick={() => window.open(`https://maps.google.com/?q=${tenant.name}`, "_blank")}
+                >
+                  <MapPin className="h-4 w-4 mr-2" /> GOOGLE MAPS
+                </Button>
                 <Button
                   variant="outline"
                   className="bg-black hover:bg-neutral-800 text-amber-500 border-none text-xs font-bold"
@@ -1723,9 +1969,13 @@ function BookingPage() {
               </div>
 
               <div className="mt-4">
-                <Button className="w-full bg-black hover:bg-neutral-900 text-amber-500 text-xs font-bold py-6 rounded-xl shadow-xl" onClick={() => window.location.reload()}><Plus className="h-4 w-4 mr-2 text-amber-500" /> NOVA RESERVA</Button>
+                <Button
+                  className="w-full bg-black hover:bg-neutral-900 text-amber-500 text-xs font-bold py-6 rounded-xl shadow-xl"
+                  onClick={() => window.location.reload()}
+                >
+                  <Plus className="h-4 w-4 mr-2 text-amber-500" /> NOVA RESERVA
+                </Button>
               </div>
-
             </div>
           </Card>
         )}
@@ -1775,10 +2025,7 @@ function CustomerAccessCard({
   const passwordOk = password.length >= 8;
   const nameOk = name.trim().length >= 2;
   const phoneOk = isValidCustomerWhatsapp(phone);
-  const valid =
-    cpfOk &&
-    passwordOk &&
-    (!registering || (nameOk && phoneOk && whatsappConsent));
+  const valid = cpfOk && passwordOk && (!registering || (nameOk && phoneOk && whatsappConsent));
   const disabledReason = (() => {
     if (valid || pending) return "";
     if (!cpfOk) return "Informe um CPF válido.";
@@ -1818,7 +2065,9 @@ function CustomerAccessCard({
         >
           {registering && (
             <div className="space-y-2">
-              <Label htmlFor="customer-name" className="text-white/70">Nome completo</Label>
+              <Label htmlFor="customer-name" className="text-white/70">
+                Nome completo
+              </Label>
               <Input
                 id="customer-name"
                 autoComplete="name"
@@ -1832,7 +2081,9 @@ function CustomerAccessCard({
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="customer-cpf" className="text-white/70">CPF</Label>
+            <Label htmlFor="customer-cpf" className="text-white/70">
+              CPF
+            </Label>
             <Input
               id="customer-cpf"
               autoComplete="username"
@@ -1859,15 +2110,17 @@ function CustomerAccessCard({
                 placeholder="Use somente se o salão forneceu um código"
               />
               <p className="text-[11px] leading-relaxed text-white/40">
-                Clientes já cadastrados pela equipe ou redefinindo a senha usam o código
-                fornecido pelo salão.
+                Clientes já cadastrados pela equipe ou redefinindo a senha usam o código fornecido
+                pelo salão.
               </p>
             </div>
           )}
 
           {registering && (
             <div className="space-y-2">
-              <Label htmlFor="customer-whatsapp" className="text-white/70">WhatsApp</Label>
+              <Label htmlFor="customer-whatsapp" className="text-white/70">
+                WhatsApp
+              </Label>
               <Input
                 id="customer-whatsapp"
                 autoComplete="tel"
@@ -1881,7 +2134,9 @@ function CustomerAccessCard({
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="customer-password" className="text-white/70">Senha</Label>
+            <Label htmlFor="customer-password" className="text-white/70">
+              Senha
+            </Label>
             <div className="relative">
               <Input
                 id="customer-password"
@@ -1938,9 +2193,7 @@ function CustomerAccessCard({
           </Button>
 
           {disabledReason && (
-            <p className="text-center text-xs font-medium text-primary/80">
-              {disabledReason}
-            </p>
+            <p className="text-center text-xs font-medium text-primary/80">{disabledReason}</p>
           )}
         </form>
 
@@ -2010,9 +2263,7 @@ function BookingIdentityHeader({
                 <p className="text-sm text-white/65">{tenant.subtitle}</p>
               )}
               {branding.show_slogan && branding.hero_slogan && (
-                <p className="mt-1 text-sm font-medium text-white/90">
-                  {branding.hero_slogan}
-                </p>
+                <p className="mt-1 text-sm font-medium text-white/90">{branding.hero_slogan}</p>
               )}
             </>
           )}
@@ -2104,7 +2355,9 @@ function ServiceOptionCard({
             <Clock className="h-4 w-4 text-amber-400" />
             <span>{service.duration_min} min</span>
           </div>
-          <div className={`mt-3 text-base font-semibold ${covered ? "text-blue-400" : "text-primary"}`}>
+          <div
+            className={`mt-3 text-base font-semibold ${covered ? "text-blue-400" : "text-primary"}`}
+          >
             {covered ? "Coberto pela assinatura" : brl(service.price)}
           </div>
           {children}
@@ -2114,7 +2367,13 @@ function ServiceOptionCard({
   );
 }
 
-function buildSlots(date: Date, settings: any, slotMin: number, duration: number, booked: { start_at: string; end_at: string }[]) {
+function buildSlots(
+  date: Date,
+  settings: any,
+  slotMin: number,
+  duration: number,
+  booked: { start_at: string; end_at: string }[],
+) {
   const open = settings?.open_hour ?? 8;
   const close = settings?.close_hour ?? 20;
   const lunchS = settings?.lunch_start ?? 12;
@@ -2129,7 +2388,10 @@ function buildSlots(date: Date, settings: any, slotMin: number, duration: number
       if (t < new Date()) continue;
       const end = new Date(t.getTime() + duration * 60000);
       const conflict = booked.some((b) => new Date(b.start_at) < end && new Date(b.end_at) > t);
-      slots.push({ time: `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`, free: !conflict });
+      slots.push({
+        time: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
+        free: !conflict,
+      });
     }
   }
   return slots;

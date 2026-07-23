@@ -9,6 +9,24 @@ export const BOOKING_BRANDING_WEBP_QUALITY = 0.86;
 export type BrandingViewport = "mobile" | "tablet" | "desktop";
 export type BrandingPositionMode = "center" | "top" | "bottom" | "left" | "right" | "free";
 export type BookingBrandingImageType = (typeof BOOKING_BRANDING_ALLOWED_TYPES)[number];
+export type ShowcaseTheme = "dark" | "light";
+
+export const SHOWCASE_PANEL_OPACITY_MIN = 60;
+export const SHOWCASE_PANEL_OPACITY_MAX = 100;
+export const SHOWCASE_PANEL_OPACITY_DEFAULT = 88;
+
+export const SHOWCASE_THEME_OPTIONS = Object.freeze([
+  {
+    value: "dark",
+    title: "Escuro premium",
+    description: "Visual marcante, sofisticado e de alto contraste.",
+  },
+  {
+    value: "light",
+    title: "Claro elegante",
+    description: "Visual leve, delicado e elegante.",
+  },
+] satisfies Array<{ value: ShowcaseTheme; title: string; description: string }>);
 
 export type BookingBrandingFrame = {
   /** Horizontal focal point, from 0 (left) to 100 (right). */
@@ -47,6 +65,8 @@ export type BookingBranding = {
   show_subscriber_badge: boolean;
   show_subscription_summary: boolean;
   show_primary_button: boolean;
+  showcase_theme: ShowcaseTheme;
+  showcase_panel_opacity: number;
   updated_by: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -90,6 +110,8 @@ export const DEFAULT_BOOKING_BRANDING: Readonly<BookingBranding> = Object.freeze
   show_subscriber_badge: true,
   show_subscription_summary: true,
   show_primary_button: true,
+  showcase_theme: "dark",
+  showcase_panel_opacity: SHOWCASE_PANEL_OPACITY_DEFAULT,
   updated_by: null,
   created_at: null,
   updated_at: null,
@@ -207,6 +229,28 @@ function normalizePositionMode(value: unknown, fallback: BrandingPositionMode) {
     : fallback;
 }
 
+const showcaseThemes = new Set<ShowcaseTheme>(["dark", "light"]);
+
+export function normalizeShowcaseTheme(
+  value: unknown,
+  fallback: ShowcaseTheme = DEFAULT_BOOKING_BRANDING.showcase_theme,
+): ShowcaseTheme {
+  return typeof value === "string" && showcaseThemes.has(value as ShowcaseTheme)
+    ? (value as ShowcaseTheme)
+    : fallback;
+}
+
+export function normalizeShowcasePanelOpacity(
+  value: unknown,
+  fallback = SHOWCASE_PANEL_OPACITY_DEFAULT,
+) {
+  return clamp(
+    Math.round(finiteNumber(value, fallback)),
+    SHOWCASE_PANEL_OPACITY_MIN,
+    SHOWCASE_PANEL_OPACITY_MAX,
+  );
+}
+
 function nullablePositiveInteger(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = finiteNumber(value, Number.NaN);
@@ -270,10 +314,92 @@ export function normalizeBookingBranding(input?: BookingBrandingInput | null): B
       defaults.show_subscription_summary,
     ),
     show_primary_button: booleanValue(source.show_primary_button, defaults.show_primary_button),
+    showcase_theme: normalizeShowcaseTheme(source.showcase_theme, defaults.showcase_theme),
+    showcase_panel_opacity: normalizeShowcasePanelOpacity(
+      source.showcase_panel_opacity,
+      defaults.showcase_panel_opacity,
+    ),
     updated_by: nullableString(source.updated_by),
     created_at: nullableString(source.created_at),
     updated_at: nullableString(source.updated_at),
   };
+}
+
+function normalizeHexColor(value: string | null | undefined) {
+  const color = String(value ?? "").trim();
+  if (/^#[0-9a-f]{3}$/i.test(color)) {
+    return `#${color
+      .slice(1)
+      .split("")
+      .map((part) => `${part}${part}`)
+      .join("")}`;
+  }
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : "#f59e0b";
+}
+
+function hexToRgb(value: string | null | undefined) {
+  const color = normalizeHexColor(value).slice(1);
+  return {
+    r: parseInt(color.slice(0, 2), 16),
+    g: parseInt(color.slice(2, 4), 16),
+    b: parseInt(color.slice(4, 6), 16),
+  };
+}
+
+export function getShowcaseBackdropBlur(opacity: unknown) {
+  const normalized = normalizeShowcasePanelOpacity(opacity);
+  const progress =
+    (normalized - SHOWCASE_PANEL_OPACITY_MIN) /
+    (SHOWCASE_PANEL_OPACITY_MAX - SHOWCASE_PANEL_OPACITY_MIN);
+  const blur = 22 - progress * 18;
+  return Math.round(blur * 10) / 10;
+}
+
+export function getShowcaseThemeStyle(input?: {
+  theme?: unknown;
+  panelOpacity?: unknown;
+  primaryColor?: string | null;
+}) {
+  const theme = normalizeShowcaseTheme(input?.theme);
+  const panelOpacity = normalizeShowcasePanelOpacity(input?.panelOpacity);
+  const accent = hexToRgb(input?.primaryColor);
+  const panelAlpha = panelOpacity / 100;
+  const cardAlpha =
+    theme === "light" ? Math.min(panelAlpha + 0.05, 0.98) : Math.min(panelAlpha, 0.92);
+  const blur = getShowcaseBackdropBlur(panelOpacity);
+  const accentRgb = `${accent.r} ${accent.g} ${accent.b}`;
+
+  if (theme === "light") {
+    return {
+      "--showcase-accent-rgb": accentRgb,
+      "--showcase-page-bg": "#f8fafc",
+      "--showcase-panel-background": `rgba(255, 255, 255, ${panelAlpha})`,
+      "--showcase-card-background": `rgba(255, 255, 255, ${cardAlpha})`,
+      "--showcase-subtle-background": `rgba(15, 23, 42, 0.045)`,
+      "--showcase-border-color": "rgba(15, 23, 42, 0.12)",
+      "--showcase-border-strong": "rgba(15, 23, 42, 0.2)",
+      "--showcase-text-primary": "#0f172a",
+      "--showcase-text-secondary": "rgba(15, 23, 42, 0.68)",
+      "--showcase-text-muted": "rgba(15, 23, 42, 0.48)",
+      "--showcase-shadow": "0 24px 70px rgba(15, 23, 42, 0.16)",
+      "--showcase-backdrop-blur": `${blur}px`,
+    } as const;
+  }
+
+  return {
+    "--showcase-accent-rgb": accentRgb,
+    "--showcase-page-bg": "#020617",
+    "--showcase-panel-background": `rgba(10, 10, 10, ${panelAlpha})`,
+    "--showcase-card-background": `rgba(255, 255, 255, ${Math.max(0.03, panelAlpha * 0.08)})`,
+    "--showcase-subtle-background": "rgba(255, 255, 255, 0.05)",
+    "--showcase-border-color": "rgba(255, 255, 255, 0.12)",
+    "--showcase-border-strong": "rgba(255, 255, 255, 0.18)",
+    "--showcase-text-primary": "#ffffff",
+    "--showcase-text-secondary": "rgba(255, 255, 255, 0.72)",
+    "--showcase-text-muted": "rgba(255, 255, 255, 0.5)",
+    "--showcase-shadow": "0 26px 80px rgba(0, 0, 0, 0.42)",
+    "--showcase-backdrop-blur": `${blur}px`,
+  } as const;
 }
 
 export const normalizeTenantBookingBranding = normalizeBookingBranding;

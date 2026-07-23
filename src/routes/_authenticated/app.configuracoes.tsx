@@ -4,17 +4,40 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import { useCurrentTenant } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
-import { Building2, MapPin, Clock, MessageCircle, Loader2 } from "lucide-react";
+import {
+  Building2,
+  MapPin,
+  Clock,
+  MessageCircle,
+  Loader2,
+  CheckCircle2,
+  Eye,
+  Moon,
+  RotateCcw,
+  Smartphone,
+  Sparkles,
+  Sun,
+} from "lucide-react";
 import { ImmersiveBackgroundEditor } from "@/components/branding/immersive-background-editor";
 import {
   DEFAULT_BOOKING_BRANDING,
+  getShowcaseBackdropBlur,
+  getShowcaseThemeStyle,
   normalizeBookingBranding,
+  normalizeShowcasePanelOpacity,
+  normalizeShowcaseTheme,
+  SHOWCASE_PANEL_OPACITY_DEFAULT,
+  SHOWCASE_PANEL_OPACITY_MAX,
+  SHOWCASE_PANEL_OPACITY_MIN,
+  SHOWCASE_THEME_OPTIONS,
   type BookingBranding,
+  type ShowcaseTheme,
 } from "@/lib/booking-branding";
 import {
   DEFAULT_BOOKING_VIP_DAYS,
@@ -24,31 +47,66 @@ import {
 import { WhatsAppSettings } from "@/components/whatsapp/whatsapp-settings";
 import { ProfessionalTimeOffManager } from "@/components/config/professional-time-off-manager";
 import { ImageCropDialog } from "@/components/ui/image-crop-dialog";
+import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/_authenticated/app/configuracoes")({ component: ConfigPage });
+export const Route = createFileRoute("/_authenticated/app/configuracoes")({
+  component: ConfigPage,
+});
 
 function ConfigPage() {
   return (
     <div className="space-y-6 max-w-[1200px] mx-auto">
-      <div><h1 className="text-3xl font-semibold">Configurações</h1><p className="text-muted-foreground">Personalize sua barbearia.</p></div>
+      <div>
+        <h1 className="text-3xl font-semibold">Configurações</h1>
+        <p className="text-muted-foreground">Personalize sua barbearia.</p>
+      </div>
       <Tabs defaultValue="identity">
-        <TabsList><TabsTrigger value="identity"><Building2 className="h-4 w-4 mr-2"/>Identidade</TabsTrigger>
-          <TabsTrigger value="location"><MapPin className="h-4 w-4 mr-2"/>Localização</TabsTrigger>
-          <TabsTrigger value="hours"><Clock className="h-4 w-4 mr-2"/>Funcionamento</TabsTrigger>
-          <TabsTrigger value="whatsapp"><MessageCircle className="h-4 w-4 mr-2"/>WhatsApp</TabsTrigger>
+        <TabsList>
+          <TabsTrigger value="identity">
+            <Building2 className="h-4 w-4 mr-2" />
+            Identidade
+          </TabsTrigger>
+          <TabsTrigger value="location">
+            <MapPin className="h-4 w-4 mr-2" />
+            Localização
+          </TabsTrigger>
+          <TabsTrigger value="hours">
+            <Clock className="h-4 w-4 mr-2" />
+            Funcionamento
+          </TabsTrigger>
+          <TabsTrigger value="whatsapp">
+            <MessageCircle className="h-4 w-4 mr-2" />
+            WhatsApp
+          </TabsTrigger>
         </TabsList>
-        <TabsContent value="identity"><IdentityTab/></TabsContent>
-        <TabsContent value="location"><LocationTab/></TabsContent>
-        <TabsContent value="hours"><HoursTab/></TabsContent>
-        <TabsContent value="whatsapp"><WhatsAppTab/></TabsContent>
+        <TabsContent value="identity">
+          <IdentityTab />
+        </TabsContent>
+        <TabsContent value="location">
+          <LocationTab />
+        </TabsContent>
+        <TabsContent value="hours">
+          <HoursTab />
+        </TabsContent>
+        <TabsContent value="whatsapp">
+          <WhatsAppTab />
+        </TabsContent>
       </Tabs>
     </div>
   );
 }
 
 function IdentityTab() {
-  const { data: t } = useCurrentTenant(); const qc = useQueryClient();
-  const initial = { name: "", subtitle: "", primary_color: "#2563eb", slot_minutes: 30, pix_key: "", pix_holder: "" };
+  const { data: t } = useCurrentTenant();
+  const qc = useQueryClient();
+  const initial = {
+    name: "",
+    subtitle: "",
+    primary_color: "#2563eb",
+    slot_minutes: 30,
+    pix_key: "",
+    pix_holder: "",
+  };
   const [f, setF] = useState(initial);
   const [logo, setLogo] = useState<File | null>(null);
   const [logoCropSource, setLogoCropSource] = useState<File | null>(null);
@@ -82,11 +140,7 @@ function IdentityTab() {
     tenant_id: t?.id ?? null,
   });
   const { data: sourcePreviewUrl = null } = useQuery({
-    queryKey: [
-      "tenant-booking-branding-source-preview",
-      t?.id,
-      branding.background_source_path,
-    ],
+    queryKey: ["tenant-booking-branding-source-preview", t?.id, branding.background_source_path],
     enabled: !!t?.id && !!branding.background_source_path,
     queryFn: async () => {
       const { data, error } = await supabase.storage
@@ -96,22 +150,37 @@ function IdentityTab() {
       return data.signedUrl;
     },
   });
-  useEffect(() => { if (t) setF({ name: t.name, subtitle: t.subtitle ?? "", primary_color: t.primary_color ?? "#2563eb", slot_minutes: t.slot_minutes ?? 30, pix_key: t.pix_key ?? "", pix_holder: t.pix_holder ?? "" }); }, [t]);
   useEffect(() => {
-    if (!logo) { setLogoPreview(null); return; }
+    if (t)
+      setF({
+        name: t.name,
+        subtitle: t.subtitle ?? "",
+        primary_color: t.primary_color ?? "#2563eb",
+        slot_minutes: t.slot_minutes ?? 30,
+        pix_key: t.pix_key ?? "",
+        pix_holder: t.pix_holder ?? "",
+      });
+  }, [t]);
+  useEffect(() => {
+    if (!logo) {
+      setLogoPreview(null);
+      return;
+    }
     const url = URL.createObjectURL(logo);
     setLogoPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [logo]);
 
-  const isDirty = !!logo || (t ? (
-    f.name !== (t.name ?? "") ||
-    f.subtitle !== (t.subtitle ?? "") ||
-    f.primary_color !== (t.primary_color ?? "#2563eb") ||
-    f.slot_minutes !== (t.slot_minutes ?? 30) ||
-    f.pix_key !== (t.pix_key ?? "") ||
-    f.pix_holder !== (t.pix_holder ?? "")
-  ) : false);
+  const isDirty =
+    !!logo ||
+    (t
+      ? f.name !== (t.name ?? "") ||
+        f.subtitle !== (t.subtitle ?? "") ||
+        f.primary_color !== (t.primary_color ?? "#2563eb") ||
+        f.slot_minutes !== (t.slot_minutes ?? 30) ||
+        f.pix_key !== (t.pix_key ?? "") ||
+        f.pix_holder !== (t.pix_holder ?? "")
+      : false);
 
   const displayedLogo = logoPreview || t?.logo_url || null;
 
@@ -146,13 +215,21 @@ function IdentityTab() {
         toast.info("Enviando imagem...");
         const safeName = logo.name.replace(/[^a-zA-Z0-9._-]/g, "_");
         const path = `${t.id}/logos/${Date.now()}-${safeName}`;
-        const { error: upErr } = await supabase.storage.from("assets").upload(path, logo, { upsert: true, contentType: logo.type || "image/jpeg" });
+        const { error: upErr } = await supabase.storage
+          .from("assets")
+          .upload(path, logo, { upsert: true, contentType: logo.type || "image/jpeg" });
         if (upErr) throw upErr;
-        const { data: signed, error: signedError } = await supabase.storage.from("assets").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
-        if (signedError || !signed?.signedUrl) throw new Error("Logo enviada, mas não foi possível gerar o link de exibição.");
+        const { data: signed, error: signedError } = await supabase.storage
+          .from("assets")
+          .createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
+        if (signedError || !signed?.signedUrl)
+          throw new Error("Logo enviada, mas não foi possível gerar o link de exibição.");
         logo_url = signed.signedUrl;
       }
-      const { error } = await supabase.from("tenants").update({ ...f, logo_url }).eq("id", t.id);
+      const { error } = await supabase
+        .from("tenants")
+        .update({ ...f, logo_url })
+        .eq("id", t.id);
       if (error) throw error;
       await qc.invalidateQueries({ queryKey: ["current-tenant"] });
       await qc.invalidateQueries({ queryKey: ["public-tenant", t.slug] });
@@ -161,109 +238,573 @@ function IdentityTab() {
       toast.success("Identidade visual atualizada com sucesso.");
     } catch (err: any) {
       console.error("[IdentityTab] save error", err);
-      toast.error(err?.message || "Não foi possível atualizar a logo. Verifique o arquivo e tente novamente.");
+      toast.error(
+        err?.message || "Não foi possível atualizar a logo. Verifique o arquivo e tente novamente.",
+      );
     } finally {
       setIsSaving(false);
     }
   }
   return (
     <>
-    <div className="space-y-6">
-      <Card><CardContent className="p-6 space-y-4">
-        <div className="grid md:grid-cols-2 gap-4">
-          <div><Label>Nome</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></div>
-          <div><Label>Subtítulo</Label><Input value={f.subtitle} onChange={e=>setF({...f,subtitle:e.target.value})}/></div>
-          <div><Label>Cor primária</Label><Input type="color" value={f.primary_color} onChange={e=>setF({...f,primary_color:e.target.value})}/></div>
-          <div><Label>Intervalo padrão (min)</Label><Input type="number" value={f.slot_minutes} onChange={e=>setF({...f,slot_minutes:Number(e.target.value)})}/></div>
-          <div><Label>Chave PIX</Label><Input value={f.pix_key} onChange={e=>setF({...f,pix_key:e.target.value})}/></div>
-          <div><Label>Favorecido PIX</Label><Input value={f.pix_holder} onChange={e=>setF({...f,pix_holder:e.target.value})}/></div>
-        </div>
-        <div>
-          <Label>Logo</Label>
-          <div className="flex items-center gap-4 mt-1">
-            {displayedLogo ? (
-              <img src={displayedLogo} className="h-16 w-16 rounded-lg object-cover border" alt="Logo"/>
-            ) : (
-              <div className="h-16 w-16 rounded-lg border border-dashed grid place-items-center text-xs text-muted-foreground">Sem logo</div>
-            )}
-            <Input type="file" accept="image/png,image/jpeg,image/webp" disabled={isSaving} onChange={(e)=>{handleLogoFile(e.target.files?.[0] ?? undefined); e.currentTarget.value = "";}}/>
-          </div>
-          {logo && (
-            <p className="text-xs text-primary mt-2">
-              Nova imagem selecionada: <span className="font-medium">{logo.name}</span>. Clique em Salvar identidade para aplicar.
-            </p>
+      <Tabs defaultValue="dados" className="space-y-6">
+        <TabsList className="flex w-full max-w-xl flex-wrap justify-start">
+          <TabsTrigger value="dados">Dados da loja</TabsTrigger>
+          <TabsTrigger value="background">Background Imersivo</TabsTrigger>
+          <TabsTrigger value="vitrine">Vitrine</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="dados" className="mt-0">
+          <Card>
+            <CardContent className="p-6 space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Nome</Label>
+                  <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Subtítulo</Label>
+                  <Input
+                    value={f.subtitle}
+                    onChange={(e) => setF({ ...f, subtitle: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Cor primária</Label>
+                  <Input
+                    type="color"
+                    value={f.primary_color}
+                    onChange={(e) => setF({ ...f, primary_color: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Intervalo padrão (min)</Label>
+                  <Input
+                    type="number"
+                    value={f.slot_minutes}
+                    onChange={(e) => setF({ ...f, slot_minutes: Number(e.target.value) })}
+                  />
+                </div>
+                <div>
+                  <Label>Chave PIX</Label>
+                  <Input
+                    value={f.pix_key}
+                    onChange={(e) => setF({ ...f, pix_key: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Favorecido PIX</Label>
+                  <Input
+                    value={f.pix_holder}
+                    onChange={(e) => setF({ ...f, pix_holder: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>Logo</Label>
+                <div className="flex items-center gap-4 mt-1">
+                  {displayedLogo ? (
+                    <img
+                      src={displayedLogo}
+                      className="h-16 w-16 rounded-lg object-cover border"
+                      alt="Logo"
+                    />
+                  ) : (
+                    <div className="h-16 w-16 rounded-lg border border-dashed grid place-items-center text-xs text-muted-foreground">
+                      Sem logo
+                    </div>
+                  )}
+                  <Input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    disabled={isSaving}
+                    onChange={(e) => {
+                      handleLogoFile(e.target.files?.[0] ?? undefined);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                </div>
+                {logo && (
+                  <p className="text-xs text-primary mt-2">
+                    Nova imagem selecionada: <span className="font-medium">{logo.name}</span>.
+                    Clique em Salvar identidade para aplicar.
+                  </p>
+                )}
+              </div>
+              <Button onClick={save} disabled={isSaving || !isDirty}>
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isSaving ? (logo ? "Enviando imagem..." : "Salvando...") : "Salvar identidade"}
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="background" className="mt-0 space-y-6">
+          {t && brandingLoading && (
+            <Card>
+              <CardContent className="flex items-center gap-3 p-6 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Carregando o Background Imersivo...
+              </CardContent>
+            </Card>
           )}
-        </div>
-        <Button onClick={save} disabled={isSaving || !isDirty}>
-          {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {isSaving ? (logo ? "Enviando imagem..." : "Salvando...") : "Salvar identidade"}
-        </Button>
-      </CardContent></Card>
 
-      {t && brandingLoading && (
-        <Card>
-          <CardContent className="flex items-center gap-3 p-6 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Carregando o Background Imersivo...
-          </CardContent>
-        </Card>
-      )}
+          {t && brandingError && (
+            <Card>
+              <CardContent className="p-6">
+                <p className="font-medium">Não foi possível carregar o Background Imersivo.</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Confirme se a migração de identidade visual já foi executada no banco de dados.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
-      {t && brandingError && (
-        <Card>
-          <CardContent className="p-6">
-            <p className="font-medium">Não foi possível carregar o Background Imersivo.</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Confirme se a migração de identidade visual já foi executada no banco de dados.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+          {t && !brandingLoading && !brandingError && (
+            <ImmersiveBackgroundEditor
+              tenant={{
+                id: t.id,
+                name: t.name,
+                subtitle: t.subtitle ?? null,
+                logo_url: t.logo_url ?? null,
+                banner_url: t.banner_url ?? null,
+                primary_color: t.primary_color ?? null,
+              }}
+              branding={branding}
+              sourcePreviewUrl={sourcePreviewUrl}
+              onSaved={async (saved: BookingBranding) => {
+                qc.setQueryData(brandingQueryKey, saved);
+                await qc.invalidateQueries({ queryKey: ["public-tenant", t.slug] });
+              }}
+            />
+          )}
+        </TabsContent>
 
-      {t && !brandingLoading && !brandingError && (
-        <ImmersiveBackgroundEditor
-          tenant={{
-            id: t.id,
-            name: t.name,
-            subtitle: t.subtitle ?? null,
-            logo_url: t.logo_url ?? null,
-            banner_url: t.banner_url ?? null,
-            primary_color: t.primary_color ?? null,
-          }}
-          branding={branding}
-          sourcePreviewUrl={sourcePreviewUrl}
-          onSaved={async (saved: BookingBranding) => {
-            qc.setQueryData(brandingQueryKey, saved);
-            await qc.invalidateQueries({ queryKey: ["public-tenant", t.slug] });
-          }}
-        />
-      )}
-    </div>
-    <ImageCropDialog
-      file={logoCropSource}
-      aspect={1}
-      outputWidth={900}
-      onCancel={() => setLogoCropSource(null)}
-      onConfirm={(croppedFile) => {
-        setLogo(croppedFile);
-        setLogoCropSource(null);
-      }}
-    />
+        <TabsContent value="vitrine" className="mt-0">
+          {t && brandingLoading && (
+            <Card>
+              <CardContent className="flex items-center gap-3 p-6 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Carregando a personalização da vitrine...
+              </CardContent>
+            </Card>
+          )}
+          {t && brandingError && (
+            <Card>
+              <CardContent className="p-6">
+                <p className="font-medium">
+                  Não foi possível carregar a personalização da vitrine.
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Confirme se a migração da vitrine já foi executada no banco de dados.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+          {t && !brandingLoading && !brandingError && (
+            <ShowcaseSettingsPanel
+              tenant={{
+                id: t.id,
+                slug: t.slug,
+                name: t.name,
+                subtitle: t.subtitle ?? null,
+                logo_url: t.logo_url ?? null,
+                primary_color: t.primary_color ?? null,
+              }}
+              branding={branding}
+              previewImageUrl={sourcePreviewUrl}
+              onSaved={async (saved: BookingBranding) => {
+                qc.setQueryData(brandingQueryKey, saved);
+                await qc.invalidateQueries({ queryKey: ["public-tenant", t.slug] });
+              }}
+            />
+          )}
+        </TabsContent>
+      </Tabs>
+      <ImageCropDialog
+        file={logoCropSource}
+        aspect={1}
+        outputWidth={900}
+        onCancel={() => setLogoCropSource(null)}
+        onConfirm={(croppedFile) => {
+          setLogo(croppedFile);
+          setLogoCropSource(null);
+        }}
+      />
     </>
   );
 }
 
+type ShowcaseSettingsPanelProps = {
+  tenant: {
+    id: string;
+    slug: string;
+    name: string;
+    subtitle: string | null;
+    logo_url: string | null;
+    primary_color: string | null;
+  };
+  branding: BookingBranding;
+  previewImageUrl: string | null;
+  onSaved: (branding: BookingBranding) => Promise<void> | void;
+};
+
+function ShowcaseSettingsPanel({
+  tenant,
+  branding,
+  previewImageUrl,
+  onSaved,
+}: ShowcaseSettingsPanelProps) {
+  const [theme, setTheme] = useState<ShowcaseTheme>(() =>
+    normalizeShowcaseTheme(branding.showcase_theme),
+  );
+  const [panelOpacity, setPanelOpacity] = useState(() =>
+    normalizeShowcasePanelOpacity(branding.showcase_panel_opacity),
+  );
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setTheme(normalizeShowcaseTheme(branding.showcase_theme));
+    setPanelOpacity(normalizeShowcasePanelOpacity(branding.showcase_panel_opacity));
+  }, [branding.showcase_theme, branding.showcase_panel_opacity]);
+
+  const normalizedSavedTheme = normalizeShowcaseTheme(branding.showcase_theme);
+  const normalizedSavedOpacity = normalizeShowcasePanelOpacity(branding.showcase_panel_opacity);
+  const isDirty = theme !== normalizedSavedTheme || panelOpacity !== normalizedSavedOpacity;
+  const previewStyle = {
+    ...getShowcaseThemeStyle({
+      theme,
+      panelOpacity,
+      primaryColor: tenant.primary_color,
+    }),
+    "--primary": tenant.primary_color ?? "#f59e0b",
+    "--ring": tenant.primary_color ?? "#f59e0b",
+  } as CSSProperties;
+  const blurValue = Math.round(getShowcaseBackdropBlur(panelOpacity));
+
+  async function saveShowcaseSettings() {
+    if (!tenant.id) return;
+    setIsSaving(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("tenant_booking_branding")
+        .upsert(
+          {
+            tenant_id: tenant.id,
+            showcase_theme: theme,
+            showcase_panel_opacity: panelOpacity,
+          },
+          { onConflict: "tenant_id" },
+        )
+        .select("*")
+        .single();
+
+      if (error) throw error;
+
+      const saved = normalizeBookingBranding({
+        ...DEFAULT_BOOKING_BRANDING,
+        ...(data ?? {}),
+        tenant_id: tenant.id,
+      });
+      await onSaved(saved);
+      toast.success("Vitrine atualizada.");
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível salvar a personalização da vitrine.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <CardContent className="p-0">
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_390px]">
+          <div className="space-y-8 p-6">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-primary">
+                <Sparkles className="h-4 w-4" />
+                Experiência pública
+              </div>
+              <h2 className="mt-2 text-2xl font-semibold">Personalização da vitrine</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Defina como sua página pública de agendamento será apresentada aos clientes.
+              </p>
+            </div>
+
+            <section className="space-y-3">
+              <div>
+                <h3 className="font-semibold">Tema da vitrine</h3>
+                <p className="text-sm text-muted-foreground">
+                  Escolha o clima visual da experiência pública sem alterar as regras do
+                  agendamento.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {SHOWCASE_THEME_OPTIONS.map((option) => {
+                  const selected = theme === option.value;
+                  const Icon = option.value === "dark" ? Moon : Sun;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => setTheme(option.value)}
+                      className={cn(
+                        "rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md",
+                        selected
+                          ? "border-primary bg-primary/10 ring-2 ring-primary/20"
+                          : "border-border bg-background",
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary">
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        {selected && <CheckCircle2 className="h-5 w-5 text-primary" />}
+                      </div>
+                      <p className="mt-4 font-semibold">{option.title}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{option.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="space-y-4 rounded-2xl border bg-muted/20 p-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="font-semibold">Opacidade do painel</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Ajusta somente o fundo dos painéis. Textos, botões e ícones continuam nítidos.
+                  </p>
+                </div>
+                <div className="rounded-full bg-background px-3 py-1 text-sm font-semibold shadow-sm">
+                  {panelOpacity}%
+                </div>
+              </div>
+              <Slider
+                value={[panelOpacity]}
+                min={SHOWCASE_PANEL_OPACITY_MIN}
+                max={SHOWCASE_PANEL_OPACITY_MAX}
+                step={1}
+                onValueChange={(value) => {
+                  setPanelOpacity(normalizeShowcasePanelOpacity(value[0]));
+                }}
+              />
+              <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  Use de {SHOWCASE_PANEL_OPACITY_MIN}% a {SHOWCASE_PANEL_OPACITY_MAX}%. O banco só é
+                  atualizado ao salvar.
+                </span>
+                <span>Blur estimado: {blurValue}px</span>
+              </div>
+            </section>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setTheme("dark");
+                  setPanelOpacity(SHOWCASE_PANEL_OPACITY_DEFAULT);
+                }}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Restaurar padrão
+              </Button>
+              <Button type="button" onClick={saveShowcaseSettings} disabled={!isDirty || isSaving}>
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Salvar vitrine
+              </Button>
+            </div>
+          </div>
+
+          <aside className="border-t bg-muted/20 p-6 lg:border-l lg:border-t-0">
+            <div className="sticky top-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <Eye className="h-4 w-4" />
+                    Pré-visualização ao vivo
+                  </div>
+                  <p className="text-xs text-muted-foreground">Simulação mobile da vitrine.</p>
+                </div>
+                <div className="flex items-center gap-1 rounded-full border bg-background px-2.5 py-1 text-xs font-medium">
+                  <Smartphone className="h-3.5 w-3.5" />
+                  Mobile
+                </div>
+              </div>
+
+              <div
+                className="booking-showcase mx-auto w-full max-w-[320px] overflow-hidden rounded-[2rem] border shadow-2xl"
+                data-showcase-theme={theme}
+                style={previewStyle}
+              >
+                <div
+                  className="relative flex min-h-[620px] flex-col justify-end overflow-hidden p-4"
+                  style={{ background: "var(--showcase-page-bg)" }}
+                >
+                  {previewImageUrl && (
+                    <img
+                      src={previewImageUrl}
+                      alt=""
+                      className="absolute inset-0 h-full w-full object-cover"
+                      style={{ opacity: theme === "dark" ? 0.58 : 0.34 }}
+                    />
+                  )}
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background:
+                        theme === "dark"
+                          ? "linear-gradient(180deg, rgba(0,0,0,0.15), rgba(0,0,0,0.74))"
+                          : "linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.78))",
+                    }}
+                  />
+
+                  <div className="relative space-y-4">
+                    <div className="flex items-center gap-3">
+                      {tenant.logo_url ? (
+                        <img
+                          src={tenant.logo_url}
+                          alt=""
+                          className="h-12 w-12 rounded-2xl border object-cover"
+                          style={{ borderColor: "var(--showcase-border-color)" }}
+                        />
+                      ) : (
+                        <div
+                          className="grid h-12 w-12 place-items-center rounded-2xl border text-sm font-semibold"
+                          style={{
+                            borderColor: "var(--showcase-border-color)",
+                            background: "var(--showcase-card-background)",
+                          }}
+                        >
+                          LU
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p
+                          className="truncate text-lg font-semibold"
+                          style={{ color: "var(--showcase-text-primary)" }}
+                        >
+                          {tenant.name || "LinkUp Studio"}
+                        </p>
+                        <p
+                          className="truncate text-xs"
+                          style={{ color: "var(--showcase-text-secondary)" }}
+                        >
+                          {tenant.subtitle || "Sua melhor versão começa aqui."}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div
+                      className="space-y-4 rounded-[1.75rem] border p-4"
+                      style={{
+                        background: "var(--showcase-panel-background)",
+                        borderColor: "var(--showcase-border-color)",
+                        backdropFilter: "blur(var(--showcase-backdrop-blur))",
+                      }}
+                    >
+                      <div
+                        className="rounded-2xl border p-4"
+                        style={{
+                          background: "var(--showcase-card-background)",
+                          borderColor: "var(--showcase-border-color)",
+                        }}
+                      >
+                        <p
+                          className="font-semibold"
+                          style={{ color: "var(--showcase-text-primary)" }}
+                        >
+                          Sou assinante VIP
+                        </p>
+                        <p
+                          className="mt-1 text-xs"
+                          style={{ color: "var(--showcase-text-secondary)" }}
+                        >
+                          Consulte benefícios, saldo e renovação.
+                        </p>
+                      </div>
+                      <div
+                        className="rounded-2xl border p-4"
+                        style={{
+                          background: "var(--showcase-card-background)",
+                          borderColor: "var(--showcase-border-color)",
+                        }}
+                      >
+                        <p
+                          className="font-semibold"
+                          style={{ color: "var(--showcase-text-primary)" }}
+                        >
+                          Escolha o serviço
+                        </p>
+                        <p
+                          className="mt-1 text-xs"
+                          style={{ color: "var(--showcase-text-secondary)" }}
+                        >
+                          Cabelo, barba, estética e muito mais.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl bg-primary px-4 py-3 text-center text-sm font-semibold text-primary-foreground">
+                        Continuar
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function LocationTab() {
-  const { data: t } = useCurrentTenant(); const qc = useQueryClient();
+  const { data: t } = useCurrentTenant();
+  const qc = useQueryClient();
   const [f, setF] = useState({ address: "", city: "", state: "" });
-  useEffect(() => { if (t) setF({ address: (t as any).address ?? "", city: (t as any).city ?? "", state: (t as any).state ?? "" }); }, [t]);
-  return (<Card><CardContent className="p-6 space-y-4">
-    <div><Label>Endereço</Label><Input value={f.address} onChange={e=>setF({...f,address:e.target.value})}/></div>
-    <div className="grid grid-cols-2 gap-4"><div><Label>Cidade</Label><Input value={f.city} onChange={e=>setF({...f,city:e.target.value})}/></div>
-    <div><Label>Estado</Label><Input value={f.state} onChange={e=>setF({...f,state:e.target.value})}/></div></div>
-    <Button onClick={async()=>{const{error}=await supabase.from("tenants").update(f).eq("id",t!.id);if(error)toast.error(error.message);else{toast.success("Salvo");qc.invalidateQueries({queryKey:["current-tenant"]});}}}>Salvar</Button>
-  </CardContent></Card>);
+  useEffect(() => {
+    if (t)
+      setF({
+        address: (t as any).address ?? "",
+        city: (t as any).city ?? "",
+        state: (t as any).state ?? "",
+      });
+  }, [t]);
+  return (
+    <Card>
+      <CardContent className="p-6 space-y-4">
+        <div>
+          <Label>Endereço</Label>
+          <Input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Cidade</Label>
+            <Input value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} />
+          </div>
+          <div>
+            <Label>Estado</Label>
+            <Input value={f.state} onChange={(e) => setF({ ...f, state: e.target.value })} />
+          </div>
+        </div>
+        <Button
+          onClick={async () => {
+            const { error } = await supabase.from("tenants").update(f).eq("id", t!.id);
+            if (error) toast.error(error.message);
+            else {
+              toast.success("Salvo");
+              qc.invalidateQueries({ queryKey: ["current-tenant"] });
+            }
+          }}
+        >
+          Salvar
+        </Button>
+      </CardContent>
+    </Card>
+  );
 }
 
 function isMissingClosedDatesColumn(error: any) {
@@ -271,12 +812,14 @@ function isMissingClosedDatesColumn(error: any) {
   return (
     error?.code === "42703" ||
     error?.code === "PGRST204" ||
-    (message.includes("closed_dates") && /does not exist|schema cache|could not find/i.test(message))
+    (message.includes("closed_dates") &&
+      /does not exist|schema cache|could not find/i.test(message))
   );
 }
 
 function HoursTab() {
-  const { data: t } = useCurrentTenant(); const tenantId = t?.id;
+  const { data: t } = useCurrentTenant();
+  const tenantId = t?.id;
   const qc = useQueryClient();
   const { data: s, error: settingsError } = useQuery({
     queryKey: ["settings", tenantId],
@@ -304,20 +847,41 @@ function HoursTab() {
   const [newClosedDate, setNewClosedDate] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(()=>{if(s)setF({open_hour:s.open_hour??8,close_hour:s.close_hour??20,lunch_start:s.lunch_start??12,lunch_end:s.lunch_end??13,vip_days:normalizeBookingWeekdays(s.vip_days, DEFAULT_BOOKING_VIP_DAYS),work_days:normalizeBookingWeekdays(s.work_days, DEFAULT_BOOKING_WORK_DAYS),vip_mode:(s as any).vip_mode ?? "strict",closed_dates:(s as any).closed_dates ?? []});},[s]);
-  const dayNames = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+  useEffect(() => {
+    if (s)
+      setF({
+        open_hour: s.open_hour ?? 8,
+        close_hour: s.close_hour ?? 20,
+        lunch_start: s.lunch_start ?? 12,
+        lunch_end: s.lunch_end ?? 13,
+        vip_days: normalizeBookingWeekdays(s.vip_days, DEFAULT_BOOKING_VIP_DAYS),
+        work_days: normalizeBookingWeekdays(s.work_days, DEFAULT_BOOKING_WORK_DAYS),
+        vip_mode: (s as any).vip_mode ?? "strict",
+        closed_dates: (s as any).closed_dates ?? [],
+      });
+  }, [s]);
+  const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
   async function saveHours() {
     if (!tenantId) return toast.error("Loja não carregada. Recarregue a página e tente novamente.");
 
     const { open_hour, close_hour, lunch_start, lunch_end } = f;
     const validHours =
-      Number.isInteger(open_hour) && open_hour >= 0 && open_hour <= 23 &&
-      Number.isInteger(close_hour) && close_hour >= 1 && close_hour <= 24 &&
-      Number.isInteger(lunch_start) && lunch_start >= 0 && lunch_start <= 23 &&
-      Number.isInteger(lunch_end) && lunch_end >= 1 && lunch_end <= 24;
+      Number.isInteger(open_hour) &&
+      open_hour >= 0 &&
+      open_hour <= 23 &&
+      Number.isInteger(close_hour) &&
+      close_hour >= 1 &&
+      close_hour <= 24 &&
+      Number.isInteger(lunch_start) &&
+      lunch_start >= 0 &&
+      lunch_start <= 23 &&
+      Number.isInteger(lunch_end) &&
+      lunch_end >= 1 &&
+      lunch_end <= 24;
     if (!validHours) return toast.error("Informe horários inteiros entre 0 e 24.");
-    if (open_hour >= close_hour) return toast.error("O horário de abertura deve ser anterior ao fechamento.");
+    if (open_hour >= close_hour)
+      return toast.error("O horário de abertura deve ser anterior ao fechamento.");
     if (lunch_start >= lunch_end || lunch_start < open_hour || lunch_end > close_hour) {
       return toast.error("O intervalo de almoço precisa estar dentro do horário de funcionamento.");
     }
@@ -371,96 +935,185 @@ function HoursTab() {
     }
   }
 
-  return (<Card><CardContent className="p-6 space-y-4">
-    {settingsError && (
-      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-        Não foi possível carregar o funcionamento: {(settingsError as any).message}
-      </div>
-    )}
-    <div className="grid grid-cols-4 gap-4">
-      <div><Label>Abre</Label><Input type="number" value={f.open_hour} onChange={e=>setF({...f,open_hour:Number(e.target.value)})}/></div>
-      <div><Label>Fecha</Label><Input type="number" value={f.close_hour} onChange={e=>setF({...f,close_hour:Number(e.target.value)})}/></div>
-      <div><Label>Almoço início</Label><Input type="number" value={f.lunch_start} onChange={e=>setF({...f,lunch_start:Number(e.target.value)})}/></div>
-      <div><Label>Almoço fim</Label><Input type="number" value={f.lunch_end} onChange={e=>setF({...f,lunch_end:Number(e.target.value)})}/></div>
-    </div>
-    <div>
-      <Label>Dias de funcionamento (todos os clientes)</Label>
-      <div className="flex flex-wrap gap-2 mt-2">{[1,2,3,4,5,6,7].map(d=>(
-        <button key={d} type="button" onClick={()=>setF({...f,work_days:f.work_days.includes(d)?f.work_days.filter((x:number)=>x!==d):[...f.work_days,d]})}
-          className={`h-10 px-4 rounded-lg border ${f.work_days.includes(d)?"bg-primary text-primary-foreground border-primary":"border-border"}`}>{dayNames[d%7]}</button>
-      ))}</div>
-    </div>
-    <div><Label>Dias VIP</Label>
-      <div className="flex flex-wrap gap-2 mt-2">{[1,2,3,4,5,6,7].map(d=>(
-        <button key={d} type="button" onClick={()=>setF({...f,vip_days:f.vip_days.includes(d)?f.vip_days.filter((x:number)=>x!==d):[...f.vip_days,d]})}
-          className={`h-10 px-4 rounded-lg border ${f.vip_days.includes(d)?"bg-primary text-primary-foreground border-primary":"border-border"}`}>{dayNames[d%7]}</button>
-      ))}</div>
-    </div>
-    <div>
-      <Label>Modo dos dias VIP</Label>
-      <div className="grid md:grid-cols-2 gap-3 mt-2">
-        <button type="button" onClick={()=>setF({...f,vip_mode:"strict"})} className={`text-left p-4 rounded-xl border ${f.vip_mode==="strict"?"border-primary bg-primary/5":"border-border"}`}>
-          <div className="font-semibold text-sm">Exclusivo para assinantes</div>
-          <div className="text-xs text-muted-foreground mt-1">Nos dias VIP, apenas assinantes conseguem agendar online.</div>
-        </button>
-        <button type="button" onClick={()=>setF({...f,vip_mode:"open"})} className={`text-left p-4 rounded-xl border ${f.vip_mode==="open"?"border-primary bg-primary/5":"border-border"}`}>
-          <div className="font-semibold text-sm">Aberto para todos</div>
-          <div className="text-xs text-muted-foreground mt-1">Todos podem agendar em qualquer dia — a marcação VIP fica apenas como destaque.</div>
-        </button>
-      </div>
-    </div>
-    
-    <div className="border-t pt-4">
-      <Label className="font-semibold block mb-2">Bloquear Datas Específicas (Folgas / Feriados)</Label>
-      <div className="flex gap-2">
-        <Input 
-          type="date" 
-          value={newClosedDate} 
-          onChange={(e)=>setNewClosedDate(e.target.value)} 
-          className="max-w-[200px]"
-        />
-        <Button 
-          type="button" 
-          variant="outline"
-          onClick={() => {
-            if (!newClosedDate) return;
-            if (f.closed_dates.includes(newClosedDate)) return toast.error("Data já adicionada.");
-            setF({ ...f, closed_dates: [...f.closed_dates, newClosedDate].sort() });
-            setNewClosedDate("");
-          }}
-        >
-          Adicionar Data Fechada
-        </Button>
-      </div>
-      <div className="flex flex-wrap gap-2 mt-3">
-        {f.closed_dates.map((dateStr: string) => {
-          const [y, m, d] = dateStr.split("-");
-          return (
-            <div key={dateStr} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border bg-muted text-foreground">
-              <span>{`${d}/${m}/${y}`}</span>
-              <button 
-                type="button" 
-                onClick={() => setF({ ...f, closed_dates: f.closed_dates.filter((x: string) => x !== dateStr) })}
-                className="text-destructive font-bold hover:scale-110 px-1 ml-1"
+  return (
+    <Card>
+      <CardContent className="p-6 space-y-4">
+        {settingsError && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            Não foi possível carregar o funcionamento: {(settingsError as any).message}
+          </div>
+        )}
+        <div className="grid grid-cols-4 gap-4">
+          <div>
+            <Label>Abre</Label>
+            <Input
+              type="number"
+              value={f.open_hour}
+              onChange={(e) => setF({ ...f, open_hour: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <Label>Fecha</Label>
+            <Input
+              type="number"
+              value={f.close_hour}
+              onChange={(e) => setF({ ...f, close_hour: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <Label>Almoço início</Label>
+            <Input
+              type="number"
+              value={f.lunch_start}
+              onChange={(e) => setF({ ...f, lunch_start: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <Label>Almoço fim</Label>
+            <Input
+              type="number"
+              value={f.lunch_end}
+              onChange={(e) => setF({ ...f, lunch_end: Number(e.target.value) })}
+            />
+          </div>
+        </div>
+        <div>
+          <Label>Dias de funcionamento (todos os clientes)</Label>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {[1, 2, 3, 4, 5, 6, 7].map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() =>
+                  setF({
+                    ...f,
+                    work_days: f.work_days.includes(d)
+                      ? f.work_days.filter((x: number) => x !== d)
+                      : [...f.work_days, d],
+                  })
+                }
+                className={`h-10 px-4 rounded-lg border ${f.work_days.includes(d) ? "bg-primary text-primary-foreground border-primary" : "border-border"}`}
               >
-                ×
+                {dayNames[d % 7]}
               </button>
-            </div>
-          );
-        })}
-        {f.closed_dates.length === 0 && <span className="text-xs text-muted-foreground italic">Nenhuma data bloqueada cadastrada.</span>}
-      </div>
-    </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <Label>Dias VIP</Label>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {[1, 2, 3, 4, 5, 6, 7].map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() =>
+                  setF({
+                    ...f,
+                    vip_days: f.vip_days.includes(d)
+                      ? f.vip_days.filter((x: number) => x !== d)
+                      : [...f.vip_days, d],
+                  })
+                }
+                className={`h-10 px-4 rounded-lg border ${f.vip_days.includes(d) ? "bg-primary text-primary-foreground border-primary" : "border-border"}`}
+              >
+                {dayNames[d % 7]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <Label>Modo dos dias VIP</Label>
+          <div className="grid md:grid-cols-2 gap-3 mt-2">
+            <button
+              type="button"
+              onClick={() => setF({ ...f, vip_mode: "strict" })}
+              className={`text-left p-4 rounded-xl border ${f.vip_mode === "strict" ? "border-primary bg-primary/5" : "border-border"}`}
+            >
+              <div className="font-semibold text-sm">Exclusivo para assinantes</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Nos dias VIP, apenas assinantes conseguem agendar online.
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setF({ ...f, vip_mode: "open" })}
+              className={`text-left p-4 rounded-xl border ${f.vip_mode === "open" ? "border-primary bg-primary/5" : "border-border"}`}
+            >
+              <div className="font-semibold text-sm">Aberto para todos</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Todos podem agendar em qualquer dia — a marcação VIP fica apenas como destaque.
+              </div>
+            </button>
+          </div>
+        </div>
 
-    <ProfessionalTimeOffManager tenantId={tenantId} />
+        <div className="border-t pt-4">
+          <Label className="font-semibold block mb-2">
+            Bloquear Datas Específicas (Folgas / Feriados)
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              type="date"
+              value={newClosedDate}
+              onChange={(e) => setNewClosedDate(e.target.value)}
+              className="max-w-[200px]"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (!newClosedDate) return;
+                if (f.closed_dates.includes(newClosedDate))
+                  return toast.error("Data já adicionada.");
+                setF({ ...f, closed_dates: [...f.closed_dates, newClosedDate].sort() });
+                setNewClosedDate("");
+              }}
+            >
+              Adicionar Data Fechada
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {f.closed_dates.map((dateStr: string) => {
+              const [y, m, d] = dateStr.split("-");
+              return (
+                <div
+                  key={dateStr}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border bg-muted text-foreground"
+                >
+                  <span>{`${d}/${m}/${y}`}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setF({
+                        ...f,
+                        closed_dates: f.closed_dates.filter((x: string) => x !== dateStr),
+                      })
+                    }
+                    className="text-destructive font-bold hover:scale-110 px-1 ml-1"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+            {f.closed_dates.length === 0 && (
+              <span className="text-xs text-muted-foreground italic">
+                Nenhuma data bloqueada cadastrada.
+              </span>
+            )}
+          </div>
+        </div>
 
-    <Button onClick={saveHours} disabled={isSaving}>
-      {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-      {isSaving ? "Salvando..." : "Salvar funcionamento"}
-    </Button>
-  </CardContent></Card>);
+        <ProfessionalTimeOffManager tenantId={tenantId} />
+
+        <Button onClick={saveHours} disabled={isSaving}>
+          {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isSaving ? "Salvando..." : "Salvar funcionamento"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
 }
-
 
 function WhatsAppTab() {
   const { data: tenant } = useCurrentTenant();
