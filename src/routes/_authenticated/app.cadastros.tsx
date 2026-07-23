@@ -66,6 +66,23 @@ function CadastrosPage() {
 
 function useTenantId() { return useCurrentTenant().data?.id; }
 
+function currencyInputValue(value: unknown) {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) && amount > 0 ? brl(amount) : "";
+}
+
+function currencyInputToNumber(value: unknown) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (!digits) return 0;
+  return Number(digits) / 100;
+}
+
+function formatCurrencyInput(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  return brl(Number(digits) / 100);
+}
+
 function ClientsTab() {
   const tenantId = useTenantId(); const qc = useQueryClient();
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
@@ -894,7 +911,7 @@ function ServiceDialog({ svc, tenantId, categories = [], onDone }: any) {
     description: svc?.description ?? "",
     image_url: svc?.image_url ?? "",
     display_order: svc?.display_order ?? "",
-    price: svc?.price ?? 0,
+    price: currencyInputValue(svc?.price),
     duration_min: svc?.duration_min ?? 30,
     vip_only: svc?.vip_only ?? false,
     active: svc?.active ?? true,
@@ -960,7 +977,7 @@ function ServiceDialog({ svc, tenantId, categories = [], onDone }: any) {
       description: f.description.trim() || null,
       image_url: image_url || null,
       display_order: f.display_order === "" ? null : Number(f.display_order),
-      price: Number(f.price || 0),
+      price: currencyInputToNumber(f.price),
       duration_min: Number(f.duration_min || 30),
       vip_only: Boolean(f.vip_only),
       active: Boolean(f.active),
@@ -998,7 +1015,7 @@ function ServiceDialog({ svc, tenantId, categories = [], onDone }: any) {
         <p className="mt-1 text-xs text-muted-foreground">As categorias cadastradas aqui aparecem agrupando os serviços na vitrine.</p>
       </div>
       <div className="grid grid-cols-3 gap-3">
-        <div><Label>Preço</Label><Input type="number" step="0.01" value={f.price} onChange={e=>setF({...f,price:Number(e.target.value)})}/></div>
+        <div><Label>Preço</Label><Input type="text" inputMode="numeric" value={f.price} onChange={e=>setF({...f,price:formatCurrencyInput(e.target.value)})} placeholder="Digite o valor"/></div>
         <div><Label>Duração (min)</Label><Input type="number" value={f.duration_min} onChange={e=>setF({...f,duration_min:Number(e.target.value)})}/></div>
         <div><Label>Ordem</Label><Input type="number" value={f.display_order} onChange={e=>setF({...f,display_order:e.target.value === "" ? "" : Number(e.target.value)})} placeholder="Opcional"/></div>
       </div>
