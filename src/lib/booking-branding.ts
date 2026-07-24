@@ -373,19 +373,22 @@ export function getShowcaseThemeStyle(input?: {
   const lightBorderStrongAlpha = alpha(panelAlpha * 0.28);
   const darkBorderAlpha = alpha(panelAlpha * 0.16);
   const darkBorderStrongAlpha = alpha(panelAlpha * 0.24);
+  const readabilityBoost = 1 - panelAlpha;
 
   if (theme === "light") {
     return {
       "--showcase-accent-rgb": accentRgb,
+      "--showcase-accent-text": "color-mix(in srgb, rgb(var(--showcase-accent-rgb)) 62%, #020617)",
       "--showcase-page-bg": "#f8fafc",
       "--showcase-panel-background": `rgba(255, 255, 255, ${panelAlpha})`,
       "--showcase-card-background": `rgba(255, 255, 255, ${alpha(panelAlpha * 0.94)})`,
       "--showcase-subtle-background": `rgba(15, 23, 42, ${alpha(panelAlpha * 0.045)})`,
       "--showcase-border-color": `rgba(15, 23, 42, ${lightBorderAlpha})`,
       "--showcase-border-strong": `rgba(15, 23, 42, ${lightBorderStrongAlpha})`,
-      "--showcase-text-primary": "#0f172a",
-      "--showcase-text-secondary": "rgba(15, 23, 42, 0.68)",
-      "--showcase-text-muted": "rgba(15, 23, 42, 0.48)",
+      "--showcase-text-primary": "#020617",
+      "--showcase-text-secondary": "rgba(15, 23, 42, 0.86)",
+      "--showcase-text-muted": "rgba(15, 23, 42, 0.66)",
+      "--showcase-text-shadow": `0 1px 2px rgba(255, 255, 255, ${alpha(readabilityBoost * 0.76)}), 0 0 16px rgba(255, 255, 255, ${alpha(readabilityBoost * 0.56)})`,
       "--showcase-shadow": `0 24px 70px rgba(15, 23, 42, ${alpha(panelAlpha * 0.16)})`,
       "--showcase-backdrop-blur": `${blur}px`,
     } as const;
@@ -393,6 +396,7 @@ export function getShowcaseThemeStyle(input?: {
 
   return {
     "--showcase-accent-rgb": accentRgb,
+    "--showcase-accent-text": "rgb(var(--showcase-accent-rgb))",
     "--showcase-page-bg": "#020617",
     "--showcase-panel-background": `rgba(10, 10, 10, ${panelAlpha})`,
     "--showcase-card-background": `rgba(255, 255, 255, ${alpha(panelAlpha * 0.08)})`,
@@ -400,8 +404,9 @@ export function getShowcaseThemeStyle(input?: {
     "--showcase-border-color": `rgba(255, 255, 255, ${darkBorderAlpha})`,
     "--showcase-border-strong": `rgba(255, 255, 255, ${darkBorderStrongAlpha})`,
     "--showcase-text-primary": "#ffffff",
-    "--showcase-text-secondary": "rgba(255, 255, 255, 0.72)",
-    "--showcase-text-muted": "rgba(255, 255, 255, 0.5)",
+    "--showcase-text-secondary": "rgba(255, 255, 255, 0.82)",
+    "--showcase-text-muted": "rgba(255, 255, 255, 0.62)",
+    "--showcase-text-shadow": `0 1px 2px rgba(0, 0, 0, ${alpha(readabilityBoost * 0.72)}), 0 0 18px rgba(0, 0, 0, ${alpha(readabilityBoost * 0.5)})`,
     "--showcase-shadow": `0 26px 80px rgba(0, 0, 0, ${alpha(panelAlpha * 0.42)})`,
     "--showcase-backdrop-blur": `${blur}px`,
   } as const;

@@ -146,6 +146,7 @@ svg.lucide {
 /* Public booking showcase theming */
 .booking-showcase {
   color: var(--showcase-text-primary);
+  text-shadow: var(--showcase-text-shadow);
 }
 
 .booking-showcase :where(.bg-\[\#0a0a0a\], .bg-neutral-900\/80) {
@@ -176,6 +177,10 @@ svg.lucide {
   color: var(--showcase-text-primary) !important;
 }
 
+.booking-showcase[data-showcase-theme="light"] :where(.text-primary) {
+  color: var(--showcase-accent-text) !important;
+}
+
 .booking-showcase[data-showcase-theme="light"]
   :where(
     .text-white\/90,
@@ -198,6 +203,7 @@ svg.lucide {
   background: rgba(255, 255, 255, 0.82) !important;
   color: var(--showcase-text-primary) !important;
   border-color: var(--showcase-border-color) !important;
+  text-shadow: none;
 }
 
 .booking-showcase[data-showcase-theme="light"] :where(input::placeholder, textarea::placeholder) {

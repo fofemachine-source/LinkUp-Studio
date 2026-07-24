@@ -1254,29 +1254,28 @@ function MobileDayTimeline({
   onEditAppointment: (appointment: AgendaAppointment) => void;
 }) {
   const off = isProfessionalOff(professional, date);
-  const blockingAppointments = appointments.filter(
+  const sortedAppointments = [...appointments].sort(
+    (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime(),
+  );
+  const blockingAppointments = sortedAppointments.filter(
     (appointment) => appointment.status !== "cancelled" && appointment.status !== "no_show",
   );
-  const activeAppointment = blockingAppointments.find((appointment) => {
-    const start = new Date(appointment.start_at);
-    const end = new Date(appointment.end_at);
-    return isToday(date) && now >= start && now < end;
-  });
   const allTimes = buildTimes(openHour, closeHour, slotMinutes);
-  const nowBlockMinutes = Math.floor((now.getHours() * 60 + now.getMinutes()) / slotMinutes) * slotMinutes;
-  const activeStartMinutes = activeAppointment
-    ? Math.floor(
-        (new Date(activeAppointment.start_at).getHours() * 60 +
-          new Date(activeAppointment.start_at).getMinutes()) /
-          slotMinutes,
-      ) * slotMinutes
-    : null;
-  const timelineStartMinutes = isToday(date)
-    ? Math.max(openHour * 60, activeStartMinutes ?? nowBlockMinutes)
-    : openHour * 60;
-  const times = isToday(date)
-    ? allTimes.filter((time) => timeToMinutes(time) >= timelineStartMinutes)
-    : allTimes;
+  const times = allTimes;
+  const nowLineRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isToday(date)) return;
+
+    const timer = window.setTimeout(() => {
+      nowLineRef.current?.scrollIntoView({
+        block: "center",
+        behavior: "smooth",
+      });
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [date, professional.id]);
 
   if (!times.length) {
     const historicalAppointments = [...appointments].sort(
@@ -1347,6 +1346,7 @@ function MobileDayTimeline({
           new Date(appointment.start_at) >= slotStart &&
           new Date(appointment.start_at) < slotEnd;
         const isContinuation = Boolean(appointment && !startsHere);
+        const isPastFreeSlot = isToday(date) && slotEnd <= now;
         const showNowLine = isToday(date) && now >= slotStart && now < slotEnd;
         const history = appointment
           ? clientHistory.filter((item) =>
@@ -1355,11 +1355,14 @@ function MobileDayTimeline({
                 : item.client_name === appointment.client_name,
             )
           : [];
+        const appointmentMeta = appointment
+          ? STATUS_META[appointment.status ?? "pending"] ?? STATUS_META.pending
+          : null;
 
         return (
           <div key={time} className="space-y-2">
             {showNowLine && (
-              <div className="flex items-center gap-2 py-1">
+              <div ref={nowLineRef} className="flex items-center gap-2 py-1">
                 <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-semibold text-white">
                   Agora • {format(now, "HH:mm")}
                 </span>
@@ -1377,7 +1380,7 @@ function MobileDayTimeline({
                 <button
                   type="button"
                   onClick={() => onEditAppointment(appointment)}
-                  className="w-full rounded-2xl border border-l-[4px] border-border/75 border-l-primary bg-card p-3 text-left shadow-[0_14px_32px_-28px_rgba(15,23,42,0.55)]"
+                  className={`w-full rounded-2xl border border-l-[4px] border-border/75 ${appointmentMeta?.border ?? "border-l-primary"} bg-card p-3 text-left shadow-[0_14px_32px_-28px_rgba(15,23,42,0.55)]`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -1386,9 +1389,16 @@ function MobileDayTimeline({
                         {getServiceName(appointment)}
                       </div>
                     </div>
-                    <span className="text-xs font-semibold">
-                      {brl(getAppointmentValue(appointment, commandasByAppointment, services))}
-                    </span>
+                    <div className="shrink-0 text-right">
+                      <span className="text-xs font-semibold">
+                        {brl(getAppointmentValue(appointment, commandasByAppointment, services))}
+                      </span>
+                      <div
+                        className={`mt-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${appointmentMeta?.soft ?? "bg-primary/10 text-primary"}`}
+                      >
+                        {appointmentMeta?.label ?? "Ocupado"}
+                      </div>
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                     <span>
@@ -1401,8 +1411,36 @@ function MobileDayTimeline({
                   </div>
                 </button>
               ) : isContinuation ? (
-                <div className="rounded-2xl border bg-muted/35 p-3 text-xs text-muted-foreground">
-                  Horário ocupado pelo atendimento em andamento.
+                <button
+                  type="button"
+                  onClick={() => appointment && onEditAppointment(appointment)}
+                  className={`w-full rounded-2xl border border-l-[4px] border-border/70 ${appointmentMeta?.border ?? "border-l-primary"} bg-muted/35 p-3 text-left text-xs text-muted-foreground`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-foreground">Ocupado</div>
+                      <div className="mt-1 truncate text-xs text-muted-foreground">
+                        {appointment
+                          ? `${getClientName(appointment)} • ${getServiceName(appointment)}`
+                          : "Atendimento em andamento"}
+                      </div>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${appointmentMeta?.soft ?? "bg-primary/10 text-primary"}`}
+                    >
+                      {appointmentMeta?.label ?? "Ocupado"}
+                    </span>
+                  </div>
+                  {appointment && (
+                    <div className="mt-2 text-[10px] text-muted-foreground">
+                      Continua até {format(new Date(appointment.end_at), "HH:mm")}
+                    </div>
+                  )}
+                </button>
+              ) : isPastFreeSlot ? (
+                <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-3 text-left">
+                  <div className="text-sm font-semibold text-muted-foreground">Livre</div>
+                  <div className="text-xs text-muted-foreground">Horário já passou.</div>
                 </div>
               ) : (
                 <button
@@ -1537,19 +1575,8 @@ function DayTimeline({
     [closeHour, openHour, slotMinutes],
   );
   const isTodayView = isToday(date);
-  const nowSlotMinutes = isTodayView
-    ? Math.floor((now.getHours() * 60 + now.getMinutes()) / slotMinutes) * slotMinutes
-    : -1;
-  const times = useMemo(() => {
-    if (!isTodayView) return allTimes;
-    return allTimes.filter((t) => {
-      const [hh, mm] = t.split(":").map(Number);
-      return hh * 60 + mm >= nowSlotMinutes;
-    });
-  }, [allTimes, isTodayView, nowSlotMinutes]);
-  const timelineOpenMinutes = times.length > 0
-    ? (() => { const [h, m] = times[0].split(":").map(Number); return h * 60 + m; })()
-    : openHour * 60;
+  const times = allTimes;
+  const timelineOpenMinutes = openHour * 60;
   const bodyHeight = times.length * SLOT_HEIGHT;
   const totalMinutes = Math.max(1, times.length * slotMinutes);
   const nowMinutes = now.getHours() * 60 + now.getMinutes() - timelineOpenMinutes;
@@ -1673,13 +1700,7 @@ function DayTimeline({
 
             {professionals.map((professional) => {
               const professionalAppointments = appointments.filter(
-                (appointment) => {
-                  if (appointment.professional_id !== professional.id) return false;
-                  if (!isTodayView) return true;
-                  // Hide past appointments already ended in the "now onward" view.
-                  const end = new Date(appointment.end_at);
-                  return end.getHours() * 60 + end.getMinutes() > nowSlotMinutes;
-                },
+                (appointment) => appointment.professional_id === professional.id,
               );
               const off = isProfessionalOff(professional, date);
               return (
