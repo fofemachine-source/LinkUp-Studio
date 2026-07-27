@@ -516,11 +516,11 @@ export type Database = {
       commanda_items: {
         Row: {
           billable_amount: number | null
-          covered_by_subscription: boolean
           commanda_id: string
           commission_pct: number | null
           commission_status: string | null
           commission_value: number | null
+          covered_by_subscription: boolean
           created_at: string
           id: string
           kind: string
@@ -536,11 +536,11 @@ export type Database = {
         }
         Insert: {
           billable_amount?: number | null
-          covered_by_subscription?: boolean
           commanda_id: string
           commission_pct?: number | null
           commission_status?: string | null
           commission_value?: number | null
+          covered_by_subscription?: boolean
           created_at?: string
           id?: string
           kind: string
@@ -556,11 +556,11 @@ export type Database = {
         }
         Update: {
           billable_amount?: number | null
-          covered_by_subscription?: boolean
           commanda_id?: string
           commission_pct?: number | null
           commission_status?: string | null
           commission_value?: number | null
+          covered_by_subscription?: boolean
           created_at?: string
           id?: string
           kind?: string
@@ -2360,8 +2360,11 @@ export type Database = {
       }
       professionals: {
         Row: {
+          access_permissions: string[]
+          access_profile: string
           active: boolean | null
           auth_user_id: string | null
+          available_for_booking: boolean
           blocked_dates: string[] | null
           commission_pct: number | null
           cost_center_id: string | null
@@ -2371,16 +2374,23 @@ export type Database = {
           id: string
           lunch_end: string | null
           lunch_start: string | null
+          must_change_password: boolean
           photo_url: string | null
+          position_id: string | null
+          receive_operational_notifications: boolean
           role_label: string | null
+          show_on_booking: boolean
           specialty: string | null
           tenant_id: string
           whatsapp: string | null
           work_days: number[] | null
         }
         Insert: {
+          access_permissions?: string[]
+          access_profile?: string
           active?: boolean | null
           auth_user_id?: string | null
+          available_for_booking?: boolean
           blocked_dates?: string[] | null
           commission_pct?: number | null
           cost_center_id?: string | null
@@ -2390,16 +2400,23 @@ export type Database = {
           id?: string
           lunch_end?: string | null
           lunch_start?: string | null
+          must_change_password?: boolean
           photo_url?: string | null
+          position_id?: string | null
+          receive_operational_notifications?: boolean
           role_label?: string | null
+          show_on_booking?: boolean
           specialty?: string | null
           tenant_id: string
           whatsapp?: string | null
           work_days?: number[] | null
         }
         Update: {
+          access_permissions?: string[]
+          access_profile?: string
           active?: boolean | null
           auth_user_id?: string | null
+          available_for_booking?: boolean
           blocked_dates?: string[] | null
           commission_pct?: number | null
           cost_center_id?: string | null
@@ -2409,8 +2426,12 @@ export type Database = {
           id?: string
           lunch_end?: string | null
           lunch_start?: string | null
+          must_change_password?: boolean
           photo_url?: string | null
+          position_id?: string | null
+          receive_operational_notifications?: boolean
           role_label?: string | null
+          show_on_booking?: boolean
           specialty?: string | null
           tenant_id?: string
           whatsapp?: string | null
@@ -2423,6 +2444,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "cost_centers"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "professionals_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "staff_positions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "professionals_position_tenant_fkey"
+            columns: ["position_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "staff_positions"
+            referencedColumns: ["id", "tenant_id"]
           },
           {
             foreignKeyName: "professionals_tenant_id_fkey"
@@ -2515,10 +2550,52 @@ export type Database = {
           },
         ]
       }
+      service_categories: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          display_order: number | null
+          id: string
+          name: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          name: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          name?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_categories_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       services: {
         Row: {
           active: boolean | null
           category: string | null
+          category_id: string | null
           created_at: string
           description: string | null
           display_order: number | null
@@ -2533,6 +2610,7 @@ export type Database = {
         Insert: {
           active?: boolean | null
           category?: string | null
+          category_id?: string | null
           created_at?: string
           description?: string | null
           display_order?: number | null
@@ -2547,6 +2625,7 @@ export type Database = {
         Update: {
           active?: boolean | null
           category?: string | null
+          category_id?: string | null
           created_at?: string
           description?: string | null
           display_order?: number | null
@@ -2560,7 +2639,55 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "services_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "service_categories"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "services_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_positions: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          sort_order: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_positions_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -3309,6 +3436,8 @@ export type Database = {
           show_subscriber_badge: boolean
           show_subscription_summary: boolean
           show_subtitle: boolean
+          showcase_panel_opacity: number
+          showcase_theme: string
           tenant_id: string
           updated_at: string
           updated_by: string | null
@@ -3341,6 +3470,8 @@ export type Database = {
           show_subscriber_badge?: boolean
           show_subscription_summary?: boolean
           show_subtitle?: boolean
+          showcase_panel_opacity?: number
+          showcase_theme?: string
           tenant_id: string
           updated_at?: string
           updated_by?: string | null
@@ -3373,6 +3504,8 @@ export type Database = {
           show_subscriber_badge?: boolean
           show_subscription_summary?: boolean
           show_subtitle?: boolean
+          showcase_panel_opacity?: number
+          showcase_theme?: string
           tenant_id?: string
           updated_at?: string
           updated_by?: string | null
@@ -4015,6 +4148,10 @@ export type Database = {
         Returns: number
       }
       get_platform_billing_worker_health: { Args: never; Returns: Json }
+      get_tenant_operational_settings: {
+        Args: { p_tenant_id: string }
+        Returns: Json
+      }
       ingest_platform_billing_webhook_event: {
         Args: {
           p_environment: string
