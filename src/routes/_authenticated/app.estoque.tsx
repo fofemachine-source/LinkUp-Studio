@@ -31,8 +31,8 @@ function EstoquePage() {
   const [f, setF] = useState({ name: "", price: 0, stock: 0 });
 
   return (
-    <div className="max-w-[1400px] mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-[1400px] mx-auto space-y-6 pb-24 md:pb-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-3xl font-semibold flex items-center gap-2"><Package className="h-7 w-7 text-primary"/>Estoque</h1>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2"/>Novo Produto</Button></DialogTrigger>
@@ -61,7 +61,7 @@ function EstoquePage() {
         </Dialog>
       </div>
 
-      <Card>
+      <Card className="hidden overflow-hidden md:block">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -74,8 +74,8 @@ function EstoquePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading && <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Carregando estoque...</TableCell></TableRow>}
-              {!isLoading && data?.length === 0 && <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Nenhum produto cadastrado no estoque.</TableCell></TableRow>}
+              {isLoading && <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Carregando estoque...</TableCell></TableRow>}
+              {!isLoading && data?.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Nenhum produto cadastrado no estoque.</TableCell></TableRow>}
               {(data ?? []).map((p:any) => (
                 <TableRow key={p.id}>
                   <TableCell className="font-medium">{p.name}</TableCell>
@@ -99,6 +99,61 @@ function EstoquePage() {
           </Table>
         </CardContent>
       </Card>
+
+      <div className="space-y-3 md:hidden">
+        {isLoading && (
+          <Card>
+            <CardContent className="p-5 text-center text-sm text-muted-foreground">
+              Carregando estoque...
+            </CardContent>
+          </Card>
+        )}
+        {!isLoading && data?.length === 0 && (
+          <Card>
+            <CardContent className="p-5 text-center text-sm text-muted-foreground">
+              Nenhum produto cadastrado no estoque.
+            </CardContent>
+          </Card>
+        )}
+        {(data ?? []).map((p: any) => (
+          <Card key={p.id} className="overflow-hidden">
+            <CardContent className="space-y-4 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-base font-semibold leading-tight">{p.name}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Produto cadastrado no estoque</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => {
+                    setF({ name: p.name, price: p.price, stock: p.stock });
+                    setEditingId(p.id);
+                    setEditOpen(true);
+                  }}
+                  aria-label={`Editar ${p.name}`}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="rounded-2xl bg-muted/60 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Preço</p>
+                  <p className="mt-1 font-semibold">{brl(p.price)}</p>
+                </div>
+                <div className="rounded-2xl bg-muted/60 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Estoque</p>
+                  <p className="mt-1 font-semibold">{p.stock} un</p>
+                </div>
+              </div>
+
+              <div>{renderStockStatus(p.stock)}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
@@ -126,5 +181,27 @@ function EstoquePage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function renderStockStatus(stock: number) {
+  if (stock > 10) {
+    return (
+      <span className="inline-flex rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
+        Estoque Seguro
+      </span>
+    );
+  }
+  if (stock > 0) {
+    return (
+      <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+        Estoque Baixo
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">
+      Sem Estoque
+    </span>
   );
 }

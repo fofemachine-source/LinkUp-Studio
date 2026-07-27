@@ -5,14 +5,12 @@ import { endOfMonth, endOfWeek, format, startOfMonth, startOfWeek } from "date-f
 import {
   Award,
   BadgeDollarSign,
-  Boxes,
   BriefcaseBusiness,
   CheckCircle2,
   ClipboardCheck,
   Clock3,
   FileCheck2,
   History,
-  Package,
   RotateCcw,
   Scissors,
   Search,
@@ -49,10 +47,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
+import { useCurrentTenant, useTenantAccess } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
+import { hasAccessPermission } from "@/lib/access-control";
 import {
   adjustmentLabels,
+  commissionRemaining,
   commissionStatusLabel,
   initials,
   normalizeSearch,
@@ -78,7 +78,6 @@ type ProfessionalOverview = {
   professional: ProfessionalSummary;
   entries: CommissionEntry[];
   servicesCount: number;
-  productsCount: number;
   revenue: number;
   generated: number;
   pending: number;
@@ -89,8 +88,8 @@ const db = supabase as any;
 
 function ComissoesPage() {
   const tenantId = useCurrentTenant().data?.id;
-  const { data: role } = useUserRole(tenantId);
-  const canManage = role === "owner" || role === "staff";
+  const { data: access } = useTenantAccess();
+  const canManage = hasAccessPermission(access, "commissions");
   const queryClient = useQueryClient();
   const today = new Date();
   const [from, setFrom] = useState(format(startOfMonth(today), "yyyy-MM-dd"));
@@ -107,17 +106,16 @@ function ComissoesPage() {
   );
 
   const { data: professionals = [], isLoading: professionalsLoading } = useQuery({
-    queryKey: ["commission-professionals", tenantId, role],
-    enabled: !!tenantId && !!role,
+    queryKey: ["commission-professionals", tenantId, access?.professionalId, canManage],
+    enabled: !!tenantId && !!access,
     queryFn: async () => {
       let query = db
         .from("professionals")
         .select("id,full_name,photo_url,role_label,active,commission_pct,cost_center_id")
         .eq("tenant_id", tenantId)
         .eq("active", true);
-      if (role === "barber") {
-        const { data: userResult } = await supabase.auth.getUser();
-        query = query.eq("auth_user_id", userResult.user?.id ?? "");
+      if (!canManage) {
+        query = query.eq("id", access?.professionalId ?? "");
       }
       const { data, error } = await query.order("full_name");
       if (error) throw error;
@@ -237,29 +235,20 @@ function ComissoesPage() {
       ).data ?? []) as CatalogItem[],
   });
 
-  const { data: products = [] } = useQuery({
-    queryKey: ["commission-products", tenantId],
-    enabled: !!tenantId && canManage,
-    queryFn: async () =>
-      ((
-        await db
-          .from("products")
-          .select("id,name,price,active")
-          .eq("tenant_id", tenantId)
-          .eq("active", true)
-          .order("name")
-      ).data ?? []) as CatalogItem[],
-  });
+  const serviceEntries = useMemo(
+    () => entries.filter((entry) => entry.item_kind === "service"),
+    [entries],
+  );
 
   const filteredEntries = useMemo(
     () =>
-      entries.filter(
+      serviceEntries.filter(
         (entry) =>
           entry.competence_date >= from &&
           entry.competence_date <= to &&
           (professionalFilter === "all" || entry.professional_id === professionalFilter),
       ),
-    [entries, from, professionalFilter, to],
+    [from, professionalFilter, serviceEntries, to],
   );
 
   const professionalSummaries = useMemo(
@@ -269,7 +258,7 @@ function ComissoesPage() {
           const professionalEntries = filteredEntries.filter(
             (entry) => entry.professional_id === professional.id,
           );
-          const allProfessionalEntries = entries.filter(
+          const allProfessionalEntries = serviceEntries.filter(
             (entry) => entry.professional_id === professional.id,
           );
           const paidSettlements = settlements.filter(
@@ -279,14 +268,10 @@ function ComissoesPage() {
           const servicesCount = professionalEntries
             .filter((entry) => entry.item_kind === "service")
             .reduce((total, entry) => total + numberValue(entry.quantity), 0);
-          const productsCount = professionalEntries
-            .filter((entry) => entry.item_kind === "product")
-            .reduce((total, entry) => total + numberValue(entry.quantity), 0);
           return {
             professional,
             entries: professionalEntries,
             servicesCount,
-            productsCount,
             revenue: professionalEntries.reduce(
               (total, entry) => total + numberValue(entry.gross_amount),
               0,
@@ -297,7 +282,7 @@ function ComissoesPage() {
             ),
             pending: allProfessionalEntries
               .filter((entry) => entry.status === "pending" || entry.status === "scheduled")
-              .reduce((total, entry) => total + numberValue(entry.commission_amount), 0),
+              .reduce((total, entry) => total + commissionRemaining(entry), 0),
             lastPayment: paidSettlements[0]?.payment_date ?? paidSettlements[0]?.paid_at ?? null,
           };
         })
@@ -305,23 +290,25 @@ function ComissoesPage() {
           normalizeSearch(professional.full_name).includes(normalizeSearch(search)),
         )
         .sort((a, b) => b.pending - a.pending),
-    [entries, filteredEntries, professionals, search, settlements],
+    [filteredEntries, professionals, search, serviceEntries, settlements],
   );
 
   const pendingEntries = filteredEntries.filter(
-    (entry) => entry.status === "pending" || entry.status === "scheduled",
+    (entry) =>
+      (entry.status === "pending" || entry.status === "scheduled") &&
+      commissionRemaining(entry) > 0,
   );
-  const paidEntries = filteredEntries.filter((entry) => entry.status === "paid");
   const totalGenerated = filteredEntries.reduce(
     (total, entry) => total + numberValue(entry.commission_amount),
     0,
   );
-  const totalPaid = paidEntries.reduce(
-    (total, entry) => total + numberValue(entry.commission_amount),
+  const totalPaid = filteredEntries.reduce(
+    (total, entry) => total + numberValue(entry.paid_amount),
     0,
   );
+  const paidEntries = filteredEntries.filter((entry) => entry.status === "paid");
   const totalPending = pendingEntries.reduce(
-    (total, entry) => total + numberValue(entry.commission_amount),
+    (total, entry) => total + commissionRemaining(entry),
     0,
   );
   const professionalsWithBalance = professionalSummaries.filter((item) => item.pending > 0);
@@ -330,7 +317,6 @@ function ComissoesPage() {
     ? totalGenerated / professionalSummaries.length
     : 0;
   const serviceCount = filteredEntries.filter((entry) => entry.item_kind === "service").length;
-  const productCount = filteredEntries.filter((entry) => entry.item_kind === "product").length;
   const loading =
     professionalsLoading || entriesLoading || settlementsLoading || adjustmentsLoading;
   const auditUserById = useMemo(
@@ -545,7 +531,7 @@ function ComissoesPage() {
                         <div className="min-w-0">
                           <span className="font-medium">{summary.professional.full_name}</span>
                           <span className="ml-2 text-xs text-muted-foreground">
-                            {summary.servicesCount} serviços · {summary.productsCount} produtos
+                            {summary.servicesCount} serviços
                           </span>
                         </div>
                         <span className="shrink-0 font-semibold">{brl(summary.generated)}</span>
@@ -566,12 +552,6 @@ function ComissoesPage() {
                 value={String(serviceCount)}
                 hint="Itens de serviço no período"
                 icon={Scissors}
-              />
-              <MetricCard
-                title="Produtos comissionados"
-                value={String(productCount)}
-                hint="Itens de produto no período"
-                icon={Package}
               />
               <Card>
                 <CardContent className="p-4 text-sm leading-relaxed text-muted-foreground">
@@ -773,7 +753,6 @@ function ComissoesPage() {
               tenantId={tenantId}
               professionals={professionals}
               services={services}
-              products={products}
               rules={rules}
               onDone={refresh}
             />
@@ -868,10 +847,7 @@ function ProfessionalCard({
           <InfoCell label="Saldo a pagar" value={brl(summary.pending)} strong />
           <InfoCell label="Comissão no período" value={brl(summary.generated)} />
           <InfoCell label="Valor faturado" value={brl(summary.revenue)} />
-          <InfoCell
-            label="Serviços / produtos"
-            value={`${summary.servicesCount} / ${summary.productsCount}`}
-          />
+          <InfoCell label="Serviços realizados" value={String(summary.servicesCount)} />
         </div>
         <div className="flex items-center justify-between gap-2 p-3">
           <span className="text-xs text-muted-foreground">
@@ -920,9 +896,10 @@ function ProfessionalDetails({
   onOpenChange: (open: boolean) => void;
 }) {
   if (!professional) return null;
-  const professionalEntries = entries.filter((entry) => entry.professional_id === professional.id);
+  const professionalEntries = entries.filter(
+    (entry) => entry.professional_id === professional.id && entry.item_kind === "service",
+  );
   const serviceEntries = professionalEntries.filter((entry) => entry.item_kind === "service");
-  const productEntries = professionalEntries.filter((entry) => entry.item_kind === "product");
   const professionalSettlements = settlements.filter(
     (settlement) => settlement.professional_id === professional.id,
   );
@@ -931,7 +908,7 @@ function ProfessionalDetails({
   );
   const pending = professionalEntries
     .filter((entry) => entry.status === "pending" || entry.status === "scheduled")
-    .reduce((total, entry) => total + numberValue(entry.commission_amount), 0);
+    .reduce((total, entry) => total + commissionRemaining(entry), 0);
   const generated = professionalEntries.reduce(
     (total, entry) => total + numberValue(entry.commission_amount),
     0,
@@ -968,7 +945,6 @@ function ProfessionalDetails({
         <Tabs defaultValue="servicos" className="mt-5 space-y-4">
           <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
             <TabsTrigger value="servicos">Serviços ({serviceEntries.length})</TabsTrigger>
-            <TabsTrigger value="produtos">Produtos ({productEntries.length})</TabsTrigger>
             <TabsTrigger value="ajustes">Ajustes ({professionalAdjustments.length})</TabsTrigger>
             <TabsTrigger value="pagamentos">
               Pagamentos ({professionalSettlements.length})
@@ -979,13 +955,6 @@ function ProfessionalDetails({
             <CommissionEntryHistory
               entries={serviceEntries}
               emptyText="Nenhum serviço comissionado."
-            />
-          </TabsContent>
-
-          <TabsContent value="produtos">
-            <CommissionEntryHistory
-              entries={productEntries}
-              emptyText="Nenhum produto comissionado."
             />
           </TabsContent>
 
@@ -1110,7 +1079,7 @@ function CommissionEntryHistory({
             <div className="shrink-0 text-right">
               <div className="font-semibold">{brl(entry.commission_amount)}</div>
               <div className="text-xs text-muted-foreground">
-                {commissionStatusLabel(entry.status)}
+                {commissionStatusLabel(entry.status)} · Pago {brl(entry.paid_amount)} · Saldo {brl(commissionRemaining(entry))}
               </div>
             </div>
           </div>
@@ -1125,14 +1094,12 @@ function CommissionRulesPanel({
   tenantId,
   professionals,
   services,
-  products,
   rules,
   onDone,
 }: {
   tenantId?: string;
   professionals: ProfessionalSummary[];
   services: CatalogItem[];
-  products: CatalogItem[];
   rules: CommissionRule[];
   onDone: () => void;
 }) {
@@ -1192,6 +1159,14 @@ function CommissionRulesPanel({
       : await db.from("commission_rules").insert(payload);
     setBusyKey("");
     if (error) return toast.error(error.message);
+    if (scope === "professional" && kind === "service" && professionalId) {
+      const { error: professionalError } = await db
+        .from("professionals")
+        .update({ commission_pct: percentage })
+        .eq("tenant_id", tenantId)
+        .eq("id", professionalId);
+      if (professionalError) return toast.error(professionalError.message);
+    }
     toast.success("Regra de comissão atualizada.");
     onDone();
   }
@@ -1236,19 +1211,6 @@ function CommissionRulesPanel({
                 })
               }
             />
-            <RuleInputRow
-              label="Produtos"
-              initialValue={getRule("company", "product")?.percentage ?? 0}
-              busy={busyKey === "company-product"}
-              onSave={(percentage) =>
-                saveRule({
-                  scope: "company",
-                  kind: "product",
-                  percentage,
-                  key: "company-product",
-                })
-              }
-            />
           </CardContent>
         </Card>
 
@@ -1283,23 +1245,6 @@ function CommissionRulesPanel({
                       })
                     }
                   />
-                  <RuleInputRow
-                    compact
-                    label="Produtos"
-                    initialValue={
-                      getRule("professional", "product", professional.id)?.percentage ?? 0
-                    }
-                    busy={busyKey === `${professional.id}-product`}
-                    onSave={(percentage) =>
-                      saveRule({
-                        scope: "professional",
-                        kind: "product",
-                        professionalId: professional.id,
-                        percentage,
-                        key: `${professional.id}-product`,
-                      })
-                    }
-                  />
                 </div>
               </div>
             ))}
@@ -1307,7 +1252,7 @@ function CommissionRulesPanel({
         </Card>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid gap-5">
         <CatalogRules
           title="Comissão específica por serviço"
           icon={Scissors}
@@ -1322,23 +1267,6 @@ function CommissionRulesPanel({
               referenceId: item.id,
               percentage,
               key: `service-${item.id}`,
-            })
-          }
-        />
-        <CatalogRules
-          title="Comissão específica por produto"
-          icon={Boxes}
-          items={products}
-          kind="product"
-          getRule={(id) => getRule("item", "product", undefined, id)}
-          busyKey={busyKey}
-          onSave={(item, percentage) =>
-            saveRule({
-              scope: "item",
-              kind: "product",
-              referenceId: item.id,
-              percentage,
-              key: `product-${item.id}`,
             })
           }
         />

@@ -12,7 +12,6 @@ import {
   ArrowRight,
   Building2,
   CalendarCheck2,
-  CheckCircle2,
   CreditCard,
   Eye,
   EyeOff,
@@ -307,14 +306,6 @@ function LoginForm({
           </>
         )}
       </Button>
-
-      <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4 text-sm text-emerald-950">
-        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-        <p className="leading-5">
-          O mesmo acesso identifica automaticamente se você entra como matriz, salão ou usuário da
-          operação.
-        </p>
-      </div>
 
       <div className="border-t border-slate-200 pt-5 text-center text-sm text-slate-600">
         Ainda não tem acesso?{" "}

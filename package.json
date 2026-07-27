@@ -9,6 +9,9 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "test:access-control": "node --experimental-strip-types scripts/test-access-control.ts",
+    "test:access-security": "node --experimental-strip-types scripts/test-access-security.ts",
+    "test:commission-finance": "node --experimental-strip-types scripts/test-commission-finance.ts",
     "format": "prettier --write ."
   },
   "dependencies": {

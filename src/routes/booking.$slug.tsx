@@ -69,8 +69,8 @@ import {
 import {
   bookingWeekdayFromDate,
   DEFAULT_BOOKING_WORK_DAYS,
+  getBookingWeekdayAccess,
   includesBookingWeekday,
-  isVipExclusiveBookingDay,
 } from "@/lib/booking-weekdays";
 
 export const Route = createFileRoute("/booking/$slug")({
@@ -1527,15 +1527,18 @@ function BookingPage() {
                         const dStr = format(d, "yyyy-MM-dd");
                         if (dStr < todayStr) return true;
 
-                        // Check weekly day off. Accepts both legacy 0=Dom and current 7=Dom.
+                        // General operating days are available to every customer.
+                        // In strict mode, VIP customers may also use VIP-only days.
                         const normalizedDay = bookingWeekdayFromDate(d);
-                        if (
-                          !includesBookingWeekday(
-                            settings?.work_days,
-                            normalizedDay,
-                            DEFAULT_BOOKING_WORK_DAYS,
-                          )
-                        ) {
+                        const vipMode = settings?.vip_mode ?? "strict";
+                        const bookingDayAccess = getBookingWeekdayAccess({
+                          workDays: settings?.work_days,
+                          vipDays: settings?.vip_days,
+                          vipMode,
+                          isVip,
+                          weekday: normalizedDay,
+                        });
+                        if (!bookingDayAccess.allowed) {
                           return true;
                         }
 
@@ -1584,20 +1587,6 @@ function BookingPage() {
                           if (fullDayOff) return true;
                         }
 
-                        // Non-VIP customers use work_days only (VIP days don't restrict them).
-                        // VIP customers in strict mode are limited to vip_days.
-                        const vipMode = settings?.vip_mode ?? "strict";
-                        if (
-                          vipMode === "strict" &&
-                          isVip &&
-                          !includesBookingWeekday(
-                            settings?.vip_days,
-                            normalizedDay,
-                            settings?.work_days ?? DEFAULT_BOOKING_WORK_DAYS,
-                          )
-                        ) {
-                          return true;
-                        }
                         return false;
                       }}
                       locale={ptBR}

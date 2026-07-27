@@ -1,6 +1,7 @@
 import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAuthUser, getAuthUser } from "@/lib/auth-cache";
+import type { AccessProfile } from "@/lib/access-control";
 
 export type Tenant = {
   id: string;
@@ -21,7 +22,7 @@ export type Tenant = {
   billing_blocked_at: string | null;
 };
 
-type TenantAccessRole = {
+export type TenantAccessRole = {
   tenant_id: string | null;
   role: string;
 };
@@ -33,6 +34,13 @@ export type TenantAccess = {
   isSuperAdmin: boolean;
   profileFullName: string | null;
   userId: string | null;
+  professionalId: string | null;
+  accessProfile: AccessProfile | null;
+  accessPermissions: string[];
+  availableForBooking: boolean | null;
+  showOnBooking: boolean | null;
+  mustChangePassword: boolean;
+  receiveOperationalNotifications: boolean;
 };
 
 export const tenantAccessQueryKey = ["current-tenant"] as const;
@@ -45,6 +53,13 @@ const emptyAccess: TenantAccess = {
   isSuperAdmin: false,
   profileFullName: null,
   userId: null,
+  professionalId: null,
+  accessProfile: null,
+  accessPermissions: [],
+  availableForBooking: null,
+  showOnBooking: null,
+  mustChangePassword: false,
+  receiveOperationalNotifications: false,
 };
 
 const tenantSelect =
@@ -81,12 +96,36 @@ async function fetchTenantAccess(userId?: string | null): Promise<TenantAccess> 
     };
   }
 
-  const { data: tenant, error: tenantError } = await supabase
-    .from("tenants")
-    .select(tenantSelect)
-    .eq("id", tenantId)
-    .maybeSingle();
+  const [tenantResult, professionalResult] = await Promise.all([
+    supabase.from("tenants").select(tenantSelect).eq("id", tenantId).maybeSingle(),
+    supabase
+      .from("professionals")
+      .select(
+        "id,access_profile,access_permissions,available_for_booking,show_on_booking,must_change_password,receive_operational_notifications",
+      )
+      .eq("tenant_id", tenantId)
+      .eq("auth_user_id", resolvedUserId)
+      .eq("active", true)
+      .maybeSingle(),
+  ]);
+  const { data: tenant, error: tenantError } = tenantResult;
   if (tenantError) throw tenantError;
+  if (professionalResult.error) throw professionalResult.error;
+  const professional = professionalResult.data;
+
+  const hasTenantMembership =
+    isSuperAdmin ||
+    roles.some((role) => role.tenant_id === tenantId) ||
+    Boolean(professional);
+  if (!hasTenantMembership) {
+    return {
+      ...emptyAccess,
+      roles,
+      isSuperAdmin,
+      profileFullName: profileResult.data?.full_name ?? null,
+      userId: resolvedUserId,
+    };
+  }
 
   return {
     tenant: (tenant as Tenant | null) ?? null,
@@ -95,6 +134,16 @@ async function fetchTenantAccess(userId?: string | null): Promise<TenantAccess> 
     isSuperAdmin,
     profileFullName: profileResult.data?.full_name ?? null,
     userId: resolvedUserId,
+    professionalId: professional?.id ?? null,
+    accessProfile: (professional?.access_profile as AccessProfile | null) ?? null,
+    accessPermissions: Array.isArray(professional?.access_permissions)
+      ? professional.access_permissions
+      : [],
+    availableForBooking: professional?.available_for_booking ?? null,
+    showOnBooking: professional?.show_on_booking ?? null,
+    mustChangePassword: professional?.must_change_password === true,
+    receiveOperationalNotifications:
+      professional?.receive_operational_notifications === true,
   };
 }
 

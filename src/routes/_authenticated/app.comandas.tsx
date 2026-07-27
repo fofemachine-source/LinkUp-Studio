@@ -387,29 +387,34 @@ function FrenteDeCaixaPage() {
             </p>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="flex h-10 items-center rounded-lg border bg-background">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <div className="grid h-11 w-full grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center overflow-hidden rounded-xl border bg-background shadow-sm sm:h-10 sm:w-auto sm:grid-cols-[2.5rem_11rem_2.5rem]">
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9"
+                className="h-full w-full rounded-none"
                 onClick={() => setDate(addDays(date, -1))}
                 aria-label="Dia anterior"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <Input
-                type="date"
-                value={format(date, "yyyy-MM-dd")}
-                onChange={(event) =>
-                  event.target.value && setDate(new Date(`${event.target.value}T12:00:00`))
-                }
-                className="h-9 w-[145px] border-0 px-2 text-center shadow-none focus-visible:ring-0"
-              />
+              <label className="relative flex h-full min-w-0 cursor-pointer items-center justify-center gap-2 border-x px-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted/60">
+                <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
+                <span className="min-w-0 truncate">{format(date, "dd/MM/yyyy")}</span>
+                <Input
+                  type="date"
+                  value={format(date, "yyyy-MM-dd")}
+                  onChange={(event) =>
+                    event.target.value && setDate(new Date(`${event.target.value}T12:00:00`))
+                  }
+                  aria-label="Selecionar data da comanda"
+                  className="absolute inset-0 h-full w-full cursor-pointer border-0 p-0 opacity-0"
+                />
+              </label>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9"
+                className="h-full w-full rounded-none"
                 onClick={() => setDate(addDays(date, 1))}
                 aria-label="Próximo dia"
               >
@@ -419,7 +424,7 @@ function FrenteDeCaixaPage() {
 
             <Dialog open={newOpen} onOpenChange={setNewOpen}>
               <DialogTrigger asChild>
-                <Button className="h-10 whitespace-nowrap px-5">
+                <Button className="h-11 w-full whitespace-nowrap px-5 sm:h-10 sm:w-auto">
                   <Plus className="mr-2 h-4 w-4" />
                   Nova comanda
                 </Button>

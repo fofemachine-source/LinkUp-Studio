@@ -7,14 +7,17 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleDollarSign,
+  Copy,
   Clock3,
   Filter,
+  MessageCircle,
   RefreshCw,
   Timer,
   Users,
   WalletCards,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +32,7 @@ type MobileCommandCenterProps = {
   periodLabel: string;
   filtersContent: ReactNode;
   onRefresh: () => void;
+  bookingLink?: string;
 };
 
 type MobileAgendaItem = {
@@ -81,12 +85,31 @@ export function MobileCommandCenter({
   periodLabel,
   filtersContent,
   onRefresh,
+  bookingLink,
 }: MobileCommandCenterProps) {
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [bookingCopied, setBookingCopied] = useState(false);
   const operation = data?.todayOperation;
   const nextAppointment = data?.smartAgenda?.[0] ?? null;
   const upcomingAppointments = data?.smartAgenda?.slice(1, 5) ?? [];
   const alerts = data?.mobileAlerts ?? data?.alerts ?? [];
+
+  async function copyBookingLink() {
+    if (!bookingLink) {
+      toast.error("Link de agendamento indisponível agora.");
+      return;
+    }
+
+    const shareText = `Agende seu horário pelo LinkUp Studio: ${bookingLink}`;
+    try {
+      await navigator.clipboard.writeText(shareText);
+      setBookingCopied(true);
+      toast.success("Link copiado para compartilhar no WhatsApp.");
+      window.setTimeout(() => setBookingCopied(false), 2200);
+    } catch {
+      toast.error("Não foi possível copiar o link neste navegador.");
+    }
+  }
 
   return (
     <div className="-mx-3 space-y-4 pb-4">
@@ -118,6 +141,34 @@ export function MobileCommandCenter({
           <ChevronRight className="h-4 w-4" />
         </Link>
       </Button>
+
+      {bookingLink ? (
+        <section className={`${cardClass} p-4`}>
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+              <MessageCircle className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+                Link de agendamento
+              </p>
+              <p className="mt-1 truncate text-sm font-medium">{bookingLink}</p>
+              <p className="mt-1 text-xs leading-snug text-muted-foreground">
+                Copie para enviar no WhatsApp e divulgar a vitrine do salão.
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={copyBookingLink}
+            className="mt-3 h-11 w-full rounded-xl"
+          >
+            <Copy className="mr-2 h-4 w-4" />
+            {bookingCopied ? "Link copiado" : "Copiar link"}
+          </Button>
+        </section>
+      ) : null}
 
       <section className={cardClass}>
         <SectionHeading

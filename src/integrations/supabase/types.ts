@@ -2298,6 +2298,47 @@ export type Database = {
           },
         ]
       }
+      staff_positions: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          sort_order: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_positions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       professional_time_off: {
         Row: {
           all_day: boolean
@@ -2360,8 +2401,11 @@ export type Database = {
       }
       professionals: {
         Row: {
+          access_permissions: string[]
+          access_profile: string
           active: boolean | null
           auth_user_id: string | null
+          available_for_booking: boolean
           blocked_dates: string[] | null
           commission_pct: number | null
           cost_center_id: string | null
@@ -2372,15 +2416,22 @@ export type Database = {
           lunch_end: string | null
           lunch_start: string | null
           photo_url: string | null
+          position_id: string | null
+          receive_operational_notifications: boolean
           role_label: string | null
+          show_on_booking: boolean
           specialty: string | null
           tenant_id: string
+          must_change_password: boolean
           whatsapp: string | null
           work_days: number[] | null
         }
         Insert: {
+          access_permissions?: string[]
+          access_profile?: string
           active?: boolean | null
           auth_user_id?: string | null
+          available_for_booking?: boolean
           blocked_dates?: string[] | null
           commission_pct?: number | null
           cost_center_id?: string | null
@@ -2391,15 +2442,22 @@ export type Database = {
           lunch_end?: string | null
           lunch_start?: string | null
           photo_url?: string | null
+          position_id?: string | null
+          receive_operational_notifications?: boolean
           role_label?: string | null
+          show_on_booking?: boolean
           specialty?: string | null
           tenant_id: string
+          must_change_password?: boolean
           whatsapp?: string | null
           work_days?: number[] | null
         }
         Update: {
+          access_permissions?: string[]
+          access_profile?: string
           active?: boolean | null
           auth_user_id?: string | null
+          available_for_booking?: boolean
           blocked_dates?: string[] | null
           commission_pct?: number | null
           cost_center_id?: string | null
@@ -2410,9 +2468,13 @@ export type Database = {
           lunch_end?: string | null
           lunch_start?: string | null
           photo_url?: string | null
+          position_id?: string | null
+          receive_operational_notifications?: boolean
           role_label?: string | null
+          show_on_booking?: boolean
           specialty?: string | null
           tenant_id?: string
+          must_change_password?: boolean
           whatsapp?: string | null
           work_days?: number[] | null
         }
@@ -2422,6 +2484,13 @@ export type Database = {
             columns: ["cost_center_id"]
             isOneToOne: false
             referencedRelation: "cost_centers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "professionals_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "staff_positions"
             referencedColumns: ["id"]
           },
           {
@@ -3878,6 +3947,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_tenant_operational_settings: {
+        Args: { p_tenant_id: string }
+        Returns: Json
+      }
       apply_platform_billing_charge_state: {
         Args: {
           p_bank_slip_url?: string

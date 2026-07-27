@@ -17,6 +17,8 @@ type SupabaseMutationValues = Record<string, unknown> | Record<string, unknown>[
 export type DynamicSupabaseQuery<T> = PromiseLike<SupabaseResult<T>> & {
   select(columns?: string): DynamicSupabaseQuery<T>;
   eq(column: string, value: unknown): DynamicSupabaseQuery<T>;
+  is(column: string, value: null | boolean): DynamicSupabaseQuery<T>;
+  gte(column: string, value: unknown): DynamicSupabaseQuery<T>;
   in(column: string, values: readonly unknown[]): DynamicSupabaseQuery<T>;
   order(column: string, options?: { ascending?: boolean }): DynamicSupabaseQuery<T>;
   limit(count: number): DynamicSupabaseQuery<T>;
