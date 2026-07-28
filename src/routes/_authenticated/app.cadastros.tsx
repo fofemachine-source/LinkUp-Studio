@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useCurrentTenant, useTenantAccess } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Users, Scissors, Sparkles, Package, UserCog, KeyRound, ImageIcon, BriefcaseBusiness, ShieldCheck, CalendarCheck, Eye, EyeOff, BellRing } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Scissors, Sparkles, Package, UserCog, KeyRound, ImageIcon, BriefcaseBusiness, ShieldCheck, CalendarCheck, Eye, EyeOff, BellRing, ChevronRight, Clock3 } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { brl, cpfMask } from "@/lib/format";
@@ -60,13 +60,13 @@ function CadastrosPage() {
         <p className="text-muted-foreground">Clientes, profissionais, serviços, produtos e usuários.</p>
       </div>
       <Tabs defaultValue={initialTab}>
-        <TabsList className="flex w-full overflow-x-auto justify-start max-w-3xl h-auto p-1 gap-1 scrollbar-none bg-muted/40">
-          {canClients && <TabsTrigger value="clients" className="whitespace-nowrap"><Users className="h-4 w-4 mr-2" />Clientes</TabsTrigger>}
-          {canManageStaff && <TabsTrigger value="pros" className="whitespace-nowrap"><Scissors className="h-4 w-4 mr-2" />Profissionais</TabsTrigger>}
-          {canManageStaff && <TabsTrigger value="positions" className="whitespace-nowrap"><BriefcaseBusiness className="h-4 w-4 mr-2" />Cargos</TabsTrigger>}
-          {canServices && <TabsTrigger value="services" className="whitespace-nowrap"><Sparkles className="h-4 w-4 mr-2" />Serviços</TabsTrigger>}
-          {canProducts && <TabsTrigger value="products" className="whitespace-nowrap"><Package className="h-4 w-4 mr-2" />Produtos</TabsTrigger>}
-          {canManageStaff && <TabsTrigger value="users" className="whitespace-nowrap"><UserCog className="h-4 w-4 mr-2" />Usuários</TabsTrigger>}
+        <TabsList className="grid h-auto w-full max-w-3xl grid-cols-2 gap-1 bg-muted/40 p-1 sm:flex sm:justify-start sm:overflow-x-auto scrollbar-none">
+          {canClients && <TabsTrigger value="clients" className="min-w-0 justify-start text-xs sm:text-sm"><Users className="h-4 w-4 mr-2 shrink-0" />Clientes</TabsTrigger>}
+          {canManageStaff && <TabsTrigger value="pros" className="min-w-0 justify-start text-xs sm:text-sm"><Scissors className="h-4 w-4 mr-2 shrink-0" />Profissionais</TabsTrigger>}
+          {canManageStaff && <TabsTrigger value="positions" className="min-w-0 justify-start text-xs sm:text-sm"><BriefcaseBusiness className="h-4 w-4 mr-2 shrink-0" />Cargos</TabsTrigger>}
+          {canServices && <TabsTrigger value="services" className="min-w-0 justify-start text-xs sm:text-sm"><Sparkles className="h-4 w-4 mr-2 shrink-0" />Serviços</TabsTrigger>}
+          {canProducts && <TabsTrigger value="products" className="min-w-0 justify-start text-xs sm:text-sm"><Package className="h-4 w-4 mr-2 shrink-0" />Produtos</TabsTrigger>}
+          {canManageStaff && <TabsTrigger value="users" className="min-w-0 justify-start text-xs sm:text-sm"><UserCog className="h-4 w-4 mr-2 shrink-0" />Usuários</TabsTrigger>}
         </TabsList>
         {canClients && <TabsContent value="clients"><ClientsTab /></TabsContent>}
         {canManageStaff && <TabsContent value="pros"><ProsTab /></TabsContent>}
@@ -206,11 +206,36 @@ function ClientsTab() {
   }
 
   return (
-    <Card className="premium-card"><CardContent className="p-6 space-y-4">
-      <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} clientes</h3>
+    <Card className="premium-card"><CardContent className="space-y-4 p-4 sm:p-6">
+      <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">{data?.length ?? 0} clientes</h3><p className="text-xs text-muted-foreground sm:text-sm">Toque em um cadastro para editar, liberar acesso ou revisar dados.</p></div>
         <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />Novo</Button></DialogTrigger>
           <ClientDialog key={edit?.id ?? "new"} client={edit} tenantId={tenantId} onDone={()=>{setOpen(false); setEdit(null); qc.invalidateQueries({queryKey:["clients"]});}}/></Dialog></div>
-      <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
+      <div className="space-y-3 md:hidden">
+        {(data ?? []).map((c: any) => (
+          <div key={c.id} className="rounded-2xl border bg-background p-4 shadow-sm">
+            <button type="button" className="flex w-full items-start gap-3 text-left" onClick={()=>{setEdit(c);setOpen(true);}}>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-sm font-bold text-primary">
+                {String(c.full_name ?? "C").split(" ").map((part:string)=>part[0]).filter(Boolean).slice(0,2).join("").toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="truncate font-semibold">{c.full_name}</p>
+                  {c.is_subscriber && <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-700">VIP</span>}
+                </div>
+                <p className="truncate text-sm text-muted-foreground">{c.whatsapp || "WhatsApp não informado"}</p>
+                <p className="truncate text-xs text-muted-foreground">{c.email || "E-mail não informado"}</p>
+              </div>
+              <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground" />
+            </button>
+            <div className="mt-3 flex gap-2 border-t pt-3">
+              <Button size="sm" variant="outline" className="flex-1" disabled={issuingAccessCodeFor === c.id} onClick={()=>issueAccessCode(c)}><KeyRound className="mr-2 h-4 w-4"/>Acesso</Button>
+              <Button size="sm" variant="outline" className="flex-1" onClick={()=>{setEdit(c);setOpen(true);}}><Pencil className="mr-2 h-4 w-4"/>Editar</Button>
+              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={async()=>{if(confirm("Excluir?")){await supabase.from("clients").delete().eq("id",c.id);qc.invalidateQueries({queryKey:["clients"]});}}}><Trash2 className="h-4 w-4"/></Button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto -mx-6 px-6 md:mx-0 md:block md:px-0">
         <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>CPF</TableHead><TableHead>WhatsApp</TableHead><TableHead>Email</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
           <TableBody>{(data ?? []).map((c: any) => (
             <TableRow key={c.id}><TableCell className="font-medium whitespace-nowrap">{c.full_name}</TableCell><TableCell className="whitespace-nowrap">{c.cpf ? cpfMask(c.cpf) : "—"}</TableCell><TableCell className="whitespace-nowrap">{c.whatsapp}</TableCell><TableCell className="text-muted-foreground whitespace-nowrap">{c.email}</TableCell>
@@ -1352,7 +1377,7 @@ function ServicesTab() {
     toast.success("Categoria excluÃ­da.");
     qc.invalidateQueries({ queryKey: ["service-categories", tenantId] });
   };
-  return (<Card className="premium-card"><CardContent className="p-6 space-y-5">
+  return (<Card className="premium-card"><CardContent className="space-y-5 p-4 sm:p-6">
     <div className="rounded-2xl border bg-muted/10 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -1408,7 +1433,51 @@ function ServicesTab() {
             qc.invalidateQueries({queryKey:["services-all", tenantId]});
           }}
         /></Dialog></div>
-    <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
+    <div className="space-y-3 md:hidden">
+      {services.length === 0 ? (
+        <div className="rounded-2xl border border-dashed bg-background/70 p-5 text-center text-sm text-muted-foreground">
+          Nenhum serviço cadastrado ainda. Toque em Novo para criar o primeiro.
+        </div>
+      ) : (
+        services.map((s: any) => (
+          <div key={s.id} className="rounded-3xl border bg-background p-3 shadow-sm">
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 text-left"
+              onClick={()=>{setEdit(s);setOpen(true);}}
+            >
+              {s.image_url ? (
+                <img src={s.image_url} alt="" className="h-16 w-16 shrink-0 rounded-2xl object-cover" loading="lazy" />
+              ) : (
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                  <ImageIcon className="h-5 w-5" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start gap-2">
+                  <p className="line-clamp-2 font-semibold leading-tight">{s.name}</p>
+                  {s.vip_only && <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">VIP</span>}
+                </div>
+                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                  <Clock3 className="h-3.5 w-3.5" />
+                  <span>{s.duration_min ?? 0} min</span>
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <span className="rounded-2xl bg-primary/10 px-3 py-1 text-sm font-bold text-primary">{brl(s.price)}</span>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </button>
+            {s.description && <p className="mt-3 line-clamp-2 border-t pt-3 text-xs text-muted-foreground">{s.description}</p>}
+            <div className="mt-3 flex gap-2 border-t pt-3">
+              <Button size="sm" variant="outline" className="flex-1" onClick={()=>{setEdit(s);setOpen(true);}}><Pencil className="mr-2 h-4 w-4"/>Editar</Button>
+              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={async()=>{if(confirm("Deseja realmente excluir este serviço?")){await supabase.from("services").delete().eq("id",s.id);qc.invalidateQueries({queryKey:["services-all", tenantId]});toast.success("Serviço excluído!");}}}><Trash2 className="mr-2 h-4 w-4"/>Excluir</Button>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+    <div className="hidden overflow-x-auto -mx-6 px-6 md:mx-0 md:block md:px-0">
       <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Categoria</TableHead><TableHead>Preço</TableHead><TableHead>Duração</TableHead><TableHead>Ordem</TableHead><TableHead>VIP</TableHead><TableHead></TableHead></TableRow></TableHeader>
         <TableBody>{services.map((s:any) => (
           <TableRow key={s.id}><TableCell className="font-medium whitespace-nowrap">
@@ -1564,7 +1633,7 @@ function ServiceDialog({ svc, tenantId, categories = [], onDone }: any) {
     toast.success("Salvo"); onDone();
   }
   return (<>
-  <DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{svc?"Editar":"Novo"} serviço</DialogTitle></DialogHeader>
+  <DialogContent className="max-h-[92svh] w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{svc?"Editar":"Novo"} serviço</DialogTitle></DialogHeader>
     <div className="space-y-3">
       <div><Label>Nome</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></div>
       <div><Label>Descrição</Label><Textarea rows={3} value={f.description} onChange={e=>setF({...f,description:e.target.value})} placeholder="Explique rapidamente o que está incluso neste serviço." /></div>
@@ -1589,14 +1658,14 @@ function ServiceDialog({ svc, tenantId, categories = [], onDone }: any) {
         )}
         <p className="mt-1 text-xs text-muted-foreground">As categorias cadastradas aqui aparecem agrupando os serviços na vitrine.</p>
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid gap-3 sm:grid-cols-3">
         <div><Label>Preço</Label><Input type="text" inputMode="numeric" value={f.price} onChange={e=>setF({...f,price:formatCurrencyInput(e.target.value)})} placeholder="Digite o valor"/></div>
         <div><Label>Duração (min)</Label><Input type="number" value={f.duration_min} onChange={e=>setF({...f,duration_min:Number(e.target.value)})}/></div>
         <div><Label>Ordem</Label><Input type="number" value={f.display_order} onChange={e=>setF({...f,display_order:e.target.value === "" ? "" : Number(e.target.value)})} placeholder="Opcional"/></div>
       </div>
       <div className="rounded-xl border bg-muted/20 p-3">
         <Label>Imagem do serviço (opcional)</Label>
-        <div className="mt-3 flex items-center gap-3">
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
           {previewUrl ? (
             <img src={previewUrl} alt="Prévia do serviço" className="h-20 w-24 rounded-xl object-cover" />
           ) : (
@@ -1619,7 +1688,7 @@ function ServiceDialog({ svc, tenantId, categories = [], onDone }: any) {
         <div className="flex items-center gap-2"><Switch checked={f.vip_only} onCheckedChange={(v)=>setF({...f,vip_only:v})}/><Label>Exclusivo VIP</Label></div>
         <div className="flex items-center gap-2"><Switch checked={f.active} onCheckedChange={(v)=>setF({...f,active:v})}/><Label>Ativo na vitrine</Label></div>
       </div>
-    </div><DialogFooter><Button onClick={save} disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button></DialogFooter></DialogContent>
+    </div><DialogFooter className="gap-2"><Button className="w-full sm:w-auto" onClick={save} disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button></DialogFooter></DialogContent>
     <ImageCropDialog
       file={cropSource}
       aspect={1}
@@ -1638,11 +1707,34 @@ function ProductsTab() {
   const tenantId = useTenantId(); const qc = useQueryClient();
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
   const { data } = useQuery({ queryKey: ["products-all", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("products").select("*").eq("tenant_id", tenantId!).order("name")).data ?? [] });
-  return (<Card className="premium-card"><CardContent className="p-6 space-y-4">
-    <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} produtos</h3>
+  return (<Card className="premium-card"><CardContent className="space-y-4 p-4 sm:p-6">
+    <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">{data?.length ?? 0} produtos</h3><p className="text-xs text-muted-foreground sm:text-sm">No celular, cada produto vira um card com preço, custo e estoque.</p></div>
       <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />Novo</Button></DialogTrigger>
         <ProductDialog key={edit?.id ?? "new"} product={edit} tenantId={tenantId} onDone={()=>{setOpen(false); setEdit(null); qc.invalidateQueries({queryKey:["products-all"]});}}/></Dialog></div>
-    <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
+    <div className="space-y-3 md:hidden">
+      {(data ?? []).map((p:any)=>(
+        <div key={p.id} className="rounded-3xl border bg-background p-4 shadow-sm">
+          <button type="button" className="flex w-full items-center gap-3 text-left" onClick={()=>{setEdit(p);setOpen(true);}}>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+              <Package className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-semibold">{p.name}</p>
+              <p className="text-xs text-muted-foreground">Estoque: {p.stock}</p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="font-bold text-primary">{brl(p.price)}</p>
+              <p className="text-[11px] text-muted-foreground">Custo {brl(p.cost_price)}</p>
+            </div>
+          </button>
+          <div className="mt-3 flex gap-2 border-t pt-3">
+            <Button size="sm" variant="outline" className="flex-1" onClick={()=>{setEdit(p);setOpen(true);}}><Pencil className="mr-2 h-4 w-4"/>Editar</Button>
+            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={async()=>{if(confirm("Excluir?")){await supabase.from("products").delete().eq("id",p.id);qc.invalidateQueries({queryKey:["products-all"]});}}}><Trash2 className="mr-2 h-4 w-4"/>Excluir</Button>
+          </div>
+        </div>
+      ))}
+    </div>
+    <div className="hidden overflow-x-auto -mx-6 px-6 md:mx-0 md:block md:px-0">
       <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Custo</TableHead><TableHead>Preço</TableHead><TableHead>Estoque</TableHead><TableHead></TableHead></TableRow></TableHeader>
         <TableBody>{(data ?? []).map((p:any)=>(<TableRow key={p.id}><TableCell className="font-medium whitespace-nowrap">{p.name}</TableCell><TableCell className="whitespace-nowrap text-muted-foreground">{brl(p.cost_price)}</TableCell><TableCell className="whitespace-nowrap">{brl(p.price)}</TableCell><TableCell className="whitespace-nowrap">{p.stock}</TableCell>
           <TableCell className="text-right whitespace-nowrap">
@@ -1663,15 +1755,15 @@ function ProductDialog({ product, tenantId, onDone }: any) {
     if (error) return toast.error(error.message);
     toast.success("Salvo"); onDone();
   }
-  return (<DialogContent><DialogHeader><DialogTitle>{product ? "Editar" : "Novo"} produto</DialogTitle></DialogHeader>
+  return (<DialogContent className="max-h-[92svh] w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-lg"><DialogHeader><DialogTitle>{product ? "Editar" : "Novo"} produto</DialogTitle></DialogHeader>
     <div className="space-y-3">
       <div><Label>Nome</Label><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid gap-3 sm:grid-cols-3">
         <div><Label>Custo</Label><Input type="number" step="0.01" value={f.cost_price} onChange={e=>setF({...f,cost_price:Number(e.target.value)})}/></div>
         <div><Label>Preço</Label><Input type="number" step="0.01" value={f.price} onChange={e=>setF({...f,price:Number(e.target.value)})}/></div>
         <div><Label>Estoque</Label><Input type="number" value={f.stock} onChange={e=>setF({...f,stock:Number(e.target.value)})}/></div>
       </div>
-    </div><DialogFooter><Button onClick={save}>Salvar</Button></DialogFooter></DialogContent>);
+    </div><DialogFooter className="gap-2"><Button className="w-full sm:w-auto" onClick={save}>Salvar</Button></DialogFooter></DialogContent>);
 }
 
 function UsersTab() {
