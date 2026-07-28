@@ -2298,6 +2298,47 @@ export type Database = {
           },
         ]
       }
+      staff_positions: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          sort_order: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_positions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       professional_time_off: {
         Row: {
           all_day: boolean
@@ -2382,6 +2423,7 @@ export type Database = {
           show_on_booking: boolean
           specialty: string | null
           tenant_id: string
+          must_change_password: boolean
           whatsapp: string | null
           work_days: number[] | null
         }
@@ -2408,6 +2450,7 @@ export type Database = {
           show_on_booking?: boolean
           specialty?: string | null
           tenant_id: string
+          must_change_password?: boolean
           whatsapp?: string | null
           work_days?: number[] | null
         }
@@ -2434,6 +2477,7 @@ export type Database = {
           show_on_booking?: boolean
           specialty?: string | null
           tenant_id?: string
+          must_change_password?: boolean
           whatsapp?: string | null
           work_days?: number[] | null
         }
@@ -4011,6 +4055,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_tenant_operational_settings: {
+        Args: { p_tenant_id: string }
+        Returns: Json
+      }
       apply_platform_billing_charge_state: {
         Args: {
           p_bank_slip_url?: string

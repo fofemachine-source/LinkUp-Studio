@@ -340,6 +340,7 @@ function PainelGeral() {
         fetching={isFetching}
         periodLabel={range.label}
         onRefresh={() => void refetch()}
+        bookingLink={bookingLink}
         filtersContent={
           <DashboardFiltersBar
             filters={filters}
@@ -799,7 +800,7 @@ async function loadDashboardData(
         supabase
           .from("commission_entries")
           .select(
-            "id,professional_id,commission_amount,status,due_date,competence_date,item_name,generated_at,commanda_id,commanda_item_id",
+            "id,professional_id,commission_amount,paid_amount,status,due_date,competence_date,item_name,item_kind,generated_at,commanda_id,commanda_item_id",
           )
           .eq("tenant_id", tenantId)
           .in("status", ["pending", "scheduled"])
@@ -997,10 +998,12 @@ async function loadDashboardData(
       (!entry.commanda_id || !filteredCommandaIds.has(entry.commanda_id))
     )
       return false;
-    return true;
+    return entry.item_kind === "service";
   });
   const pendingCommissions = sum(
-    pendingCommissionEntries.map((entry: any) => number(entry.commission_amount)),
+    pendingCommissionEntries.map((entry: any) =>
+      Math.max(0, number(entry.commission_amount) - number(entry.paid_amount)),
+    ),
   );
   const pendingCommissionProfessionals = new Set(
     pendingCommissionEntries.map((entry: any) => entry.professional_id).filter(Boolean),

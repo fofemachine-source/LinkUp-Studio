@@ -29,12 +29,18 @@ export const deleteProfessional = createServerFn({ method: "POST" })
 
     const { data: professional, error: professionalError } = await db
       .from("professionals")
-      .select("id, tenant_id, auth_user_id")
+      .select("id, tenant_id, auth_user_id, access_profile")
       .eq("id", data.professionalId)
       .eq("tenant_id", data.tenantId)
       .maybeSingle();
     if (professionalError) throw new Error(professionalError.message);
     if (!professional) throw new Error("Profissional não encontrado.");
+    if (
+      professional.auth_user_id === context.userId &&
+      professional.access_profile === "owner"
+    ) {
+      throw new Error("O proprietário conectado não pode excluir o próprio cadastro.");
+    }
 
     const historyTables = [
       "appointments",
@@ -75,7 +81,7 @@ export const deleteProfessional = createServerFn({ method: "POST" })
           .delete()
           .eq("user_id", professional.auth_user_id)
           .eq("tenant_id", data.tenantId)
-          .eq("role", "barber");
+          .in("role", ["owner", "staff", "barber"]);
         if (accessError) throw new Error(`Não foi possível revogar o acesso do profissional: ${accessError.message}`);
       }
     }

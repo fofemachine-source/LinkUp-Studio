@@ -55,30 +55,32 @@ export const Route = createFileRoute("/_authenticated/app/configuracoes")({
 
 function ConfigPage() {
   return (
-    <div className="space-y-6 max-w-[1200px] mx-auto">
+    <div className="mx-auto max-w-[1200px] space-y-6 overflow-x-hidden pb-24 md:pb-0">
       <div>
         <h1 className="text-3xl font-semibold">Configurações</h1>
         <p className="text-muted-foreground">Personalize sua barbearia.</p>
       </div>
-      <Tabs defaultValue="identity">
-        <TabsList>
-          <TabsTrigger value="identity">
+      <Tabs defaultValue="identity" className="min-w-0">
+        <div className="-mx-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <TabsList className="inline-flex h-auto w-max min-w-full justify-start">
+          <TabsTrigger className="shrink-0" value="identity">
             <Building2 className="h-4 w-4 mr-2" />
             Identidade
           </TabsTrigger>
-          <TabsTrigger value="location">
+          <TabsTrigger className="shrink-0" value="location">
             <MapPin className="h-4 w-4 mr-2" />
             Localização
           </TabsTrigger>
-          <TabsTrigger value="hours">
+          <TabsTrigger className="shrink-0" value="hours">
             <Clock className="h-4 w-4 mr-2" />
             Funcionamento
           </TabsTrigger>
-          <TabsTrigger value="whatsapp">
+          <TabsTrigger className="shrink-0" value="whatsapp">
             <MessageCircle className="h-4 w-4 mr-2" />
             WhatsApp
           </TabsTrigger>
         </TabsList>
+        </div>
         <TabsContent value="identity">
           <IdentityTab />
         </TabsContent>
@@ -248,13 +250,15 @@ function IdentityTab() {
   return (
     <>
       <Tabs defaultValue="dados" className="space-y-6">
-        <TabsList className="flex w-full max-w-xl flex-wrap justify-start">
-          <TabsTrigger value="dados">Dados da loja</TabsTrigger>
-          <TabsTrigger value="background">Background Imersivo</TabsTrigger>
-          <TabsTrigger value="vitrine">Vitrine</TabsTrigger>
-        </TabsList>
+        <div className="-mx-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <TabsList className="inline-flex h-auto w-max min-w-full justify-start">
+            <TabsTrigger className="shrink-0" value="dados">Dados da loja</TabsTrigger>
+            <TabsTrigger className="shrink-0" value="background">Background Imersivo</TabsTrigger>
+            <TabsTrigger className="shrink-0" value="vitrine">Vitrine</TabsTrigger>
+          </TabsList>
+        </div>
 
-        <TabsContent value="dados" className="mt-0">
+        <TabsContent value="dados" className="mt-0 min-w-0">
           <Card>
             <CardContent className="p-6 space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
@@ -339,7 +343,7 @@ function IdentityTab() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="background" className="mt-0 space-y-6">
+        <TabsContent value="background" className="mt-0 min-w-0 space-y-6">
           {t && brandingLoading && (
             <Card>
               <CardContent className="flex items-center gap-3 p-6 text-sm text-muted-foreground">
@@ -380,7 +384,7 @@ function IdentityTab() {
           )}
         </TabsContent>
 
-        <TabsContent value="vitrine" className="mt-0">
+        <TabsContent value="vitrine" className="mt-0 min-w-0">
           {t && brandingLoading && (
             <Card>
               <CardContent className="flex items-center gap-3 p-6 text-sm text-muted-foreground">
@@ -484,7 +488,7 @@ function ShowcaseSettingsPanel({
     "--showcase-background-overlay": `rgba(0, 0, 0, ${backgroundOverlayOpacity})`,
     "--primary": tenant.primary_color ?? "#f59e0b",
     "--ring": tenant.primary_color ?? "#f59e0b",
-  } as CSSProperties;
+  } as CSSProperties & Record<`--${string}`, string | number>;
   const blurValue = Math.round(getShowcaseBackdropBlur(panelOpacity));
 
   async function saveShowcaseSettings() {

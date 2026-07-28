@@ -1,7 +1,8 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar } from "@/components/ui/sidebar";
 import { LayoutDashboard, Calendar, ShoppingCart, Users, Crown, Landmark, Package, Award, Settings, CreditCard, Scissors } from "lucide-react";
-import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
+import { useCurrentTenant, useTenantAccess } from "@/hooks/use-tenant";
+import { canAccessAppPath } from "@/lib/access-control";
 
 const items = [
   { title: "Painel Geral", url: "/app", icon: LayoutDashboard },
@@ -19,21 +20,15 @@ const items = [
 export function AppSidebar() {
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const { data: tenant, isLoading: tenantLoading } = useCurrentTenant();
-  const { data: role, isLoading: roleLoading } = useUserRole(tenant?.id);
+  const { data: access, isLoading: accessLoading } = useTenantAccess();
   const { setOpenMobile } = useSidebar();
   const isActive = (path: string) => path === "/app" ? currentPath === "/app" : currentPath.startsWith(path);
 
-  const isBarber = role === "barber";
-  const isLoading = tenantLoading || (tenant?.id ? roleLoading : true);
+  const isLoading = tenantLoading || accessLoading;
 
   const visibleItems = items.filter((item) => {
-    if (isLoading) {
-      return false; // Evita piscar abas administrativas antes do papel carregar
-    }
-    if (isBarber) {
-      return ["Agenda", "Comissões", "Estoque"].includes(item.title);
-    }
-    return true;
+    if (isLoading || !access) return false;
+    return canAccessAppPath(item.url, access);
   });
 
   return (

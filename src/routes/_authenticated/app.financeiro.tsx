@@ -52,6 +52,7 @@ import { toast } from "sonner";
 import { useCurrentTenant } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { brl, dateBR } from "@/lib/format";
+import { commissionRemaining } from "@/lib/commissions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -180,6 +181,29 @@ type ForecastComanda = {
   scheduled_at: string | null;
   total: number | null;
   source: string | null;
+};
+
+type CommissionPayable = {
+  id: string;
+  professional_id: string;
+  commanda_id: string;
+  item_name: string;
+  item_kind: string;
+  gross_amount: number;
+  commission_amount: number;
+  paid_amount: number;
+  status: string;
+  due_date: string;
+  competence_date: string;
+  professionals?: { full_name: string } | null;
+  commandas?: { number: number; client_name: string | null } | null;
+};
+
+type CommissionSettlementSummary = {
+  id: string;
+  net_amount: number;
+  payment_date: string | null;
+  status: string;
 };
 
 const pageSize = 1000;
@@ -395,8 +419,50 @@ function FinanceiroPage() {
       if (error) throw error;
       return ((data ?? []) as Movement[]).filter(
         (movement) =>
-          movement.reference_type !== "commission_settlement" && !isSaleMovement(movement),
+          movement.reference_type !== "commission_settlement" &&
+          movement.reference_type !== "commission" &&
+          !isSaleMovement(movement),
       );
+    },
+  });
+
+  const { data: commissionEntries = [], isLoading: commissionEntriesLoading } = useQuery({
+    queryKey: ["finance-commission-entries", tenantId, to],
+    enabled: !!tenantId,
+    refetchOnWindowFocus: true,
+    queryFn: () =>
+      fetchAll<CommissionPayable>(
+        (rangeFrom, rangeTo) =>
+          (supabase as any)
+            .from("commission_entries")
+            .select(
+              "id,professional_id,commanda_id,commanda_item_id,item_name,item_kind,gross_amount,commission_amount,paid_amount,status,due_date,competence_date,professionals(full_name),commandas(number,client_name)",
+            )
+            .eq("tenant_id", tenantId!)
+            .eq("item_kind", "service")
+            .lte("competence_date", to)
+            .order("competence_date", { ascending: false })
+            .range(rangeFrom, rangeTo) as PromiseLike<{
+            data: CommissionPayable[] | null;
+            error: unknown;
+          }>,
+      ),
+  });
+
+  const { data: commissionSettlements = [], isLoading: commissionSettlementsLoading } = useQuery({
+    queryKey: ["finance-commission-settlements", tenantId, from, to],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("commission_settlements")
+        .select("id,net_amount,payment_date,status")
+        .eq("tenant_id", tenantId!)
+        .eq("status", "paid")
+        .gte("payment_date", from)
+        .lte("payment_date", to)
+        .order("payment_date", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as CommissionSettlementSummary[];
     },
   });
 
@@ -441,10 +507,20 @@ function FinanceiroPage() {
     );
     const discounts = sum(commandas, (cmd) => Number(cmd.discount ?? 0));
     const netSales = sum(commandas, (cmd) => Number(cmd.total ?? 0));
-    const commissions = sum(
-      commandas.flatMap((cmd) => cmd.commanda_items ?? []),
-      (item) => Number(item.commission_value ?? 0),
+    const serviceGross = sum(
+      commandas.flatMap((cmd) => cmd.commanda_items ?? []).filter((item) => item.kind === "service"),
+      (item) => Number(item.unit_price ?? 0) * Number(item.quantity ?? 1),
     );
+    const commissions = sum(
+      commissionEntries.filter(
+        (entry) =>
+          entry.competence_date >= from &&
+          entry.competence_date <= to &&
+          entry.status !== "canceled",
+      ),
+      (entry) => Number(entry.commission_amount ?? 0),
+    );
+    const storeServiceShare = Math.max(0, serviceGross - commissions);
     const productCost = sum(
       commandas
         .flatMap((cmd) => cmd.commanda_items ?? [])
@@ -514,9 +590,11 @@ function FinanceiroPage() {
       grossSales,
       discounts,
       netSales,
+      serviceGross,
       otherRevenue,
       deductions,
       commissions,
+      storeServiceShare,
       productCost,
       movementVariableCosts,
       variableCosts,
@@ -534,7 +612,7 @@ function FinanceiroPage() {
       averageTicket: commandas.length ? netSales / commandas.length : 0,
       operatingMargin: netRevenue ? (operatingResult / netRevenue) * 100 : 0,
     };
-  }, [commandas, periodMovements, movementsUntilPeriod, cashMovements, categoryById, todayKey]);
+  }, [commandas, commissionEntries, from, periodMovements, movementsUntilPeriod, cashMovements, categoryById, todayKey, to]);
 
   const balance = useMemo(() => {
     const accountBalances = accounts.map((account) => {
@@ -580,12 +658,24 @@ function FinanceiroPage() {
       ),
       (movement) => movement.amount,
     );
-    const payables = sum(
+    const manualPayables = sum(
       movementsUntilPeriod.filter(
-        (movement) => movement.status === "pending" && movement.kind === "out",
+        (movement) =>
+          movement.status === "pending" &&
+          movement.kind === "out" &&
+          movement.reference_type !== "commission",
       ),
       (movement) => movement.amount,
     );
+    const commissionPayables = sum(
+      commissionEntries.filter(
+        (entry) =>
+          (entry.status === "pending" || entry.status === "scheduled") &&
+          entry.competence_date <= to,
+      ),
+      (entry) => commissionRemaining(entry),
+    );
+    const payables = manualPayables + commissionPayables;
     const assets = cashAndBanks + receivables;
     return {
       accountBalances,
@@ -596,7 +686,7 @@ function FinanceiroPage() {
       assets,
       equity: assets - payables,
     };
-  }, [accounts, movementsUntilPeriod, to]);
+  }, [accounts, commissionEntries, movementsUntilPeriod, to]);
 
   const payableMetrics = useMemo(() => {
     const pending = financePayables.filter(
@@ -616,17 +706,69 @@ function FinanceiroPage() {
         movement.movement_date >= from &&
         movement.movement_date <= to,
     );
+    const commissionPending = commissionEntries.filter(
+      (entry) =>
+        (entry.status === "pending" || entry.status === "scheduled") &&
+        commissionRemaining(entry) > 0,
+    );
+    const commissionOverdue = commissionPending.filter(
+      (entry) => !!entry.due_date && entry.due_date < todayKey,
+    );
+    const commissionDueSoon = commissionPending.filter(
+      (entry) =>
+        !!entry.due_date && entry.due_date >= todayKey && entry.due_date <= nextSevenDays,
+    );
+    const groupedCommissions = commissionPending.reduce(
+      (groups, entry) => {
+        const key = entry.professional_id;
+        const current = groups.get(key) ?? {
+          professionalId: key,
+          professionalName: entry.professionals?.full_name ?? "Profissional",
+          entries: [] as CommissionPayable[],
+          total: 0,
+        };
+        current.entries.push(entry);
+        current.total += commissionRemaining(entry);
+        groups.set(key, current);
+        return groups;
+      },
+      new Map<
+        string,
+        {
+          professionalId: string;
+          professionalName: string;
+          entries: CommissionPayable[];
+          total: number;
+        }
+      >(),
+    );
+    const commissionGroups = Array.from(groupedCommissions.values()).sort(
+      (a, b) => b.total - a.total,
+    );
     return {
       pending,
       overdue,
       dueSoon,
       paidInPeriod,
-      pendingTotal: sum(pending, (movement) => movement.amount),
-      overdueTotal: sum(overdue, (movement) => movement.amount),
-      dueSoonTotal: sum(dueSoon, (movement) => movement.amount),
-      paidTotal: sum(paidInPeriod, (movement) => movement.amount),
+      commissionPending,
+      commissionGroups,
+      pendingTotal:
+        sum(pending, (movement) => movement.amount) +
+        sum(commissionPending, (entry) => commissionRemaining(entry)),
+      overdueTotal:
+        sum(overdue, (movement) => movement.amount) +
+        sum(commissionOverdue, (entry) => commissionRemaining(entry)),
+      dueSoonTotal:
+        sum(dueSoon, (movement) => movement.amount) +
+        sum(commissionDueSoon, (entry) => commissionRemaining(entry)),
+      paidTotal:
+        sum(paidInPeriod, (movement) => movement.amount) +
+        sum(
+          commissionSettlements,
+          (settlement) => Number(settlement.net_amount ?? 0),
+        ),
     };
-  }, [financePayables, from, to, today, todayKey]);
+  }, [commissionEntries, commissionSettlements, financePayables, from, to, today, todayKey]);
 
   const visiblePayables = useMemo(() => {
     const term = payableSearch
@@ -807,6 +949,8 @@ function FinanceiroPage() {
     queryClient.invalidateQueries({ queryKey: ["financial-accounts"] });
     queryClient.invalidateQueries({ queryKey: ["financial-categories"] });
     queryClient.invalidateQueries({ queryKey: ["finance-payables"] });
+    queryClient.invalidateQueries({ queryKey: ["finance-commission-entries"] });
+    queryClient.invalidateQueries({ queryKey: ["finance-commission-settlements"] });
   }
 
   async function cancelPayable(movement: Movement) {
@@ -823,7 +967,13 @@ function FinanceiroPage() {
     refreshFinance();
   }
 
-  const loading = salesLoading || forecastLoading || movementsLoading || payablesLoading;
+  const loading =
+    salesLoading ||
+    forecastLoading ||
+    movementsLoading ||
+    payablesLoading ||
+    commissionEntriesLoading ||
+    commissionSettlementsLoading;
 
   return (
     <div className="space-y-6 max-w-[1500px] mx-auto pb-12">
@@ -844,12 +994,12 @@ function FinanceiroPage() {
       </div>
 
       <Card>
-        <CardContent className="p-4 flex flex-wrap items-end gap-3">
-          <div>
+        <CardContent className="grid grid-cols-2 gap-3 p-3 sm:p-4 lg:flex lg:flex-wrap lg:items-end">
+          <div className="min-w-0">
             <Label>De</Label>
             <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
           </div>
-          <div>
+          <div className="min-w-0">
             <Label>Até</Label>
             <Input
               type="date"
@@ -858,21 +1008,21 @@ function FinanceiroPage() {
               onChange={(event) => setTo(event.target.value)}
             />
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => applyPreset("month")}>
+          <div className="col-span-2 grid grid-cols-4 gap-2 lg:flex lg:flex-wrap">
+            <Button size="sm" variant="outline" className="px-2 text-xs" onClick={() => applyPreset("month")}>
               Este mês
             </Button>
-            <Button size="sm" variant="outline" onClick={() => applyPreset("30")}>
+            <Button size="sm" variant="outline" className="px-2 text-xs" onClick={() => applyPreset("30")}>
               30 dias
             </Button>
-            <Button size="sm" variant="outline" onClick={() => applyPreset("90")}>
+            <Button size="sm" variant="outline" className="px-2 text-xs" onClick={() => applyPreset("90")}>
               90 dias
             </Button>
-            <Button size="sm" variant="outline" onClick={() => applyPreset("year")}>
+            <Button size="sm" variant="outline" className="px-2 text-xs" onClick={() => applyPreset("year")}>
               Este ano
             </Button>
           </div>
-          <div className="ml-auto text-xs text-muted-foreground flex items-center gap-2">
+          <div className="col-span-2 flex min-w-0 items-center gap-2 rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground lg:ml-auto lg:bg-transparent lg:px-0 lg:py-0">
             <CalendarDays className="h-4 w-4" />
             Competência: {dateBR(from)} a {dateBR(to)}
           </div>
@@ -1056,31 +1206,81 @@ function FinanceiroPage() {
             <MetricCard
               title="Total pendente"
               value={brl(payableMetrics.pendingTotal)}
-              hint={`${payableMetrics.pending.length} obrigações abertas`}
+              hint={`${payableMetrics.pending.length + payableMetrics.commissionPending.length} obrigações abertas`}
               icon={CalendarClock}
               tone="warning"
             />
             <MetricCard
               title="Vencidas"
               value={brl(payableMetrics.overdueTotal)}
-              hint={`${payableMetrics.overdue.length} títulos em atraso`}
+              hint={`${payableMetrics.overdue.length + payableMetrics.commissionPending.filter((entry) => !!entry.due_date && entry.due_date < todayKey).length} títulos em atraso`}
               icon={CircleAlert}
               tone={payableMetrics.overdue.length ? "danger" : "success"}
             />
             <MetricCard
               title="Próximos 7 dias"
               value={brl(payableMetrics.dueSoonTotal)}
-              hint={`${payableMetrics.dueSoon.length} vencimentos próximos`}
+              hint={`${payableMetrics.dueSoon.length + payableMetrics.commissionPending.filter((entry) => !!entry.due_date && entry.due_date >= todayKey && entry.due_date <= format(addDays(today, 7), "yyyy-MM-dd")).length} vencimentos próximos`}
               icon={CalendarDays}
             />
             <MetricCard
               title="Pago no período"
               value={brl(payableMetrics.paidTotal)}
-              hint={`${payableMetrics.paidInPeriod.length} pagamentos realizados`}
+              hint={`${payableMetrics.paidInPeriod.length + commissionSettlements.length} pagamentos realizados`}
               icon={CheckCircle2}
               tone="success"
             />
           </div>
+
+          <Card>
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-base">Comissões pendentes</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Obrigação separada do faturamento bruto, com saldo por profissional e serviço.
+                </p>
+              </div>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/app/comissoes">Pagar total ou parcial</Link>
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {payableMetrics.commissionGroups.map((group) => (
+                <div key={group.professionalId} className="rounded-xl border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold">{group.professionalName}</span>
+                    <span className="font-semibold text-primary">{brl(group.total)}</span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {group.entries.slice(0, 12).map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="flex flex-col gap-1 border-t pt-2 text-sm sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">
+                            Comanda #{entry.commandas?.number ?? "—"} · {entry.item_name}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Competência {dateBR(entry.competence_date)} · Vencimento {dateBR(entry.due_date)}
+                          </div>
+                        </div>
+                        <span className="shrink-0 font-semibold">{brl(commissionRemaining(entry))}</span>
+                      </div>
+                    ))}
+                    {group.entries.length > 12 && (
+                      <div className="text-xs text-muted-foreground">
+                        + {group.entries.length - 12} lançamento(s) nesta competência
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {!payableMetrics.commissionGroups.length && (
+                <EmptyState text="Nenhuma comissão pendente." />
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardContent className="space-y-4 p-4">
@@ -1367,7 +1567,9 @@ function FinanceiroPage() {
                 <DreRow label="(+) Outras receitas" value={metrics.otherRevenue} />
                 <DreRow label="(-) Impostos e deduções" value={-metrics.deductions} />
                 <DreRow label="Receita operacional líquida" value={metrics.netRevenue} strong />
-                <DreRow label="(-) Comissões" value={-metrics.commissions} />
+                <DreRow label="Faturamento bruto dos serviços" value={metrics.serviceGross} />
+                <DreRow label="(-) Comissões devidas a profissionais" value={-metrics.commissions} />
+                <DreRow label="Parcela da loja antes dos custos" value={metrics.storeServiceShare} strong />
                 <DreRow label="(-) Custo dos produtos vendidos" value={-metrics.productCost} />
                 <DreRow
                   label="(-) Outros custos variáveis"

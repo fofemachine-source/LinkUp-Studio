@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,10 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
+import { useCurrentTenant, useTenantAccess } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Users, Scissors, Sparkles, Package, UserCog, KeyRound, ImageIcon } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Scissors, Sparkles, Package, UserCog, KeyRound, ImageIcon, BriefcaseBusiness, ShieldCheck, CalendarCheck, Eye, BellRing } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { brl, cpfMask } from "@/lib/format";
@@ -29,16 +29,29 @@ import {
   DEFAULT_BOOKING_WORK_DAYS,
   normalizeBookingWeekdays,
 } from "@/lib/booking-weekdays";
+import {
+  ACCESS_PERMISSION_OPTIONS,
+  ACCESS_PROFILES,
+  DEFAULT_PROFILE_PERMISSIONS,
+  type AccessProfile,
+  hasAccessPermission,
+} from "@/lib/access-control";
 
 export const Route = createFileRoute("/_authenticated/app/cadastros")({ component: CadastrosPage });
 
 function CadastrosPage() {
-  const { data: tenant } = useCurrentTenant();
-  const { data: role, isLoading } = useUserRole(tenant?.id);
-
-  if (!isLoading && role === "barber") {
-    return <Navigate to="/app/agenda" replace />;
-  }
+  const { data: access } = useTenantAccess();
+  const canClients = hasAccessPermission(access, "clients");
+  const canManageStaff = hasAccessPermission(access, "manage_staff");
+  const canServices = hasAccessPermission(access, "services");
+  const canProducts = hasAccessPermission(access, "products");
+  const initialTab = canClients
+    ? "clients"
+    : canManageStaff
+      ? "pros"
+      : canServices
+        ? "services"
+        : "products";
 
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto">
@@ -46,19 +59,21 @@ function CadastrosPage() {
         <h1 className="text-3xl font-semibold">Cadastros</h1>
         <p className="text-muted-foreground">Clientes, profissionais, serviços, produtos e usuários.</p>
       </div>
-      <Tabs defaultValue="clients">
-        <TabsList className="flex w-full overflow-x-auto justify-start md:grid md:grid-cols-5 max-w-2xl h-auto p-1 gap-1 md:gap-0 scrollbar-none bg-muted/40">
-          <TabsTrigger value="clients" className="whitespace-nowrap"><Users className="h-4 w-4 mr-2" />Clientes</TabsTrigger>
-          <TabsTrigger value="pros" className="whitespace-nowrap"><Scissors className="h-4 w-4 mr-2" />Profissionais</TabsTrigger>
-          <TabsTrigger value="services" className="whitespace-nowrap"><Sparkles className="h-4 w-4 mr-2" />Serviços</TabsTrigger>
-          <TabsTrigger value="products" className="whitespace-nowrap"><Package className="h-4 w-4 mr-2" />Produtos</TabsTrigger>
-          <TabsTrigger value="users" className="whitespace-nowrap"><UserCog className="h-4 w-4 mr-2" />Usuários</TabsTrigger>
+      <Tabs defaultValue={initialTab}>
+        <TabsList className="flex w-full overflow-x-auto justify-start max-w-3xl h-auto p-1 gap-1 scrollbar-none bg-muted/40">
+          {canClients && <TabsTrigger value="clients" className="whitespace-nowrap"><Users className="h-4 w-4 mr-2" />Clientes</TabsTrigger>}
+          {canManageStaff && <TabsTrigger value="pros" className="whitespace-nowrap"><Scissors className="h-4 w-4 mr-2" />Profissionais</TabsTrigger>}
+          {canManageStaff && <TabsTrigger value="positions" className="whitespace-nowrap"><BriefcaseBusiness className="h-4 w-4 mr-2" />Cargos</TabsTrigger>}
+          {canServices && <TabsTrigger value="services" className="whitespace-nowrap"><Sparkles className="h-4 w-4 mr-2" />Serviços</TabsTrigger>}
+          {canProducts && <TabsTrigger value="products" className="whitespace-nowrap"><Package className="h-4 w-4 mr-2" />Produtos</TabsTrigger>}
+          {canManageStaff && <TabsTrigger value="users" className="whitespace-nowrap"><UserCog className="h-4 w-4 mr-2" />Usuários</TabsTrigger>}
         </TabsList>
-        <TabsContent value="clients"><ClientsTab /></TabsContent>
-        <TabsContent value="pros"><ProsTab /></TabsContent>
-        <TabsContent value="services"><ServicesTab /></TabsContent>
-        <TabsContent value="products"><ProductsTab /></TabsContent>
-        <TabsContent value="users"><UsersTab /></TabsContent>
+        {canClients && <TabsContent value="clients"><ClientsTab /></TabsContent>}
+        {canManageStaff && <TabsContent value="pros"><ProsTab /></TabsContent>}
+        {canManageStaff && <TabsContent value="positions"><PositionsTab /></TabsContent>}
+        {canServices && <TabsContent value="services"><ServicesTab /></TabsContent>}
+        {canProducts && <TabsContent value="products"><ProductsTab /></TabsContent>}
+        {canManageStaff && <TabsContent value="users"><UsersTab /></TabsContent>}
       </Tabs>
     </div>
   );
@@ -247,6 +262,15 @@ function ClientDialog({ client, tenantId, onDone }: any) {
 
 function ProsTab() {
   const tenantId = useTenantId(); const qc = useQueryClient();
+  const { data: tenantAccess } = useTenantAccess();
+  const canManageAccess =
+    tenantAccess?.isSuperAdmin === true ||
+    tenantAccess?.accessProfile === "owner" ||
+    tenantAccess?.roles.some(
+      (role) =>
+        role.tenant_id === tenantId &&
+        (role.role === "owner" || role.role === "super_admin"),
+    ) === true;
   const removeProfessional = useServerFn(deleteProfessional);
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -316,7 +340,7 @@ function ProsTab() {
     <Card className="premium-card"><CardContent className="p-6 space-y-4">
       <div className="flex justify-between"><h3 className="font-semibold">{data?.length ?? 0} profissionais</h3>
         <Dialog open={open} onOpenChange={(v)=>{setOpen(v); if(!v) setEdit(null);}}><DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />Novo</Button></DialogTrigger>
-          <ProDialog key={edit?.id ?? "new"} pro={edit} tenantId={tenantId} onDone={async()=>{
+          <ProDialog key={edit?.id ?? "new"} pro={edit} tenantId={tenantId} canManageAccess={canManageAccess} onDone={async()=>{
             setOpen(false);
             setEdit(null);
             await Promise.all([
@@ -332,21 +356,238 @@ function ProsTab() {
             <div className="flex-1 min-w-0"><div className="font-medium truncate">{p.full_name}</div><div className="text-xs text-muted-foreground">{p.role_label} • {p.commission_pct}% comissão</div></div>
             <div className="flex items-center">
               <Button size="icon" variant="ghost" aria-label={`Editar ${p.full_name}`} onClick={()=>openProfessional(p)}><Pencil className="h-4 w-4"/></Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="text-destructive hover:text-destructive"
-                aria-label={`Excluir ${p.full_name}`}
-                disabled={deletingId === p.id}
-                onClick={() => remove(p)}
-              >
-                <Trash2 className="h-4 w-4"/>
-              </Button>
+              {canManageAccess && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  aria-label={`Excluir ${p.full_name}`}
+                  disabled={deletingId === p.id}
+                  onClick={() => remove(p)}
+                >
+                  <Trash2 className="h-4 w-4"/>
+                </Button>
+              )}
             </div>
           </div>
         ))}
       </div>
     </CardContent></Card>
+  );
+}
+
+function PositionsTab() {
+  const tenantId = useTenantId();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [edit, setEdit] = useState<any>(null);
+  const [form, setForm] = useState({
+    name: "",
+    description: "",
+    sort_order: 0,
+    active: true,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const { data: positions = [] } = useQuery({
+    queryKey: ["staff-positions", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("staff_positions")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("sort_order")
+        .order("name");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  function showDialog(position?: any) {
+    setEdit(position ?? null);
+    setForm({
+      name: position?.name ?? "",
+      description: position?.description ?? "",
+      sort_order: Number(position?.sort_order ?? 0),
+      active: position?.active ?? true,
+    });
+    setOpen(true);
+  }
+
+  async function save() {
+    if (!tenantId || saving) return;
+    const name = form.name.trim();
+    if (!name) return toast.error("Informe o nome do cargo.");
+    setSaving(true);
+    const values = {
+      tenant_id: tenantId,
+      name,
+      description: form.description.trim() || null,
+      sort_order: Number(form.sort_order) || 0,
+      active: form.active,
+      updated_at: new Date().toISOString(),
+    };
+    const result = edit
+      ? await (supabase as any)
+          .from("staff_positions")
+          .update(values)
+          .eq("tenant_id", tenantId)
+          .eq("id", edit.id)
+      : await (supabase as any).from("staff_positions").insert(values);
+    setSaving(false);
+    if (result.error) return toast.error(result.error.message);
+    toast.success(edit ? "Cargo atualizado." : "Cargo cadastrado.");
+    setOpen(false);
+    setEdit(null);
+    await qc.invalidateQueries({ queryKey: ["staff-positions", tenantId] });
+  }
+
+  async function remove(position: any) {
+    if (!tenantId) return;
+    if (!window.confirm(`Excluir o cargo ${position.name}?`)) return;
+    const { count, error: countError } = await (supabase as any)
+      .from("professionals")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("position_id", position.id);
+    if (countError) return toast.error(countError.message);
+    if ((count ?? 0) > 0) {
+      return toast.error(
+        "Este cargo está vinculado a profissionais. Troque o cargo dessas pessoas antes de excluir.",
+      );
+    }
+    const { error } = await (supabase as any)
+      .from("staff_positions")
+      .delete()
+      .eq("tenant_id", tenantId)
+      .eq("id", position.id);
+    if (error) return toast.error(error.message);
+    toast.success("Cargo excluído.");
+    await qc.invalidateQueries({ queryKey: ["staff-positions", tenantId] });
+  }
+
+  return (
+    <>
+      <Card className="premium-card">
+        <CardContent className="p-4 sm:p-6 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold">Cargos da equipe</h3>
+              <p className="text-sm text-muted-foreground">
+                O cargo descreve a função. As permissões são definidas separadamente no acesso.
+              </p>
+            </div>
+            <Button onClick={() => showDialog()} className="shrink-0">
+              <Plus className="h-4 w-4 mr-2" />
+              Novo cargo
+            </Button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {positions.map((position: any) => (
+              <div
+                key={position.id}
+                className="rounded-xl border bg-card p-4 flex items-start gap-3"
+              >
+                <div className="rounded-lg bg-primary/10 p-2 text-primary">
+                  <BriefcaseBusiness className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium truncate">{position.name}</p>
+                    {!position.active && (
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                        Inativo
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                    {position.description || "Sem descrição."}
+                  </p>
+                </div>
+                <div className="flex shrink-0">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    aria-label={`Editar ${position.name}`}
+                    onClick={() => showDialog(position)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="text-destructive hover:text-destructive"
+                    aria-label={`Excluir ${position.name}`}
+                    onClick={() => remove(position)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{edit ? "Editar cargo" : "Novo cargo"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Nome do cargo</Label>
+              <Input
+                value={form.name}
+                onChange={(event) => setForm({ ...form, name: event.target.value })}
+                placeholder="Ex.: Cabeleireira, Gerente, Recepção"
+              />
+            </div>
+            <div>
+              <Label>Descrição</Label>
+              <Textarea
+                value={form.description}
+                onChange={(event) =>
+                  setForm({ ...form, description: event.target.value })
+                }
+                placeholder="Descreva brevemente a função."
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label>Ordem</Label>
+                <Input
+                  type="number"
+                  value={form.sort_order}
+                  onChange={(event) =>
+                    setForm({ ...form, sort_order: Number(event.target.value) })
+                  }
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                <div>
+                  <Label htmlFor="position-active">Cargo ativo</Label>
+                  <p className="text-xs text-muted-foreground">Disponível para novos vínculos.</p>
+                </div>
+                <Switch
+                  id="position-active"
+                  checked={form.active}
+                  onCheckedChange={(active) => setForm({ ...form, active })}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? "Salvando..." : "Salvar cargo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -361,6 +602,10 @@ async function updateProfessionalSystemAccess(input: {
   email: string;
   password?: string;
   enabled: boolean;
+  accessProfile: AccessProfile;
+  accessPermissions: string[];
+  mustChangePassword: boolean;
+  receiveOperationalNotifications: boolean;
 }) {
   const { data, error } = await supabase.functions.invoke("manage-professional-access", {
     body: input,
@@ -383,14 +628,30 @@ async function updateProfessionalSystemAccess(input: {
     throw new Error(data?.error || "Não foi possível atualizar o acesso ao sistema.");
   }
 
-  return data as { ok: true; enabled: boolean; userId: string | null };
+  return data as {
+    ok: true;
+    enabled: boolean;
+    userId: string | null;
+    created?: boolean;
+    linkedExisting?: boolean;
+    mustChangePassword?: boolean;
+    accessProfile?: AccessProfile;
+    accessPermissions?: string[];
+  };
 }
 
-function ProDialog({ pro, tenantId, onDone }: any) {
+function ProDialog({ pro, tenantId, onDone, canManageAccess }: any) {
   const qc = useQueryClient();
-  const [f, setF] = useState({
+  const initialAccessProfile = (pro?.access_profile ??
+    (pro?.auth_user_id ? "professional" : "professional")) as AccessProfile;
+  const initialAccessPermissions =
+    Array.isArray(pro?.access_permissions) && pro.access_permissions.length > 0
+      ? pro.access_permissions
+      : DEFAULT_PROFILE_PERMISSIONS[initialAccessProfile];
+  const [f, setF] = useState<any>({
     full_name: pro?.full_name ?? "",
     role_label: pro?.role_label ?? "Barbeiro",
+    position_id: pro?.position_id ?? "",
     whatsapp: pro?.whatsapp ?? "",
     email: pro?.email ?? "",
     specialty: pro?.specialty ?? "",
@@ -401,6 +662,14 @@ function ProDialog({ pro, tenantId, onDone }: any) {
     active: pro?.active ?? true,
     work_days: normalizeBookingWeekdays(pro?.work_days, DEFAULT_BOOKING_WORK_DAYS),
     blocked_dates: pro?.blocked_dates ?? [],
+    access_profile: initialAccessProfile,
+    access_permissions: [...initialAccessPermissions],
+    available_for_booking: pro?.available_for_booking ?? pro?.active ?? true,
+    show_on_booking: pro?.show_on_booking ?? pro?.active ?? true,
+    receive_operational_notifications:
+      pro?.receive_operational_notifications ??
+      initialAccessPermissions.includes("receive_operational_notifications"),
+    must_change_password: pro?.must_change_password ?? false,
   });
   const [file, setFile] = useState<File | null>(null);
   const [cropSource, setCropSource] = useState<File | null>(null);
@@ -412,6 +681,21 @@ function ProDialog({ pro, tenantId, onDone }: any) {
   const [saving, setSaving] = useState(false);
   const [newBlockedDate, setNewBlockedDate] = useState("");
   const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+  const { data: positions = [] } = useQuery({
+    queryKey: ["staff-positions", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("staff_positions")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("active", true)
+        .order("sort_order")
+        .order("name");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
   useEffect(() => {
     if (!file) {
       setFilePreviewUrl(null);
@@ -424,6 +708,36 @@ function ProDialog({ pro, tenantId, onDone }: any) {
   const previewUrl = filePreviewUrl || f.photo_url;
   const hasSystemAccess = Boolean(persistedAuthUserId);
   const systemAccessEnabled = allowAccess;
+  function setAccessProfile(profile: AccessProfile) {
+    const permissions = [...DEFAULT_PROFILE_PERMISSIONS[profile]];
+    setF({
+      ...f,
+      access_profile: profile,
+      access_permissions: permissions,
+      receive_operational_notifications: permissions.includes(
+        "receive_operational_notifications",
+      ),
+    });
+  }
+
+  function togglePermission(permission: string, checked: boolean) {
+    const requiredForProfessional =
+      f.access_profile === "professional" &&
+      (permission === "own_agenda" || permission === "own_finance");
+    if (requiredForProfessional && !checked) return;
+    const current = new Set<string>(f.access_permissions ?? []);
+    if (checked) current.add(permission);
+    else current.delete(permission);
+    const permissions = Array.from(current);
+    setF({
+      ...f,
+      access_permissions: permissions,
+      receive_operational_notifications:
+        permission === "receive_operational_notifications"
+          ? checked
+          : f.receive_operational_notifications,
+    });
+  }
 
   const handleProfessionalImageFile = (selectedFile?: File) => {
     if (!selectedFile) return;
@@ -452,8 +766,15 @@ function ProDialog({ pro, tenantId, onDone }: any) {
     if (saving) return;
     if (!tenantId) return toast.error("Empresa não carregada. Recarregue a página e tente novamente.");
     if (!f.full_name.trim()) return toast.error("Informe o nome do colaborador");
+    if (
+      !Number.isFinite(Number(f.commission_pct)) ||
+      Number(f.commission_pct) < 0 ||
+      Number(f.commission_pct) > 100
+    ) {
+      return toast.error("A comissão deve estar entre 0% e 100%.");
+    }
     if (systemAccessEnabled && !f.email.trim()) return toast.error("Informe o e-mail para liberar acesso ao sistema");
-    if (systemAccessEnabled && (!persistedAuthUserId || accessPassword)) {
+    if (systemAccessEnabled && accessPassword) {
       const passwordError = validateProjectPassword(accessPassword);
       if (passwordError) return toast.error(passwordError);
     }
@@ -474,10 +795,15 @@ function ProDialog({ pro, tenantId, onDone }: any) {
       }
       photo_url = signed.signedUrl;
     }
-    const normalizedForm = {
+    const normalizedForm: Record<string, unknown> = {
       ...f,
       work_days: normalizeBookingWeekdays(f.work_days, []),
     };
+    delete normalizedForm.access_profile;
+    delete normalizedForm.access_permissions;
+    delete normalizedForm.must_change_password;
+    delete normalizedForm.receive_operational_notifications;
+    if (hasSystemAccess) delete normalizedForm.email;
     const payload: any = { ...normalizedForm, photo_url, tenant_id: tenantId };
     const saved = professionalId
       ? await supabase.from("professionals").update({ ...normalizedForm, photo_url }).eq("id", professionalId).select("id").single()
@@ -497,7 +823,7 @@ function ProDialog({ pro, tenantId, onDone }: any) {
       photo_url,
       auth_user_id: authUserId,
     });
-    if (systemAccessEnabled || hasSystemAccess) {
+    if (canManageAccess && (systemAccessEnabled || hasSystemAccess)) {
       try {
         const access = await updateProfessionalSystemAccess({
           tenantId,
@@ -506,10 +832,27 @@ function ProDialog({ pro, tenantId, onDone }: any) {
           email: f.email,
           password: accessPassword || undefined,
           enabled: systemAccessEnabled,
+          accessProfile: f.access_profile,
+          accessPermissions: f.access_permissions,
+          mustChangePassword:
+            !hasSystemAccess && systemAccessEnabled
+              ? true
+              : Boolean(f.must_change_password),
+          receiveOperationalNotifications: Boolean(
+            f.receive_operational_notifications,
+          ),
         });
         authUserId = access.userId;
         setPersistedAuthUserId(access.userId);
         setAllowAccess(access.enabled);
+        setAccessPassword("");
+        if (access.created) {
+          toast.success(
+            "Login criado. A senha provisória deverá ser trocada no primeiro acesso.",
+          );
+        } else if (access.linkedExisting && !hasSystemAccess) {
+          toast.success("Login existente vinculado sem alterar a senha pessoal.");
+        }
         updateProfessionalCache({
           ...(pro ?? {}),
           ...normalizedForm,
@@ -517,6 +860,10 @@ function ProDialog({ pro, tenantId, onDone }: any) {
           tenant_id: tenantId,
           photo_url,
           auth_user_id: access.enabled ? access.userId : null,
+          access_profile: access.accessProfile ?? f.access_profile,
+          access_permissions:
+            access.accessPermissions ?? f.access_permissions,
+          must_change_password: access.mustChangePassword ?? false,
         });
       } catch (err: any) {
         toast.warning(`Profissional salvo, mas o acesso não foi atualizado. ${friendlyAccessError(err)} Corrija e salve novamente.`);
@@ -553,12 +900,40 @@ function ProDialog({ pro, tenantId, onDone }: any) {
         <Label className="text-xs uppercase tracking-wide text-muted-foreground">Nome Colaborador</Label>
         <Input value={f.full_name} onChange={e=>setF({...f,full_name:e.target.value})} placeholder="Ex.: Richard Lyan"/>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">WhatsApp</Label><Input value={f.whatsapp} onChange={e=>setF({...f,whatsapp:e.target.value})} placeholder="(99) 99999-9999"/></div>
-        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">E-mail</Label><Input type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})} placeholder="email@exemplo.com"/></div>
-        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Cargo / Categoria</Label><Input value={f.role_label} onChange={e=>setF({...f,role_label:e.target.value})} placeholder="Barbeiro Sênior"/></div>
+        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">E-mail</Label><Input type="email" value={f.email} disabled={hasSystemAccess} onChange={e=>setF({...f,email:e.target.value})} placeholder="email@exemplo.com"/></div>
+        <div>
+          <Label className="text-xs uppercase tracking-wide text-muted-foreground">Cargo / Função</Label>
+          <select
+            className="w-full h-10 px-3 rounded-md border bg-background"
+            value={f.position_id}
+            onChange={(event) => {
+              const position = positions.find(
+                (item: any) => item.id === event.target.value,
+              );
+              setF({
+                ...f,
+                position_id: event.target.value || null,
+                role_label: position?.name ?? f.role_label,
+              });
+            }}
+          >
+            <option value="">Selecione um cargo</option>
+            {positions.map((position: any) => (
+              <option key={position.id} value={position.id}>
+                {position.name}
+              </option>
+            ))}
+          </select>
+          {positions.length === 0 && (
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              Cadastre os cargos na aba Cargos.
+            </p>
+          )}
+        </div>
         <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Especialidade</Label><Input value={f.specialty} onChange={e=>setF({...f,specialty:e.target.value})} placeholder="Navalhado, pigmentação..."/></div>
-        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Comissão Padrão (%)</Label><Input type="number" value={f.commission_pct} onChange={e=>setF({...f,commission_pct:Number(e.target.value)})}/></div>
+        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Comissão Padrão (%)</Label><Input type="number" min="0" max="100" step="0.01" value={f.commission_pct} onChange={e=>setF({...f,commission_pct:e.target.value === "" ? 0 : Number(e.target.value)})}/><p className="mt-1 text-[10px] text-muted-foreground">Aplica-se a novos serviços concluídos. Lançamentos anteriores mantêm o percentual histórico.</p></div>
         <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Situação Cadastral</Label>
           <select className="w-full h-10 px-3 rounded-md border bg-background" value={f.active?"1":"0"} onChange={e=>setF({...f,active:e.target.value==="1"})}>
             <option value="1">Ativo Operando</option><option value="0">Inativo</option>
@@ -566,6 +941,50 @@ function ProDialog({ pro, tenantId, onDone }: any) {
         </div>
         <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Início Almoço</Label><Input type="time" value={f.lunch_start} onChange={e=>setF({...f,lunch_start:e.target.value})}/></div>
         <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Término Almoço</Label><Input type="time" value={f.lunch_end} onChange={e=>setF({...f,lunch_end:e.target.value})}/></div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="rounded-lg border p-3 flex items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 font-medium text-sm">
+              <CalendarCheck className="h-4 w-4 text-primary" />
+              Disponível para agendamento
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Permite selecionar esta pessoa em novos agendamentos internos.
+            </p>
+          </div>
+          <Switch
+            checked={Boolean(f.available_for_booking)}
+            onCheckedChange={(available_for_booking) =>
+              setF({
+                ...f,
+                available_for_booking,
+                show_on_booking: available_for_booking
+                  ? f.show_on_booking
+                  : false,
+              })
+            }
+          />
+        </div>
+        <div className="rounded-lg border p-3 flex items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 font-medium text-sm">
+              <Eye className="h-4 w-4 text-primary" />
+              Exibir na vitrine
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Mostra esta pessoa no link público de agendamento.
+            </p>
+          </div>
+          <Switch
+            checked={Boolean(f.show_on_booking)}
+            disabled={!f.available_for_booking}
+            onCheckedChange={(show_on_booking) =>
+              setF({ ...f, show_on_booking })
+            }
+          />
+        </div>
       </div>
       
       <div>
@@ -654,21 +1073,141 @@ function ProDialog({ pro, tenantId, onDone }: any) {
           </div>
         </div>
       </div>
-      <div className="rounded-md border p-3 space-y-3">
-        <div className="flex items-center gap-2">
+      <div className="rounded-lg border p-4 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 font-medium">
+              <KeyRound className="h-4 w-4 text-primary" />
+              Acesso individual ao sistema
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              O acesso ao sistema é independente do cargo e da disponibilidade
+              para agenda ou vitrine.
+            </p>
+          </div>
           <Switch
             checked={systemAccessEnabled}
+            disabled={!canManageAccess}
             onCheckedChange={setAllowAccess}
           />
-          <Label>Acessa o sistema também</Label>
         </div>
+
+        {!canManageAccess && (
+          <p className="rounded-md bg-muted p-3 text-xs text-muted-foreground">
+            Somente o proprietário pode criar, vincular, desativar ou alterar
+            permissões de login.
+          </p>
+        )}
+
         {systemAccessEnabled && (
-          <div className="grid grid-cols-2 gap-3">
-            <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">Login / E-mail</Label><Input type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})} placeholder="email@exemplo.com"/></div>
-            <div>
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground">Senha de acesso</Label>
-              <Input type="password" autoComplete="new-password" value={accessPassword} onChange={e=>setAccessPassword(e.target.value)} placeholder={hasSystemAccess ? "Nova senha opcional" : "Mínimo de 8 caracteres"}/>
-              <p className="mt-1 text-[10px] text-muted-foreground">A única exigência é ter no mínimo 8 caracteres.</p>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Login / E-mail
+                </Label>
+                <Input
+                  type="email"
+                  value={f.email}
+                  disabled={!canManageAccess || hasSystemAccess}
+                  onChange={(event) => setF({ ...f, email: event.target.value })}
+                  placeholder="email@exemplo.com"
+                />
+                {hasSystemAccess && (
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    Login já vinculado. A senha pertence ao próprio usuário.
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Papel no sistema
+                </Label>
+                <select
+                  className="h-10 w-full rounded-md border bg-background px-3"
+                  value={f.access_profile}
+                  disabled={!canManageAccess}
+                  onChange={(event) =>
+                    setAccessProfile(event.target.value as AccessProfile)
+                  }
+                >
+                  {ACCESS_PROFILES.map((profile) => (
+                    <option key={profile.value} value={profile.value}>
+                      {profile.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {!hasSystemAccess && canManageAccess && (
+              <div>
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Senha provisória
+                </Label>
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={accessPassword}
+                  onChange={(event) => setAccessPassword(event.target.value)}
+                  placeholder="Preencha apenas se for uma conta nova"
+                />
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Se o e-mail já tiver conta, o vínculo será feito sem alterar a
+                  senha. Para uma conta nova, informe ao menos 8 caracteres; o
+                  colaborador criará uma senha pessoal no primeiro acesso.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-primary" />
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Permissões
+                </Label>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {ACCESS_PERMISSION_OPTIONS.map((permission) => {
+                  const requiredProfessionalPermission =
+                    f.access_profile === "professional" &&
+                    (permission.value === "own_agenda" ||
+                      permission.value === "own_finance");
+                  const locked =
+                    !canManageAccess ||
+                    f.access_profile === "owner" ||
+                    requiredProfessionalPermission;
+                  return (
+                    <label
+                      key={permission.value}
+                      className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs"
+                    >
+                      <span>{permission.label}</span>
+                      <Switch
+                        checked={f.access_permissions.includes(permission.value)}
+                        disabled={locked}
+                        onCheckedChange={(checked) =>
+                          togglePermission(permission.value, checked)
+                        }
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+              {f.access_profile === "professional" && (
+                <p className="text-[10px] text-muted-foreground">
+                  A própria agenda e o próprio resumo financeiro são garantias
+                  mínimas deste papel. Dados financeiros de colegas e da loja
+                  permanecem bloqueados.
+                </p>
+              )}
+              {f.receive_operational_notifications && (
+                <p className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <BellRing className="h-3.5 w-3.5" />
+                  Este usuário receberá os alertas operacionais permitidos para
+                  o papel configurado.
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -750,7 +1289,13 @@ function ServicesTab() {
   const services = data ?? [];
   const normalizeCategoryName = (value: unknown) => String(value ?? "").trim().toLocaleLowerCase("pt-BR");
   const categoriesById = useMemo(
-    () => new Map((categories ?? []).map((category: any) => [category.id, category])),
+    () =>
+      new Map<string, { id: string; name: string }>(
+        (categories ?? []).map((category: any) => [
+          String(category.id),
+          { id: String(category.id), name: String(category.name ?? "") },
+        ]),
+      ),
     [categories],
   );
   const serviceCategoryName = (service: any) => {
@@ -1100,5 +1645,24 @@ function ProductDialog({ product, tenantId, onDone }: any) {
 }
 
 function UsersTab() {
-  return (<Card className="premium-card"><CardContent className="p-6 text-sm text-muted-foreground">Convide usuários criando uma nova conta pelo login. O primeiro cadastro vira "dono"; os demais viram "staff". Gerenciamento avançado em breve.</CardContent></Card>);
+  return (
+    <Card className="premium-card">
+      <CardContent className="space-y-3 p-6">
+        <div className="flex items-center gap-2 font-medium">
+          <ShieldCheck className="h-4 w-4 text-primary" />
+          Acessos vinculados aos profissionais
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Crie ou vincule o login individual na aba Profissionais. Ali o
+          proprietário escolhe o papel, revisa cada permissão e decide,
+          separadamente, se a pessoa participa da agenda e da vitrine.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Senhas existentes não são redefinidas pelo cadastro. Contas novas
+          recebem uma senha provisória e exigem a criação de uma senha pessoal
+          no primeiro acesso.
+        </p>
+      </CardContent>
+    </Card>
+  );
 }

@@ -1,18 +1,31 @@
 import { createFileRoute, Outlet, redirect, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, LockKeyhole } from "lucide-react";
+import { useState, type FormEvent } from "react";
 
 import { AppHeader } from "@/components/app-header";
 import { AppSidebar } from "@/components/app-sidebar";
 import { BottomNav } from "@/components/bottom-nav";
 import { ProfessionalAppointmentNotifier } from "@/components/notifications/professional-appointment-notifier";
 import { TenantAccessScreen } from "@/components/tenant-access-screen";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { getTenantAccess, useCurrentTenant, useIsSuperAdmin } from "@/hooks/use-tenant";
+import {
+  getTenantAccess,
+  tenantAccessQueryKey,
+  useCurrentTenant,
+  useIsSuperAdmin,
+  useTenantAccess,
+} from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
+import { canAccessAppPath, getDefaultAppPath } from "@/lib/access-control";
+import { validateProjectPassword } from "@/lib/password-policy";
 
 export const Route = createFileRoute("/_authenticated/app")({
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, location }) => {
     const access = await getTenantAccess(context.queryClient);
     const hasTenant = Boolean(
       access.activeTenantId || access.roles.some(({ tenant_id }) => tenant_id),
@@ -21,6 +34,21 @@ export const Route = createFileRoute("/_authenticated/app")({
     if (access.isSuperAdmin && !hasTenant) {
       throw redirect({ to: "/saas" });
     }
+
+    if (!access.isSuperAdmin && !hasTenant) {
+      throw redirect({
+        to: "/auth",
+        search: { redirect: location.pathname },
+        replace: true,
+      });
+    }
+
+    if (hasTenant && !canAccessAppPath(location.pathname, access)) {
+      throw redirect({
+        to: getDefaultAppPath(access) as never,
+        replace: true,
+      });
+    }
   },
   component: AppLayout,
 });
@@ -28,11 +56,16 @@ export const Route = createFileRoute("/_authenticated/app")({
 function AppLayout() {
   const tenantQuery = useCurrentTenant();
   const superAdminQuery = useIsSuperAdmin();
+  const accessQuery = useTenantAccess();
   const tenant = tenantQuery.data;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const isSuperAdmin = superAdminQuery.data === true;
   const tenantBlocked = !isSuperAdmin && tenant?.status === "blocked";
+  const hasTenantAccess = Boolean(
+    accessQuery.data?.activeTenantId ||
+      accessQuery.data?.roles.some(({ tenant_id }) => tenant_id),
+  );
 
   async function signOut() {
     await queryClient.cancelQueries();
@@ -41,7 +74,7 @@ function AppLayout() {
     navigate({ to: "/auth", search: { redirect: "/app" }, replace: true });
   }
 
-  if (tenantQuery.isLoading || superAdminQuery.isLoading) {
+  if (tenantQuery.isLoading || superAdminQuery.isLoading || accessQuery.isLoading) {
     return (
       <main className="grid min-h-screen place-items-center bg-slate-950 text-white">
         <div className="flex items-center gap-3 text-sm text-slate-300">
@@ -52,7 +85,7 @@ function AppLayout() {
     );
   }
 
-  if (tenantQuery.isError || superAdminQuery.isError) {
+  if (tenantQuery.isError || superAdminQuery.isError || accessQuery.isError) {
     return (
       <TenantAccessScreen
         error
@@ -74,6 +107,27 @@ function AppLayout() {
     );
   }
 
+  if (!isSuperAdmin && !hasTenantAccess) {
+    return (
+      <TenantAccessScreen
+        accessDisabled
+        isRefreshing={accessQuery.isFetching}
+        onRefresh={() => accessQuery.refetch()}
+        onSignOut={signOut}
+      />
+    );
+  }
+
+  if (accessQuery.data?.mustChangePassword) {
+    return (
+      <ProvisionalPasswordScreen
+        professionalId={accessQuery.data.professionalId}
+        userId={accessQuery.data.userId}
+        onSignOut={signOut}
+      />
+    );
+  }
+
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-background pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
@@ -90,5 +144,128 @@ function AppLayout() {
         <ProfessionalAppointmentNotifier />
       </div>
     </SidebarProvider>
+  );
+}
+
+function ProvisionalPasswordScreen({
+  professionalId,
+  userId,
+  onSignOut,
+}: {
+  professionalId: string | null;
+  userId: string | null;
+  onSignOut: () => Promise<void>;
+}) {
+  const queryClient = useQueryClient();
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving) return;
+
+    const passwordError = validateProjectPassword(password);
+    if (passwordError) {
+      setError(passwordError);
+      return;
+    }
+    if (password !== confirmation) {
+      setError("A confirmação não corresponde à nova senha.");
+      return;
+    }
+    if (!professionalId || !userId) {
+      setError("Não foi possível identificar o vínculo deste acesso.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    const { error: passwordUpdateError } = await supabase.auth.updateUser({ password });
+    if (passwordUpdateError) {
+      setError(passwordUpdateError.message);
+      setSaving(false);
+      return;
+    }
+
+    const { error: flagUpdateError } = await supabase
+      .from("professionals")
+      .update({ must_change_password: false })
+      .eq("id", professionalId)
+      .eq("auth_user_id", userId);
+    if (flagUpdateError) {
+      setError(
+        "A senha foi alterada, mas não foi possível concluir a liberação. Tente salvar novamente.",
+      );
+      setSaving(false);
+      return;
+    }
+
+    setPassword("");
+    setConfirmation("");
+    await queryClient.invalidateQueries({ queryKey: tenantAccessQueryKey });
+    setSaving(false);
+  }
+
+  return (
+    <main className="grid min-h-screen place-items-center bg-slate-950 p-4 text-white">
+      <Card className="w-full max-w-md border-white/10 bg-slate-900 text-white shadow-2xl">
+        <CardHeader className="space-y-3">
+          <div className="grid h-12 w-12 place-items-center rounded-xl bg-amber-400/15 text-amber-400">
+            <LockKeyhole className="h-6 w-6" />
+          </div>
+          <CardTitle>Crie sua senha pessoal</CardTitle>
+          <CardDescription className="text-slate-300">
+            Este é seu primeiro acesso com a senha provisória. Defina uma nova senha que
+            somente você conheça para entrar no LinkUp Studio.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={submit}>
+            <div className="space-y-2">
+              <Label htmlFor="new-password">Nova senha</Label>
+              <Input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                disabled={saving}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">Confirme a nova senha</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                disabled={saving}
+              />
+            </div>
+            {error ? (
+              <p role="alert" className="text-sm text-red-300">
+                {error}
+              </p>
+            ) : null}
+            <Button className="w-full" type="submit" disabled={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Salvar minha senha
+            </Button>
+            <Button
+              className="w-full text-slate-300 hover:text-white"
+              type="button"
+              variant="ghost"
+              disabled={saving}
+              onClick={() => void onSignOut()}
+            >
+              Sair
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </main>
   );
 }

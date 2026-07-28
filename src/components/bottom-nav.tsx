@@ -2,6 +2,8 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Award, Calendar, Landmark, LayoutDashboard, ShoppingCart } from "lucide-react";
 
 import { useSidebar } from "@/components/ui/sidebar";
+import { useCurrentTenant, useTenantAccess } from "@/hooks/use-tenant";
+import { canAccessAppPath } from "@/lib/access-control";
 
 const mobileItems = [
   { title: "Painel Geral", path: "/app", icon: LayoutDashboard },
@@ -13,10 +15,19 @@ const mobileItems = [
 
 export function BottomNav() {
   const currentPath = useRouterState({ select: (router) => router.location.pathname });
+  const { isLoading: tenantLoading } = useCurrentTenant();
+  const { data: access, isLoading: accessLoading } = useTenantAccess();
   const { setOpenMobile } = useSidebar();
+
+  const isLoading = tenantLoading || accessLoading;
+  const navItems = access
+    ? mobileItems.filter((item) => canAccessAppPath(item.path, access)).slice(0, 5)
+    : [];
 
   const isActive = (path: string) =>
     path === "/app" ? currentPath === "/app" : currentPath.startsWith(path);
+
+  if (isLoading) return null;
 
   return (
     <nav
@@ -27,7 +38,7 @@ export function BottomNav() {
         className="flex w-full items-stretch gap-0 px-1.5 pt-2"
         style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
       >
-        {mobileItems.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.path);
           return (

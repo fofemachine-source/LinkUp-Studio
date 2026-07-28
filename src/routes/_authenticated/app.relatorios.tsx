@@ -185,9 +185,12 @@ function RelPage() {
       const cmdTotalValue = proCmdsItems.reduce((acc, item) => acc + (Number(item.unit_price) * Number(item.quantity ?? 1)), 0);
       const totalGenerated = apptTotalValue + cmdTotalValue;
 
-      // Calculate commissions
-      const pct = pro.commission_pct ?? 45;
-      const commissionGenerated = proCmdsItems.reduce((acc, item) => acc + Number(item.commission_value || 0), 0) + (apptTotalValue * pct) / 100;
+      // Comissão só nasce de serviço concluído em comanda fechada. O valor já
+      // foi congelado no lançamento pela função do banco; agendamento avulso,
+      // faturamento total e produtos não entram nesta soma.
+      const commissionGenerated = proCmdsItems
+        .filter((item: any) => item.kind === "service")
+        .reduce((acc, item) => acc + Number(item.commission_value || 0), 0);
 
       // Count services (main + extra)
       let servicesCount = proAppts.length;

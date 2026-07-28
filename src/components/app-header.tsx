@@ -24,7 +24,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCurrentTenant, useUserRole } from "@/hooks/use-tenant";
+import { useCurrentTenant, useTenantAccess, useUserRole } from "@/hooks/use-tenant";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +43,8 @@ import { authUserQueryKey, fetchAuthUser } from "@/lib/auth-cache";
 import { ensureAppointmentPushSubscription } from "@/lib/appointment-push";
 import { dynamicSupabase, errorMessage } from "@/lib/supabase-dynamic";
 import { ImageCropDialog } from "@/components/ui/image-crop-dialog";
+import { hasAccessPermission } from "@/lib/access-control";
+import { getTenantOperationalSettings } from "@/lib/tenant-operational-settings";
 
 type AppNotificationRow = {
   id: string;
@@ -99,6 +101,7 @@ export function AppHeader() {
   const isDashboard = currentPath.replace(/\/+$/, "") === "/app";
   const qc = useQueryClient();
   const { data: tenant } = useCurrentTenant();
+  const { data: access } = useTenantAccess();
   const { data: role } = useUserRole(tenant?.id);
   const { toggleSidebar } = useSidebar();
 
@@ -128,7 +131,7 @@ export function AppHeader() {
     },
   });
 
-  const canManageAppointmentAlerts = role === "owner" || role === "staff";
+  const canManageAppointmentAlerts = hasAccessPermission(access, "settings");
   const [repeatInput, setRepeatInput] = useState("20");
   const [savingAlertSettings, setSavingAlertSettings] = useState(false);
   const [activatingPush, setActivatingPush] = useState(false);
@@ -159,14 +162,8 @@ export function AppHeader() {
     enabled: Boolean(tenant?.id),
     staleTime: 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await dynamicSupabase
-        .from<HeaderAlertSettings>("tenant_settings")
-        .select("appointment_alert_repeat_seconds, appointment_reception_alerts_enabled")
-        .eq("tenant_id", tenant!.id)
-        .maybeSingle();
-
-      if (error) throw error;
-      return (data ?? null) as HeaderAlertSettings | null;
+      const data = await getTenantOperationalSettings(tenant!.id);
+      return data as HeaderAlertSettings | null;
     },
   });
 
@@ -397,7 +394,7 @@ export function AppHeader() {
     <header className="sticky top-0 z-30 flex h-[4.5rem] items-center gap-3 border-b bg-background/95 px-4 backdrop-blur md:h-16 md:bg-background md:backdrop-blur-none">
       <button
         onClick={toggleSidebar}
-        className={`${isDashboard ? "hidden md:flex" : "flex"} h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted md:transition-all md:duration-200 md:active:scale-95`}
+        className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted md:transition-all md:duration-200 md:active:scale-95"
         aria-label="Abrir Menu"
       >
         <Menu className="h-5 w-5" />

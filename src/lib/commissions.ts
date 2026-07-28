@@ -33,6 +33,7 @@ export type CommissionEntry = {
   gross_amount: number;
   commission_pct: number;
   commission_amount: number;
+  paid_amount: number;
   rule_id: string | null;
   rule_scope: "company" | "professional" | "item" | "legacy";
   rule_description: string | null;
@@ -150,6 +151,29 @@ export const paymentLabels: Record<string, string> = {
 export function numberValue(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function commissionRemaining(entry: Pick<CommissionEntry, "commission_amount" | "paid_amount">) {
+  return Math.max(0, Math.round((numberValue(entry.commission_amount) - numberValue(entry.paid_amount)) * 100) / 100);
+}
+
+export function calculateServiceCommission(input: {
+  grossAmount: number;
+  percentage: number;
+  isOwner?: boolean;
+}) {
+  const grossAmount = Math.max(0, Math.round(numberValue(input.grossAmount) * 100) / 100);
+  const percentage = Math.max(0, Math.min(100, numberValue(input.percentage)));
+  const commissionAmount = input.isOwner
+    ? 0
+    : Math.round((grossAmount * percentage) / 100 * 100) / 100;
+
+  return {
+    grossAmount,
+    percentage,
+    commissionAmount,
+    storeShare: Math.round((grossAmount - commissionAmount) * 100) / 100,
+  };
 }
 
 export function initials(name: string) {

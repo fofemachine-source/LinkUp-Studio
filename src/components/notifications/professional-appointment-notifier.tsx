@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -18,33 +18,37 @@ import { useTenantAccess } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { ensureAppointmentPushSubscription } from "@/lib/appointment-push";
 import { dynamicSupabase } from "@/lib/supabase-dynamic";
+import { getTenantOperationalSettings } from "@/lib/tenant-operational-settings";
 
 const NOTIFICATION_SOUND_URL = "/sounds/new-appointment.wav";
 const SOUND_READY_STORAGE_KEY = "linkup:new-appointment-sound-ready";
+const RECENT_ALERT_WINDOW_MS = 2 * 60 * 1000;
 
-type CurrentProfessional = {
-  id: string;
-  full_name: string;
-  tenant_id: string;
-  auth_user_id: string | null;
-  active: boolean | null;
+type AppointmentNotificationData = {
+  appointmentId?: string;
+  professionalName?: string;
+  serviceName?: string;
+  clientName?: string;
+  startAt?: string;
+  recipientKind?: "professional" | "owner" | "reception";
+  url?: string;
 };
 
-type AppointmentRealtimePayload = {
+type AppointmentNotificationRow = {
   id: string;
-  tenant_id: string;
-  professional_id: string;
-  service_id: string | null;
-  client_name: string | null;
-  client_whatsapp: string | null;
-  start_at: string;
-  end_at: string;
-  status: string | null;
-  source: string | null;
+  recipient_user_id: string;
+  appointment_id: string | null;
+  kind: string;
+  title: string;
+  body: string;
+  data: AppointmentNotificationData | null;
+  acknowledged_at: string | null;
+  created_at: string;
 };
 
 type AppointmentAlert = {
-  id: string;
+  notificationId: string;
+  appointmentId: string | null;
   clientName: string;
   serviceName: string;
   dateLabel: string;
@@ -55,10 +59,10 @@ type AppointmentAlert = {
 
 type AppointmentAlertSettings = {
   appointment_alert_repeat_seconds?: number | null;
-  appointment_reception_alerts_enabled?: boolean | null;
 };
 
-function formatAppointmentDate(value: string) {
+function formatAppointmentDate(value: string | undefined) {
+  if (!value) return "Data não informada";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Data não informada";
 
@@ -70,7 +74,8 @@ function formatAppointmentDate(value: string) {
   }).format(date);
 }
 
-function formatAppointmentTime(value: string) {
+function formatAppointmentTime(value: string | undefined) {
+  if (!value) return "--:--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "--:--";
 
@@ -98,8 +103,24 @@ function clampRepeatSeconds(value: unknown) {
   return Math.min(300, Math.max(5, Math.round(parsed)));
 }
 
-function isCancelledStatus(status: string | null | undefined) {
-  return ["cancelled", "canceled", "cancelado"].includes(String(status ?? "").toLowerCase());
+function buildAlert(notification: AppointmentNotificationRow): AppointmentAlert {
+  const data = notification.data ?? {};
+  const professionalName = data.professionalName?.trim() || "Profissional";
+
+  let audienceLabel = `Nova reserva para ${professionalName}`;
+  if (data.recipientKind === "professional") audienceLabel = "Chegou uma reserva para você";
+  if (data.recipientKind === "owner") audienceLabel = `Nova reserva na agenda de ${professionalName}`;
+
+  return {
+    notificationId: notification.id,
+    appointmentId: notification.appointment_id,
+    clientName: data.clientName?.trim() || "Cliente não informado",
+    serviceName: data.serviceName?.trim() || "Serviço agendado",
+    dateLabel: formatAppointmentDate(data.startAt),
+    timeLabel: formatAppointmentTime(data.startAt),
+    professionalName,
+    audienceLabel,
+  };
 }
 
 export function ProfessionalAppointmentNotifier() {
@@ -109,59 +130,23 @@ export function ProfessionalAppointmentNotifier() {
   const access = tenantAccessQuery.data;
   const tenantId = access?.activeTenantId ?? access?.tenant?.id ?? null;
   const userId = access?.userId ?? null;
-  const tenantRoles = useMemo(
-    () =>
-      (access?.roles ?? []).filter((role) => role.tenant_id === tenantId).map((role) => role.role),
-    [access?.roles, tenantId],
-  );
-  const isReceptionUser = tenantRoles.includes("owner") || tenantRoles.includes("staff");
-  const seenAppointments = useRef<Set<string>>(new Set());
+  const seenNotifications = useRef<Set<string>>(new Set());
   const [latestAlert, setLatestAlert] = useState<AppointmentAlert | null>(null);
   const [soundReady, setSoundReady] = useState(getStoredSoundReady);
   const [soundBlocked, setSoundBlocked] = useState(false);
-
-  const { data: currentProfessional = null } = useQuery({
-    queryKey: ["current-professional-profile-for-alerts", tenantId, userId],
-    enabled: Boolean(tenantId && userId),
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("professionals")
-        .select("id, full_name, tenant_id, auth_user_id, active")
-        .eq("tenant_id", tenantId!)
-        .eq("auth_user_id", userId!)
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-      if (error) throw error;
-
-      const rows = (data ?? []) as CurrentProfessional[];
-      return rows.find((professional) => professional.active !== false) ?? rows[0] ?? null;
-    },
-  });
 
   const { data: alertSettings = null } = useQuery({
     queryKey: ["appointment-alert-settings", tenantId],
     enabled: Boolean(tenantId),
     staleTime: 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await dynamicSupabase
-        .from<AppointmentAlertSettings>("tenant_settings")
-        .select("appointment_alert_repeat_seconds, appointment_reception_alerts_enabled")
-        .eq("tenant_id", tenantId)
-        .maybeSingle();
-
-      if (error) throw error;
+      const data = await getTenantOperationalSettings(tenantId!);
       return (data ?? null) as AppointmentAlertSettings | null;
     },
   });
 
   const repeatSeconds = clampRepeatSeconds(alertSettings?.appointment_alert_repeat_seconds);
-  const receptionAlertsEnabled = alertSettings?.appointment_reception_alerts_enabled !== false;
-  const isProfessionalRecipient = Boolean(currentProfessional?.id);
-  const canReceiveAppointmentAlerts =
-    Boolean(tenantId && userId) &&
-    (isProfessionalRecipient || (isReceptionUser && receptionAlertsEnabled));
+  const canReceiveAppointmentAlerts = Boolean(tenantId && userId);
 
   const enableSound = useCallback(async () => {
     if (!tenantId || !userId) return;
@@ -178,7 +163,7 @@ export function ProfessionalAppointmentNotifier() {
           toast.success("Som e notificações deste dispositivo ativados.");
         } else if (pushResult.status === "missing-vapid") {
           toast.warning(
-            "Som ativado. O Push com navegador fechado precisa das chaves VAPID no Lovable.",
+            "Som ativado. O Push com o aplicativo fechado precisa das chaves VAPID.",
           );
         } else if (pushResult.status === "denied") {
           toast.warning("Som ativado. O navegador não autorizou notificações visuais.");
@@ -193,7 +178,7 @@ export function ProfessionalAppointmentNotifier() {
       console.error("Não foi possível ativar o som de agendamentos.", error);
       setSoundReady(false);
       setSoundBlocked(true);
-      toast.error("O navegador bloqueou o som. Clique novamente em Ativar som.");
+      toast.error("O navegador bloqueou o som. Clique novamente em Ativar alertas.");
     }
   }, [tenantId, userId]);
 
@@ -202,64 +187,30 @@ export function ProfessionalAppointmentNotifier() {
   }, [navigate]);
 
   const acknowledgeAlert = useCallback(() => {
+    if (!latestAlert || !userId) return;
+
+    const notificationId = latestAlert.notificationId;
     setLatestAlert(null);
-    if (userId) {
-      void dynamicSupabase
-        .from<unknown>("app_notifications")
-        .update({ acknowledged_at: new Date().toISOString(), read_at: new Date().toISOString() })
-        .eq("recipient_user_id", userId)
-        .eq("appointment_id", latestAlert?.id ?? "");
-    }
-  }, [latestAlert?.id, userId]);
-
-  const buildAlert = useCallback(
-    async (
-      appointment: AppointmentRealtimePayload,
-      audience: "professional" | "reception",
-    ): Promise<AppointmentAlert> => {
-      let serviceName = "Serviço agendado";
-      let professionalName = currentProfessional?.full_name ?? "Profissional";
-
-      const [serviceResult, professionalResult] = await Promise.all([
-        appointment.service_id
-          ? supabase
-              .from("services")
-              .select("name")
-              .eq("tenant_id", appointment.tenant_id)
-              .eq("id", appointment.service_id)
-              .maybeSingle()
-          : Promise.resolve({ data: null, error: null }),
-        supabase
-          .from("professionals")
-          .select("full_name")
-          .eq("tenant_id", appointment.tenant_id)
-          .eq("id", appointment.professional_id)
-          .maybeSingle(),
-      ]);
-
-      if (!serviceResult.error && serviceResult.data?.name) serviceName = serviceResult.data.name;
-      if (!professionalResult.error && professionalResult.data?.full_name) {
-        professionalName = professionalResult.data.full_name;
-      }
-
-      return {
-        id: appointment.id,
-        clientName: appointment.client_name?.trim() || "Cliente não informado",
-        serviceName,
-        dateLabel: formatAppointmentDate(appointment.start_at),
-        timeLabel: formatAppointmentTime(appointment.start_at),
-        professionalName,
-        audienceLabel:
-          audience === "professional"
-            ? "Chegou uma reserva para você"
-            : `Nova reserva para ${professionalName}`,
-      };
-    },
-    [currentProfessional?.full_name],
-  );
+    void dynamicSupabase
+      .from<unknown>("app_notifications")
+      .update({ acknowledged_at: new Date().toISOString(), read_at: new Date().toISOString() })
+      .eq("recipient_user_id", userId)
+      .eq("id", notificationId)
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ["app-notifications"] });
+      });
+  }, [latestAlert, queryClient, userId]);
 
   const notifyAppointment = useCallback(
-    async (appointment: AppointmentRealtimePayload, audience: "professional" | "reception") => {
+    (notification: AppointmentNotificationRow) => {
+      if (!notification?.id || seenNotifications.current.has(notification.id)) return;
+
+      seenNotifications.current.add(notification.id);
+      if (seenNotifications.current.size > 120) {
+        const [first] = seenNotifications.current;
+        if (first) seenNotifications.current.delete(first);
+      }
+
       queryClient.invalidateQueries({ queryKey: ["appts"] });
       queryClient.invalidateQueries({ queryKey: ["agenda-commandas"] });
       queryClient.invalidateQueries({ queryKey: ["pos-commandas"] });
@@ -281,7 +232,7 @@ export function ProfessionalAppointmentNotifier() {
           setSoundBlocked(true);
         });
 
-      const alert = await buildAlert(appointment, audience);
+      const alert = buildAlert(notification);
       setLatestAlert(alert);
 
       toast.success("Novo agendamento", {
@@ -292,20 +243,8 @@ export function ProfessionalAppointmentNotifier() {
           onClick: openAgenda,
         },
       });
-
-      if (
-        typeof window !== "undefined" &&
-        "Notification" in window &&
-        Notification.permission === "granted"
-      ) {
-        new Notification("Novo agendamento no LinkUp Studio", {
-          body: `${alert.clientName} às ${alert.timeLabel} · ${alert.serviceName}`,
-          tag: `appointment-${appointment.id}`,
-          requireInteraction: true,
-        });
-      }
     },
-    [buildAlert, openAgenda, queryClient],
+    [openAgenda, queryClient],
   );
 
   useEffect(() => {
@@ -324,59 +263,55 @@ export function ProfessionalAppointmentNotifier() {
   }, [latestAlert, repeatSeconds, soundReady]);
 
   useEffect(() => {
-    if (!tenantId || !canReceiveAppointmentAlerts) return;
+    if (!tenantId || !userId) return;
+
+    let active = true;
+    const recentSince = new Date(Date.now() - RECENT_ALERT_WINDOW_MS).toISOString();
+
+    void dynamicSupabase
+      .from<AppointmentNotificationRow[]>("app_notifications")
+      .select(
+        "id, recipient_user_id, appointment_id, kind, title, body, data, acknowledged_at, created_at",
+      )
+      .eq("tenant_id", tenantId)
+      .eq("recipient_user_id", userId)
+      .eq("kind", "appointment_created")
+      .is("acknowledged_at", null)
+      .gte("created_at", recentSince)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!active || error || !data) return;
+        notifyAppointment(data as AppointmentNotificationRow);
+      });
 
     const channel = supabase
-      .channel(`appointment-alerts-${tenantId}-${userId ?? "anonymous"}`)
+      .channel(`app-notification-alerts-${tenantId}-${userId}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
-          table: "appointments",
-          filter: `tenant_id=eq.${tenantId}`,
+          table: "app_notifications",
+          filter: `recipient_user_id=eq.${userId}`,
         },
         (payload) => {
-          const appointment = payload.new as AppointmentRealtimePayload;
-          if (!appointment?.id) return;
-          if (isCancelledStatus(appointment.status)) return;
-          if (seenAppointments.current.has(appointment.id)) return;
-
-          const professionalMatch =
-            Boolean(currentProfessional?.id) &&
-            appointment.professional_id === currentProfessional?.id;
-          const receptionMatch = isReceptionUser && receptionAlertsEnabled;
-
-          if (!professionalMatch && !receptionMatch) return;
-
-          seenAppointments.current.add(appointment.id);
-          if (seenAppointments.current.size > 120) {
-            const [first] = seenAppointments.current;
-            if (first) seenAppointments.current.delete(first);
-          }
-
-          void notifyAppointment(appointment, professionalMatch ? "professional" : "reception");
+          const notification = payload.new as AppointmentNotificationRow;
+          if (notification?.kind !== "appointment_created") return;
+          notifyAppointment(notification);
         },
       )
       .subscribe();
 
     return () => {
+      active = false;
       supabase.removeChannel(channel);
     };
-  }, [
-    canReceiveAppointmentAlerts,
-    currentProfessional?.id,
-    isReceptionUser,
-    notifyAppointment,
-    receptionAlertsEnabled,
-    tenantId,
-    userId,
-  ]);
+  }, [notifyAppointment, tenantId, userId]);
 
-  const shouldShowSoundActivator = useMemo(
-    () => canReceiveAppointmentAlerts && (!soundReady || soundBlocked),
-    [canReceiveAppointmentAlerts, soundBlocked, soundReady],
-  );
+  const shouldShowSoundActivator =
+    canReceiveAppointmentAlerts && (!soundReady || soundBlocked);
 
   if (!canReceiveAppointmentAlerts) return null;
 
@@ -393,8 +328,8 @@ export function ProfessionalAppointmentNotifier() {
                 Ative alertas de novos agendamentos
               </p>
               <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                Um clique libera som no volume máximo e prepara este dispositivo para receber
-                avisos.
+                Um clique libera o som e prepara este dispositivo para receber avisos mesmo com o
+                PWA em segundo plano.
               </p>
               <Button
                 size="sm"
@@ -426,7 +361,7 @@ export function ProfessionalAppointmentNotifier() {
                     {latestAlert.audienceLabel}
                   </h3>
                   <p className="mt-1 text-xs text-slate-400">
-                    O alerta repete a cada {repeatSeconds}s até alguém confirmar.
+                    O alerta repete a cada {repeatSeconds} segundos até alguém confirmar.
                   </p>
                 </div>
               </div>

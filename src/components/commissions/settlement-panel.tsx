@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { brl, dateBR } from "@/lib/format";
 import {
   adjustmentLabels,
+  commissionRemaining,
   type AdjustmentType,
   type CommissionEntry,
   type FinancialAccountOption,
@@ -79,6 +80,7 @@ export function SettlementPanel({
   const [periodStart, setPeriodStart] = useState(format(startOfMonth(today), "yyyy-MM-dd"));
   const [periodEnd, setPeriodEnd] = useState(format(endOfMonth(today), "yyyy-MM-dd"));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({});
   const [adjustments, setAdjustments] = useState<SettlementAdjustmentDraft[]>(makeAdjustments);
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const [paymentMethod, setPaymentMethod] = useState("pix");
@@ -101,6 +103,7 @@ export function SettlementPanel({
         (entry) =>
           entry.professional_id === professionalId &&
           (entry.status === "pending" || entry.status === "scheduled") &&
+          commissionRemaining(entry) > 0 &&
           entry.competence_date >= periodStart &&
           entry.competence_date <= periodEnd,
       ),
@@ -109,6 +112,11 @@ export function SettlementPanel({
 
   useEffect(() => {
     setSelectedIds(availableEntries.map((entry) => entry.id));
+    setPaymentAmounts(
+      Object.fromEntries(
+        availableEntries.map((entry) => [entry.id, commissionRemaining(entry).toFixed(2)]),
+      ),
+    );
   }, [availableEntries]);
 
   const selectedEntries = useMemo(
@@ -116,7 +124,7 @@ export function SettlementPanel({
     [availableEntries, selectedIds],
   );
   const gross = selectedEntries.reduce(
-    (total, entry) => total + numberValue(entry.commission_amount),
+    (total, entry) => total + numberValue(paymentAmounts[entry.id]),
     0,
   );
   const credits = adjustments
@@ -132,6 +140,10 @@ export function SettlementPanel({
     setSelectedIds((current) =>
       checked ? Array.from(new Set([...current, id])) : current.filter((item) => item !== id),
     );
+  }
+
+  function updatePaymentAmount(id: string, value: string) {
+    setPaymentAmounts((current) => ({ ...current, [id]: value }));
   }
 
   function updateAdjustment(id: string, patch: Partial<SettlementAdjustmentDraft>) {
@@ -167,6 +179,21 @@ export function SettlementPanel({
 
     setBusy(true);
     try {
+      const allocations = selectedEntries
+        .map((entry) => ({
+          commission_entry_id: entry.id,
+          amount: numberValue(paymentAmounts[entry.id]),
+          remaining: commissionRemaining(entry),
+        }))
+        .filter((allocation) => allocation.amount > 0)
+        .map(({ commission_entry_id, amount, remaining }) => {
+          if (amount > remaining) {
+            throw new Error("O pagamento não pode superar o saldo restante do lançamento.");
+          }
+          return { commission_entry_id, amount };
+        });
+      if (!allocations.length) throw new Error("Informe ao menos um valor para pagar.");
+
       const proofUrl = await uploadProof();
       const payload = adjustments
         .filter((adjustment) => numberValue(adjustment.amount) > 0)
@@ -178,13 +205,13 @@ export function SettlementPanel({
           notes: adjustment.notes,
         }));
       const { error } = await supabase.rpc(
-        "settle_commissions" as never,
+        "record_commission_payment" as never,
         {
           p_tenant_id: tenantId,
           p_professional_id: professionalId,
           p_period_start: periodStart,
           p_period_end: periodEnd,
-          p_commission_ids: selectedIds,
+          p_allocations: allocations,
           p_adjustments: payload,
           p_account_id: accountId,
           p_payment_method: paymentMethod,
@@ -195,7 +222,7 @@ export function SettlementPanel({
       );
       if (error) throw error;
 
-      toast.success("Prestação de contas concluída e financeiro atualizado.");
+      toast.success("Pagamento registrado e financeiro atualizado.");
       setSelectedIds([]);
       setAdjustments(makeAdjustments());
       setNotes("");
@@ -275,7 +302,8 @@ export function SettlementPanel({
                     <TableHead>Origem</TableHead>
                     <TableHead>Item</TableHead>
                     <TableHead>Regra aplicada</TableHead>
-                    <TableHead className="text-right">Comissão</TableHead>
+                    <TableHead className="text-right">Saldo</TableHead>
+                    <TableHead className="text-right">Pagar agora</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -307,7 +335,21 @@ export function SettlementPanel({
                         {entry.rule_description || "Regra padrão"}
                       </TableCell>
                       <TableCell className="text-right font-semibold text-primary">
-                        {brl(entry.commission_amount)}
+                        {brl(commissionRemaining(entry))}
+                      </TableCell>
+                      <TableCell className="w-32 text-right">
+                        <Input
+                          type="number"
+                          min="0"
+                          max={commissionRemaining(entry)}
+                          step="0.01"
+                          value={paymentAmounts[entry.id] ?? ""}
+                          onChange={(event) =>
+                            updatePaymentAmount(entry.id, event.target.value)
+                          }
+                          aria-label={`Valor a pagar de ${entry.item_name}`}
+                          className="text-right"
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -396,7 +438,7 @@ export function SettlementPanel({
               </span>
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {selectedEntries.length} comissões selecionadas
+              {selectedEntries.length} lançamentos selecionados · pagamento total ou parcial
             </div>
           </div>
 

@@ -13,6 +13,7 @@ import type { Tenant } from "@/hooks/use-tenant";
 type TenantAccessScreenProps = {
   tenant?: Tenant | null;
   error?: boolean;
+  accessDisabled?: boolean;
   isRefreshing?: boolean;
   onRefresh: () => Promise<unknown>;
   onSignOut: () => Promise<void>;
@@ -33,6 +34,7 @@ function formatBlockedAt(value?: string | null) {
 export function TenantAccessScreen({
   tenant,
   error = false,
+  accessDisabled = false,
   isRefreshing = false,
   onRefresh,
   onSignOut,
@@ -48,7 +50,14 @@ export function TenantAccessScreen({
         description:
           "A conexão com o serviço de acesso falhou. Tente novamente antes de continuar.",
       }
-    : billingBlocked
+    : accessDisabled
+      ? {
+          eyebrow: "Acesso ao sistema",
+          title: "Acesso desligado",
+          description:
+            "Seu acesso ao sistema está desligado no momento. Fale com o proprietário ou com o suporte para reativá-lo.",
+        }
+      : billingBlocked
       ? {
           eyebrow: "Assinatura do LinkUp Studio",
           title:
@@ -104,7 +113,7 @@ export function TenantAccessScreen({
           <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">{copy.title}</h1>
           <p className="mt-4 text-sm leading-6 text-slate-300">{copy.description}</p>
 
-          {!error && (
+          {!error && !accessDisabled && (
             <div className="mt-7 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm">
               <div className="font-medium text-white">{tenant?.name ?? "Salão"}</div>
               <div className="mt-1 text-slate-400">

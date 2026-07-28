@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCurrentTenant } from "@/hooks/use-tenant";
+import { useCurrentTenant, useTenantAccess } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,6 +36,8 @@ import {
   type AgendaAppointment,
   type AgendaViewMode,
 } from "@/components/agenda/agenda-premium";
+import { hasAccessPermission } from "@/lib/access-control";
+import { getTenantOperationalSettings } from "@/lib/tenant-operational-settings";
 
 export const Route = createFileRoute("/_authenticated/app/agenda")({ component: AgendaPage });
 
@@ -77,6 +79,7 @@ async function loadCoveredServiceIds(
 
 function AgendaPage() {
   const { data: tenant } = useCurrentTenant();
+  const { data: access } = useTenantAccess();
   const qc = useQueryClient();
   const [date, setDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<AgendaViewMode>("day");
@@ -92,8 +95,26 @@ function AgendaPage() {
   const rangeEnd = endOfDay(addDays(date, rangeDays - 1));
 
   const { data: pros } = useQuery({
-    queryKey: ["pros", tenantId], enabled: !!tenantId,
-    queryFn: async () => (await supabase.from("professionals").select("*").eq("tenant_id", tenantId!).eq("active", true).order("full_name")).data ?? [],
+    queryKey: ["pros", tenantId, access?.professionalId, access?.accessPermissions],
+    enabled: !!tenantId && !!access,
+    queryFn: async () => {
+      let query = supabase
+        .from("professionals")
+        .select("*")
+        .eq("tenant_id", tenantId!)
+        .eq("active", true);
+      if (
+        access?.professionalId &&
+        !hasAccessPermission(access, "agenda_all")
+      ) {
+        query = query.eq("id", access.professionalId);
+      } else {
+        query = query.eq("available_for_booking", true);
+      }
+      const { data, error } = await query.order("full_name");
+      if (error) throw error;
+      return data ?? [];
+    },
   });
 
   const { data: appts } = useQuery({
@@ -175,7 +196,7 @@ function AgendaPage() {
   const { data: settings } = useQuery({
     queryKey: ["tenant-settings", tenantId],
     enabled: !!tenantId,
-    queryFn: async () => (await supabase.from("tenant_settings").select("*").eq("tenant_id", tenantId!).maybeSingle()).data,
+    queryFn: () => getTenantOperationalSettings(tenantId!),
   });
 
   const slotMin = tenant?.slot_minutes ?? 30;
@@ -580,6 +601,8 @@ function AgendaPage() {
   );
 }
 function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProId, defaultTime }: { tenantId?: string; pros: any[]; onDone: () => void; defaultDate: Date; defaultProId?: string; defaultTime?: string }) {
+  const { data: access } = useTenantAccess();
+  const canManageClients = hasAccessPermission(access, "clients");
   const [clientId, setClientId] = useState<string>("");
   const [isRegisteringNewClient, setIsRegisteringNewClient] = useState(false);
   const [newClientName, setNewClientName] = useState("");
@@ -640,13 +663,15 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
         if (!newClientWa.trim()) throw new Error("Informe o WhatsApp do novo cliente.");
         
         const cleanWa = newClientWa.replace(/\D/g, "");
-        let { data: existing } = await supabase.from("clients").select("id, full_name, whatsapp").eq("tenant_id", tenantId!).eq("whatsapp", cleanWa).maybeSingle();
+        const { data: existing } = canManageClients
+          ? await supabase.from("clients").select("id, full_name, whatsapp").eq("tenant_id", tenantId!).eq("whatsapp", cleanWa).maybeSingle()
+          : { data: null };
         
         if (existing) {
           finalClientId = existing.id;
           finalName = existing.full_name;
           finalWa = existing.whatsapp || "";
-        } else {
+        } else if (canManageClients) {
           const { data: newC, error: newCErr } = await supabase.from("clients").insert({
             tenant_id: tenantId!,
             full_name: newClientName,
@@ -654,6 +679,10 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
           }).select("id").single();
           if (newCErr) throw newCErr;
           finalClientId = newC.id;
+          finalName = newClientName;
+          finalWa = cleanWa;
+        } else {
+          finalClientId = "";
           finalName = newClientName;
           finalWa = cleanWa;
         }
@@ -921,6 +950,8 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
 
 function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }: { appt: any; tenantId?: string; pros: any[]; onDone: () => void; onDelete: () => void; appts: any[] }) {
   const qc = useQueryClient();
+  const { data: access } = useTenantAccess();
+  const canManageClients = hasAccessPermission(access, "clients");
   const [clientId, setClientId] = useState<string>(appt.client_id || "");
   const [isRegisteringNewClient, setIsRegisteringNewClient] = useState(false);
   const [newClientName, setNewClientName] = useState("");
@@ -1033,13 +1064,15 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
         if (!newClientWa.trim()) throw new Error("Informe o WhatsApp do novo cliente.");
         
         const cleanWa = newClientWa.replace(/\D/g, "");
-        let { data: existing } = await supabase.from("clients").select("id, full_name, whatsapp").eq("tenant_id", tenantId!).eq("whatsapp", cleanWa).maybeSingle();
+        const { data: existing } = canManageClients
+          ? await supabase.from("clients").select("id, full_name, whatsapp").eq("tenant_id", tenantId!).eq("whatsapp", cleanWa).maybeSingle()
+          : { data: null };
         
         if (existing) {
           finalClientId = existing.id;
           finalName = existing.full_name;
           finalWa = existing.whatsapp || "";
-        } else {
+        } else if (canManageClients) {
           const { data: newC, error: newCErr } = await supabase.from("clients").insert({
             tenant_id: tenantId!,
             full_name: newClientName,
@@ -1047,6 +1080,10 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
           }).select("id").single();
           if (newCErr) throw newCErr;
           finalClientId = newC.id;
+          finalName = newClientName;
+          finalWa = cleanWa;
+        } else {
+          finalClientId = "";
           finalName = newClientName;
           finalWa = cleanWa;
         }

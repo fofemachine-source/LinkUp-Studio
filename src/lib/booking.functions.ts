@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { syncAppointmentComanda } from "@/lib/commandas";
 import { z } from "zod";
-import { includesBookingWeekday, isVipExclusiveBookingDay } from "@/lib/booking-weekdays";
+import { getBookingWeekdayAccess, includesBookingWeekday } from "@/lib/booking-weekdays";
 
 async function pub() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -20,13 +20,35 @@ function isMissingPostgrestColumn(error: any, column: string) {
 async function loadPublicTenantSettings(supabase: any, tenantId: string) {
   const settingsWithClosedDates = await supabase
     .from("tenant_settings")
-    .select("work_days,open_hour,close_hour,lunch_start,lunch_end,vip_days,closed_dates")
+    .select("work_days,open_hour,close_hour,lunch_start,lunch_end,vip_days,vip_mode,closed_dates")
     .eq("tenant_id", tenantId)
     .maybeSingle();
 
   if (!settingsWithClosedDates.error) return settingsWithClosedDates;
-  if (!isMissingPostgrestColumn(settingsWithClosedDates.error, "closed_dates")) {
+  const missingClosedDates = isMissingPostgrestColumn(
+    settingsWithClosedDates.error,
+    "closed_dates",
+  );
+  const missingVipMode = isMissingPostgrestColumn(settingsWithClosedDates.error, "vip_mode");
+  if (!missingClosedDates && !missingVipMode) {
     throw new Error(settingsWithClosedDates.error.message);
+  }
+
+  const settingsWithoutClosedDates = await supabase
+    .from("tenant_settings")
+    .select("work_days,open_hour,close_hour,lunch_start,lunch_end,vip_days,vip_mode")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (!settingsWithoutClosedDates.error) {
+    return {
+      ...settingsWithoutClosedDates,
+      data: settingsWithoutClosedDates.data
+        ? { ...settingsWithoutClosedDates.data, closed_dates: [] as string[] }
+        : settingsWithoutClosedDates.data,
+    };
+  }
+  if (!isMissingPostgrestColumn(settingsWithoutClosedDates.error, "vip_mode")) {
+    throw new Error(settingsWithoutClosedDates.error.message);
   }
 
   const legacySettings = await supabase
@@ -39,7 +61,11 @@ async function loadPublicTenantSettings(supabase: any, tenantId: string) {
   return {
     ...legacySettings,
     data: legacySettings.data
-      ? { ...legacySettings.data, closed_dates: [] as string[] }
+      ? {
+          ...legacySettings.data,
+          vip_mode: "strict",
+          closed_dates: [] as string[],
+        }
       : legacySettings.data,
   };
 }
@@ -493,6 +519,8 @@ export const getPublicTenant = createServerFn({ method: "GET" })
         .select("id,full_name,photo_url,role_label,work_days,blocked_dates")
         .eq("tenant_id", t.id)
         .eq("active", true)
+        .eq("available_for_booking", true)
+        .eq("show_on_booking", true)
         .order("full_name"),
       loadServices(),
       loadServiceCategories(),
@@ -514,8 +542,12 @@ export const getPublicTenant = createServerFn({ method: "GET" })
     if (servicesResult.error) throw new Error(servicesResult.error.message);
     if (categoriesResult.error) throw new Error(categoriesResult.error.message);
     if (brandingResult.error) throw new Error(brandingResult.error.message);
-    const categories = categoriesResult.data ?? [];
-    const categoryById = new Map(categories.map((category: any) => [category.id, category]));
+    const categories = (categoriesResult.data ?? []) as Array<{
+      id: string;
+      name: string;
+      display_order: number | null;
+    }>;
+    const categoryById = new Map(categories.map((category) => [category.id, category]));
     const services = (servicesResult.data ?? []).map((service: any) => {
       const linkedCategory = service.category_id ? categoryById.get(service.category_id) : null;
       return {
@@ -1254,6 +1286,7 @@ export const createBooking = createServerFn({ method: "POST" })
           .eq("id", data.professionalId)
           .eq("tenant_id", data.tenantId)
           .eq("active", true)
+          .eq("available_for_booking", true)
           .maybeSingle(),
       ]);
     const services = (servicesRows ?? []) as any[];
@@ -1361,11 +1394,11 @@ export const createBooking = createServerFn({ method: "POST" })
           .eq("active", true),
       ]);
       if (!plan) throw new Error("O plano desta assinatura não foi encontrado.");
-      const planServiceIds = Array.from(
+      const planServiceIds: string[] = Array.from(
         new Set(
           (benefits ?? [])
             .filter((benefit: any) => benefit.benefit_type === "service" && benefit.service_id)
-            .map((benefit: any) => benefit.service_id),
+            .map((benefit: any) => String(benefit.service_id)),
         ),
       );
       coveredServiceIdsForBooking = requestedServiceIds.filter((serviceId) =>
@@ -1424,7 +1457,20 @@ export const createBooking = createServerFn({ method: "POST" })
 
     const bookingDayAtNoonUtc = new Date(`${bookingDate}T12:00:00Z`);
     const dow = ((bookingDayAtNoonUtc.getUTCDay() + 6) % 7) + 1; // 1=Mon..7=Sun
-    if (!includesBookingWeekday(settings?.work_days, dow)) {
+    const vipMode = (settings as any)?.vip_mode ?? "strict";
+    const bookingDayAccess = getBookingWeekdayAccess({
+      workDays: settings?.work_days,
+      vipDays: settings?.vip_days,
+      vipMode,
+      isVip: data.isVip,
+      weekday: dow,
+    });
+    if (!bookingDayAccess.allowed) {
+      if (bookingDayAccess.isVipExclusiveDay && vipMode === "strict") {
+        throw new Error(
+          "Este dia é reservado para assinantes VIP. Escolha outro dia ou torne-se assinante.",
+        );
+      }
       throw new Error("O salão não funciona no dia escolhido.");
     }
     if (!includesBookingWeekday(pro.work_days, dow)) {
@@ -1480,17 +1526,6 @@ export const createBooking = createServerFn({ method: "POST" })
     const lunchEnd = configuredTimeMinutes(pro.lunch_end ?? settings?.lunch_end, 13);
     if (lunchEnd > lunchStart && startMinutes < lunchEnd && endMinutes > lunchStart) {
       throw new Error("O horário escolhido coincide com o intervalo de almoço.");
-    }
-
-    const vipMode = (settings as any)?.vip_mode ?? "strict";
-    if (
-      vipMode === "strict" &&
-      !data.isVip &&
-      isVipExclusiveBookingDay(settings?.work_days, settings?.vip_days, dow)
-    ) {
-      throw new Error(
-        "Este dia é reservado para assinantes VIP. Escolha outro dia ou torne-se assinante.",
-      );
     }
 
     // Conflict check

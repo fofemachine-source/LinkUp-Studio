@@ -15,11 +15,7 @@ export function normalizeBookingWeekdays(
 ) {
   const source = Array.isArray(days) && days.length > 0 ? days : fallback;
   const normalized = Array.from(
-    new Set(
-      source
-        .map(normalizeBookingWeekday)
-        .filter((day): day is number => day !== null),
-    ),
+    new Set(source.map(normalizeBookingWeekday).filter((day): day is number => day !== null)),
   ).sort((a, b) => a - b);
 
   if (normalized.length > 0) return normalized;
@@ -40,25 +36,57 @@ export function includesBookingWeekday(
   return normalizeBookingWeekdays(days, fallback).includes(normalizedWeekday);
 }
 
-export function isVipExclusiveBookingDay(
-  workDays: unknown,
-  vipDays: unknown,
-  weekday: number,
-) {
+function normalizeConfiguredBookingWeekdays(days: unknown, fallback: readonly number[]) {
+  return normalizeBookingWeekdays(days, Array.isArray(days) ? [] : fallback);
+}
+
+export function getBookingWeekdayAccess({
+  workDays,
+  vipDays,
+  vipMode,
+  isVip,
+  weekday,
+}: {
+  workDays: unknown;
+  vipDays: unknown;
+  vipMode: unknown;
+  isVip: boolean;
+  weekday: number;
+}) {
   const normalizedWeekday = normalizeBookingWeekday(weekday);
-  if (normalizedWeekday === null) return false;
+  if (normalizedWeekday === null) {
+    return {
+      allowed: false,
+      isGeneralDay: false,
+      isVipDay: false,
+      isVipExclusiveDay: false,
+    };
+  }
 
-  const normalizedVipDays = normalizeBookingWeekdays(vipDays, DEFAULT_BOOKING_VIP_DAYS);
-  if (!normalizedVipDays.includes(normalizedWeekday)) return false;
+  const normalizedWorkDays = normalizeConfiguredBookingWeekdays(
+    workDays,
+    DEFAULT_BOOKING_WORK_DAYS,
+  );
+  const normalizedVipDays = normalizeConfiguredBookingWeekdays(vipDays, DEFAULT_BOOKING_VIP_DAYS);
+  const isGeneralDay = normalizedWorkDays.includes(normalizedWeekday);
+  const isVipDay = normalizedVipDays.includes(normalizedWeekday);
+  const isVipExclusiveDay = isVipDay && !isGeneralDay;
+  const normalizedVipMode = vipMode === "open" ? "open" : "strict";
 
-  const normalizedWorkDays = normalizeBookingWeekdays(workDays, DEFAULT_BOOKING_WORK_DAYS);
-  const vipCoversEveryWorkDay =
-    normalizedWorkDays.length > 0 &&
-    normalizedWorkDays.every((workDay) => normalizedVipDays.includes(workDay));
+  return {
+    allowed: isGeneralDay || (isVipExclusiveDay && (normalizedVipMode === "open" || isVip)),
+    isGeneralDay,
+    isVipDay,
+    isVipExclusiveDay,
+  };
+}
 
-  // Avoid locking the entire public showcase when every working day was marked as VIP.
-  // In this scenario, VIP remains a highlight/benefit, but normal booking must stay possible.
-  if (vipCoversEveryWorkDay) return false;
-
-  return true;
+export function isVipExclusiveBookingDay(workDays: unknown, vipDays: unknown, weekday: number) {
+  return getBookingWeekdayAccess({
+    workDays,
+    vipDays,
+    vipMode: "strict",
+    isVip: false,
+    weekday,
+  }).isVipExclusiveDay;
 }
