@@ -55,6 +55,21 @@ as $function$
   limit 1;
 $function$;
 
+create or replace function private.can_manage_commission_finance(
+  p_tenant_id uuid,
+  p_user_id uuid default auth.uid()
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $function$
+  select
+    private.professional_has_permission(p_tenant_id, 'commissions', p_user_id)
+    or private.professional_has_permission(p_tenant_id, 'finance_general', p_user_id);
+$function$;
+
 create or replace function private.can_read_professional_commission(
   p_tenant_id uuid,
   p_professional_id uuid,
@@ -79,12 +94,16 @@ revoke all on function private.current_professional_ids(uuid, uuid)
 from public, anon;
 revoke all on function private.current_professional_id(uuid, uuid)
 from public, anon;
+revoke all on function private.can_manage_commission_finance(uuid, uuid)
+from public, anon;
 revoke all on function private.can_read_professional_commission(uuid, uuid, uuid)
 from public, anon;
 
 grant execute on function private.current_professional_ids(uuid, uuid)
 to authenticated, service_role;
 grant execute on function private.current_professional_id(uuid, uuid)
+to authenticated, service_role;
+grant execute on function private.can_manage_commission_finance(uuid, uuid)
 to authenticated, service_role;
 grant execute on function private.can_read_professional_commission(uuid, uuid, uuid)
 to authenticated, service_role;

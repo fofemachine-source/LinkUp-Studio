@@ -126,11 +126,12 @@ for (const fragment of [
   "lower(trim(professional.email)) = caller.email",
   "id in (",
   "authorized users read professionals",
+  "can_manage_commission_finance",
   "can_read_professional_commission",
 ]) {
   assert.ok(
     ownFinanceEmailLinkMigration.includes(fragment),
-    `migraÃ§Ã£o de compatibilidade por e-mail deve conter: ${fragment}`,
+    `migracao de compatibilidade por e-mail deve conter: ${fragment}`,
   );
 }
 assert.ok(!migration.includes("item.kind in ('service', 'product')"));
