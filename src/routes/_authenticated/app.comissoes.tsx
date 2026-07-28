@@ -89,10 +89,6 @@ const db = supabase as any;
 function ComissoesPage() {
   const tenantId = useCurrentTenant().data?.id;
   const { data: access } = useTenantAccess();
-  const canManage = hasAccessPermission(access, "commissions");
-  const restrictedProfessionalId = canManage ? null : (access?.professionalId ?? null);
-  const canLoadCommissionData = Boolean(tenantId && access && (canManage || restrictedProfessionalId));
-  const effectiveProfessionalFilter = restrictedProfessionalId ?? professionalFilter;
   const queryClient = useQueryClient();
   const today = new Date();
   const [from, setFrom] = useState(format(startOfMonth(today), "yyyy-MM-dd"));
@@ -107,28 +103,48 @@ function ComissoesPage() {
   const [selectedProfessional, setSelectedProfessional] = useState<ProfessionalSummary | null>(
     null,
   );
+  const canManage = hasAccessPermission(access, "commissions");
+  const canReadOwnFinance = hasAccessPermission(access, "own_finance");
+  const restrictedProfessionalId = canManage ? null : (access?.professionalId ?? null);
+  const canLoadCommissionData = Boolean(
+    tenantId && access && (canManage || (canReadOwnFinance && restrictedProfessionalId)),
+  );
 
   const { data: professionals = [], isLoading: professionalsLoading } = useQuery({
     queryKey: ["commission-professionals", tenantId, restrictedProfessionalId, canManage],
     enabled: canLoadCommissionData,
     queryFn: async () => {
-      let query = db
+      const query = db
         .from("professionals")
         .select("id,full_name,photo_url,role_label,active,commission_pct,cost_center_id")
         .eq("tenant_id", tenantId)
         .eq("active", true);
-      if (restrictedProfessionalId) {
-        query = query.eq("id", restrictedProfessionalId);
-      }
       const { data, error } = await query.order("full_name");
       if (error) throw error;
       return (data ?? []) as ProfessionalSummary[];
     },
   });
 
+  const restrictedProfessionalIds = useMemo(
+    () => (canManage ? [] : professionals.map((professional) => professional.id)),
+    [canManage, professionals],
+  );
+  const restrictedProfessionalIdsKey = restrictedProfessionalIds.join(",");
+  const canLoadEntries = Boolean(
+    tenantId &&
+      access &&
+      (canManage || (canReadOwnFinance && restrictedProfessionalIds.length > 0)),
+  );
+  const effectiveProfessionalFilter = canManage ? professionalFilter : "all";
+  const displayedProfessionalFilter = canManage
+    ? professionalFilter
+    : restrictedProfessionalIds.length === 1
+      ? restrictedProfessionalIds[0]
+      : "all";
+
   const { data: entries = [], isLoading: entriesLoading } = useQuery({
-    queryKey: ["commission-entries", tenantId, restrictedProfessionalId, canManage],
-    enabled: canLoadCommissionData,
+    queryKey: ["commission-entries", tenantId, restrictedProfessionalIdsKey, canManage],
+    enabled: canLoadEntries,
     refetchOnWindowFocus: true,
     queryFn: async () => {
       let query = db
@@ -139,8 +155,8 @@ function ComissoesPage() {
         .eq("tenant_id", tenantId)
         .order("competence_date", { ascending: false })
         .limit(3000);
-      if (restrictedProfessionalId) {
-        query = query.eq("professional_id", restrictedProfessionalId);
+      if (!canManage) {
+        query = query.in("professional_id", restrictedProfessionalIds);
       }
       const { data, error } = await query;
       if (error) throw error;
@@ -149,8 +165,8 @@ function ComissoesPage() {
   });
 
   const { data: settlements = [], isLoading: settlementsLoading } = useQuery({
-    queryKey: ["commission-settlements", tenantId, restrictedProfessionalId, canManage],
-    enabled: canLoadCommissionData,
+    queryKey: ["commission-settlements", tenantId, restrictedProfessionalIdsKey, canManage],
+    enabled: canLoadEntries,
     queryFn: async () => {
       let query = db
         .from("commission_settlements")
@@ -160,8 +176,8 @@ function ComissoesPage() {
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
         .limit(1000);
-      if (restrictedProfessionalId) {
-        query = query.eq("professional_id", restrictedProfessionalId);
+      if (!canManage) {
+        query = query.in("professional_id", restrictedProfessionalIds);
       }
       const { data, error } = await query;
       if (error) throw error;
@@ -170,8 +186,8 @@ function ComissoesPage() {
   });
 
   const { data: adjustments = [], isLoading: adjustmentsLoading } = useQuery({
-    queryKey: ["commission-adjustments", tenantId, restrictedProfessionalId, canManage],
-    enabled: canLoadCommissionData,
+    queryKey: ["commission-adjustments", tenantId, restrictedProfessionalIdsKey, canManage],
+    enabled: canLoadEntries,
     queryFn: async () => {
       let query = db
         .from("commission_adjustments")
@@ -179,8 +195,8 @@ function ComissoesPage() {
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
         .limit(3000);
-      if (restrictedProfessionalId) {
-        query = query.eq("professional_id", restrictedProfessionalId);
+      if (!canManage) {
+        query = query.in("professional_id", restrictedProfessionalIds);
       }
       const { data, error } = await query;
       if (error) throw error;
@@ -484,7 +500,7 @@ function ComissoesPage() {
           <div className="min-w-0 lg:min-w-[220px]">
             <Label>Profissional</Label>
             <Select
-              value={effectiveProfessionalFilter}
+              value={displayedProfessionalFilter}
               onValueChange={setProfessionalFilter}
               disabled={!canManage}
             >
@@ -493,6 +509,9 @@ function ComissoesPage() {
               </SelectTrigger>
               <SelectContent>
                 {canManage && <SelectItem value="all">Todos os profissionais</SelectItem>}
+                {!canManage && restrictedProfessionalIds.length !== 1 && (
+                  <SelectItem value="all">Meus lançamentos</SelectItem>
+                )}
                 {professionals.map((professional) => (
                   <SelectItem key={professional.id} value={professional.id}>
                     {professional.full_name}

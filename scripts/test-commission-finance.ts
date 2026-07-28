@@ -10,6 +10,13 @@ const ownFinanceMigration = readFileSync(
   new URL("../supabase/migrations/20260728034034_restrict_commission_own_finance.sql", import.meta.url),
   "utf8",
 );
+const ownFinanceEmailLinkMigration = readFileSync(
+  new URL(
+    "../supabase/migrations/20260728035610_allow_professional_commission_email_link.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const cadastro = readFileSync(
   new URL("../src/routes/_authenticated/app.cadastros.tsx", import.meta.url),
   "utf8",
@@ -112,6 +119,20 @@ for (const fragment of [
     `migração de acesso próprio deve conter: ${fragment}`,
   );
 }
+for (const fragment of [
+  "current_professional_ids",
+  "auth.jwt() ->> 'email'",
+  "professional.auth_user_id is null",
+  "lower(trim(professional.email)) = caller.email",
+  "id in (",
+  "authorized users read professionals",
+  "can_read_professional_commission",
+]) {
+  assert.ok(
+    ownFinanceEmailLinkMigration.includes(fragment),
+    `migraÃ§Ã£o de compatibilidade por e-mail deve conter: ${fragment}`,
+  );
+}
 assert.ok(!migration.includes("item.kind in ('service', 'product')"));
 const cancelFunctionStart = migration.indexOf(
   "create or replace function public.cancel_commissions_for_commanda",
@@ -129,8 +150,10 @@ assert.ok(!generationFunction.includes("commission_canceled_after_payment"));
 assert.ok(cadastro.includes('min="0" max="100" step="0.01"'));
 assert.ok(cadastro.includes("novos serviços concluídos"));
 assert.ok(comissoes.includes("restrictedProfessionalId"));
+assert.ok(comissoes.includes("restrictedProfessionalIds"));
 assert.ok(comissoes.includes("effectiveProfessionalFilter"));
-assert.ok(comissoes.includes(".eq(\"professional_id\", restrictedProfessionalId)"));
+assert.ok(comissoes.includes(".in(\"professional_id\", restrictedProfessionalIds)"));
+assert.ok(!comissoes.includes(".eq(\"professional_id\", restrictedProfessionalId)"));
 assert.ok(comissoes.includes("Faturamento dos serviços"));
 assert.ok(comissoes.includes("Calculada sobre o faturamento do profissional"));
 assert.ok(!comissoes.includes('title="Produtos comissionados"'));
