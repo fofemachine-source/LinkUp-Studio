@@ -137,7 +137,15 @@ export async function ensureAppointmentPushSubscription(params: {
     { onConflict: "endpoint" },
   );
 
-  if (error) throw error;
+  if (error) {
+    console.error("[LinkUp Studio] Falha ao salvar dispositivo para notificações.", error);
+    return {
+      ok: false,
+      status: "failed",
+      message:
+        "Não foi possível ativar as notificações neste dispositivo. Atualize a página e tente novamente.",
+    };
+  }
 
   return {
     ok: true,
