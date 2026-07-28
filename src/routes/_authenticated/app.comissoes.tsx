@@ -90,6 +90,9 @@ function ComissoesPage() {
   const tenantId = useCurrentTenant().data?.id;
   const { data: access } = useTenantAccess();
   const canManage = hasAccessPermission(access, "commissions");
+  const restrictedProfessionalId = canManage ? null : (access?.professionalId ?? null);
+  const canLoadCommissionData = Boolean(tenantId && access && (canManage || restrictedProfessionalId));
+  const effectiveProfessionalFilter = restrictedProfessionalId ?? professionalFilter;
   const queryClient = useQueryClient();
   const today = new Date();
   const [from, setFrom] = useState(format(startOfMonth(today), "yyyy-MM-dd"));
@@ -106,16 +109,16 @@ function ComissoesPage() {
   );
 
   const { data: professionals = [], isLoading: professionalsLoading } = useQuery({
-    queryKey: ["commission-professionals", tenantId, access?.professionalId, canManage],
-    enabled: !!tenantId && !!access,
+    queryKey: ["commission-professionals", tenantId, restrictedProfessionalId, canManage],
+    enabled: canLoadCommissionData,
     queryFn: async () => {
       let query = db
         .from("professionals")
         .select("id,full_name,photo_url,role_label,active,commission_pct,cost_center_id")
         .eq("tenant_id", tenantId)
         .eq("active", true);
-      if (!canManage) {
-        query = query.eq("id", access?.professionalId ?? "");
+      if (restrictedProfessionalId) {
+        query = query.eq("id", restrictedProfessionalId);
       }
       const { data, error } = await query.order("full_name");
       if (error) throw error;
@@ -124,11 +127,11 @@ function ComissoesPage() {
   });
 
   const { data: entries = [], isLoading: entriesLoading } = useQuery({
-    queryKey: ["commission-entries", tenantId],
-    enabled: !!tenantId,
+    queryKey: ["commission-entries", tenantId, restrictedProfessionalId, canManage],
+    enabled: canLoadCommissionData,
     refetchOnWindowFocus: true,
     queryFn: async () => {
-      const { data, error } = await db
+      let query = db
         .from("commission_entries")
         .select(
           "*, professionals(id,full_name,photo_url,role_label,active,commission_pct,cost_center_id), commandas(number,client_name,closed_at)",
@@ -136,16 +139,20 @@ function ComissoesPage() {
         .eq("tenant_id", tenantId)
         .order("competence_date", { ascending: false })
         .limit(3000);
+      if (restrictedProfessionalId) {
+        query = query.eq("professional_id", restrictedProfessionalId);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as CommissionEntry[];
     },
   });
 
   const { data: settlements = [], isLoading: settlementsLoading } = useQuery({
-    queryKey: ["commission-settlements", tenantId],
-    enabled: !!tenantId,
+    queryKey: ["commission-settlements", tenantId, restrictedProfessionalId, canManage],
+    enabled: canLoadCommissionData,
     queryFn: async () => {
-      const { data, error } = await db
+      let query = db
         .from("commission_settlements")
         .select(
           "*, professionals(id,full_name,photo_url,role_label,active,commission_pct,cost_center_id), financial_accounts(name)",
@@ -153,21 +160,29 @@ function ComissoesPage() {
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
         .limit(1000);
+      if (restrictedProfessionalId) {
+        query = query.eq("professional_id", restrictedProfessionalId);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as CommissionSettlement[];
     },
   });
 
   const { data: adjustments = [], isLoading: adjustmentsLoading } = useQuery({
-    queryKey: ["commission-adjustments", tenantId],
-    enabled: !!tenantId,
+    queryKey: ["commission-adjustments", tenantId, restrictedProfessionalId, canManage],
+    enabled: canLoadCommissionData,
     queryFn: async () => {
-      const { data, error } = await db
+      let query = db
         .from("commission_adjustments")
         .select("*")
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
         .limit(3000);
+      if (restrictedProfessionalId) {
+        query = query.eq("professional_id", restrictedProfessionalId);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as CommissionAdjustment[];
     },
@@ -246,9 +261,10 @@ function ComissoesPage() {
         (entry) =>
           entry.competence_date >= from &&
           entry.competence_date <= to &&
-          (professionalFilter === "all" || entry.professional_id === professionalFilter),
+          (effectiveProfessionalFilter === "all" ||
+            entry.professional_id === effectiveProfessionalFilter),
       ),
-    [from, professionalFilter, serviceEntries, to],
+    [effectiveProfessionalFilter, from, serviceEntries, to],
   );
 
   const professionalSummaries = useMemo(
@@ -306,16 +322,16 @@ function ComissoesPage() {
     (total, entry) => total + numberValue(entry.paid_amount),
     0,
   );
+  const totalRevenue = filteredEntries.reduce(
+    (total, entry) => total + numberValue(entry.gross_amount),
+    0,
+  );
   const paidEntries = filteredEntries.filter((entry) => entry.status === "paid");
   const totalPending = pendingEntries.reduce(
     (total, entry) => total + commissionRemaining(entry),
     0,
   );
   const professionalsWithBalance = professionalSummaries.filter((item) => item.pending > 0);
-  const highestCommission = Math.max(0, ...professionalSummaries.map((item) => item.generated));
-  const averageCommission = professionalSummaries.length
-    ? totalGenerated / professionalSummaries.length
-    : 0;
   const serviceCount = filteredEntries.filter((entry) => entry.item_kind === "service").length;
   const loading =
     professionalsLoading || entriesLoading || settlementsLoading || adjustmentsLoading;
@@ -467,12 +483,16 @@ function ComissoesPage() {
           </div>
           <div className="min-w-0 lg:min-w-[220px]">
             <Label>Profissional</Label>
-            <Select value={professionalFilter} onValueChange={setProfessionalFilter}>
+            <Select
+              value={effectiveProfessionalFilter}
+              onValueChange={setProfessionalFilter}
+              disabled={!canManage}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos os profissionais</SelectItem>
+                {canManage && <SelectItem value="all">Todos os profissionais</SelectItem>}
                 {professionals.map((professional) => (
                   <SelectItem key={professional.id} value={professional.id}>
                     {professional.full_name}
@@ -558,9 +578,15 @@ function ComissoesPage() {
         <TabsContent value="resumo" className="space-y-5">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard
+              title="Faturamento dos serviços"
+              value={brl(totalRevenue)}
+              hint={`${serviceCount} serviços concluídos/vinculados`}
+              icon={Scissors}
+            />
+            <MetricCard
               title="Comissão gerada"
               value={brl(totalGenerated)}
-              hint={`${filteredEntries.length} itens comissionados`}
+              hint="Calculada sobre o faturamento do profissional"
               icon={BadgeDollarSign}
             />
             <MetricCard
@@ -576,12 +602,6 @@ function ComissoesPage() {
               hint={`${professionalsWithBalance.length} profissionais com saldo`}
               icon={Clock3}
               tone="warning"
-            />
-            <MetricCard
-              title="Média por profissional"
-              value={brl(averageCommission)}
-              hint={`Maior saldo gerado: ${brl(highestCommission)}`}
-              icon={UsersRound}
             />
           </div>
 

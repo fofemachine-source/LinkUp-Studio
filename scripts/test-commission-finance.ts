@@ -6,6 +6,10 @@ const migration = readFileSync(
   new URL("../supabase/migrations/20260727175116_commission_professional_payments.sql", import.meta.url),
   "utf8",
 );
+const ownFinanceMigration = readFileSync(
+  new URL("../supabase/migrations/20260728034034_restrict_commission_own_finance.sql", import.meta.url),
+  "utf8",
+);
 const cadastro = readFileSync(
   new URL("../src/routes/_authenticated/app.cadastros.tsx", import.meta.url),
   "utf8",
@@ -92,6 +96,22 @@ for (const fragment of [
 ]) {
   assert.ok(migration.includes(fragment), `migração deve conter: ${fragment}`);
 }
+for (const fragment of [
+  "can_read_professional_commission",
+  "professional_id = private.current_professional_id",
+  "authorized users read commission entries",
+  "authorized users read commission settlements",
+  "authorized users read commission adjustments",
+  "authorized managers manage commission rules",
+  "authorized operators insert commission entries",
+  "private.professional_has_permission(tenant_id, 'commandas'",
+  "drop policy if exists \"tenant members manage commission entries\"",
+]) {
+  assert.ok(
+    ownFinanceMigration.includes(fragment),
+    `migração de acesso próprio deve conter: ${fragment}`,
+  );
+}
 assert.ok(!migration.includes("item.kind in ('service', 'product')"));
 const cancelFunctionStart = migration.indexOf(
   "create or replace function public.cancel_commissions_for_commanda",
@@ -108,6 +128,11 @@ assert.ok(cancelFunction.includes("commission_canceled_after_payment"));
 assert.ok(!generationFunction.includes("commission_canceled_after_payment"));
 assert.ok(cadastro.includes('min="0" max="100" step="0.01"'));
 assert.ok(cadastro.includes("novos serviços concluídos"));
+assert.ok(comissoes.includes("restrictedProfessionalId"));
+assert.ok(comissoes.includes("effectiveProfessionalFilter"));
+assert.ok(comissoes.includes(".eq(\"professional_id\", restrictedProfessionalId)"));
+assert.ok(comissoes.includes("Faturamento dos serviços"));
+assert.ok(comissoes.includes("Calculada sobre o faturamento do profissional"));
 assert.ok(!comissoes.includes('title="Produtos comissionados"'));
 assert.ok(!comissoes.includes('title="Comissão específica por produto"'));
 
