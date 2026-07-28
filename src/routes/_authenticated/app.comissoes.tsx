@@ -1284,34 +1284,110 @@ function CommissionEntryHistory({
   entries: CommissionEntry[];
   emptyText: string;
 }) {
+  const displayedEntries = entries.slice(0, 80);
+  const totalCommission = displayedEntries.reduce(
+    (total, entry) => total + numberValue(entry.commission_amount),
+    0,
+  );
+
   return (
-    <Card>
-      <CardContent className="space-y-2 p-4">
-        {entries.slice(0, 80).map((entry) => (
+    <Card className="overflow-hidden border-border/70">
+      <CardHeader className="border-b bg-muted/20 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="text-base">Histórico de serviços</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {displayedEntries.length} item{displayedEntries.length === 1 ? "" : "s"} no período
+            </p>
+          </div>
+          <div className="shrink-0 rounded-xl bg-primary/10 px-3 py-2 text-right text-primary">
+            <div className="text-[10px] font-semibold uppercase tracking-wide">Comissão</div>
+            <div className="text-sm font-bold">{brl(totalCommission)}</div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 p-3 sm:p-4">
+        {displayedEntries.map((entry) => {
+          const remaining = commissionRemaining(entry);
+          const commandaLabel = entry.commandas?.number
+            ? `Comanda #${entry.commandas.number}`
+            : "Comanda vinculada";
+
+          return (
           <div
             key={entry.id}
-            className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm"
+            className="rounded-2xl border border-border/70 bg-background p-3 text-sm shadow-[0_10px_24px_-24px_rgba(15,23,42,0.6)]"
           >
-            <div className="min-w-0">
-              <div className="truncate font-medium">{entry.item_name}</div>
-              <div className="text-xs text-muted-foreground">
-                {dateBR(entry.competence_date)} · Comanda #{entry.commandas?.number ?? "—"} ·{" "}
-                {entry.rule_description}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="break-words text-[15px] font-semibold leading-snug">
+                  {entry.item_name}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  <span>{dateBR(entry.competence_date)}</span>
+                  <span className="h-1 w-1 rounded-full bg-muted-foreground/35" />
+                  <span>{commandaLabel}</span>
+                </div>
+              </div>
+              <div className="shrink-0 text-right">
+                <div className="text-base font-bold tabular-nums">{brl(entry.commission_amount)}</div>
+                <Badge
+                  variant="outline"
+                  className={`mt-1 h-6 rounded-full px-2 text-[10px] font-semibold ${commissionStatusTone(entry.status)}`}
+                >
+                  {commissionStatusLabel(entry.status)}
+                </Badge>
               </div>
             </div>
-            <div className="shrink-0 text-right">
-              <div className="font-semibold">{brl(entry.commission_amount)}</div>
-              <div className="text-xs text-muted-foreground">
-                {commissionStatusLabel(entry.status)} · Pago {brl(entry.paid_amount)} · Saldo{" "}
-                {brl(commissionRemaining(entry))}
-              </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+              <CommissionEntryFact label="Base" value={brl(entry.gross_amount)} />
+              <CommissionEntryFact label="Percentual" value={`${numberValue(entry.commission_pct)}%`} />
+              <CommissionEntryFact label="Pago" value={brl(entry.paid_amount)} />
+              <CommissionEntryFact label="Saldo" value={brl(remaining)} strong={remaining > 0} />
+            </div>
+
+            <div className="mt-3 rounded-xl bg-muted/35 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+              <span className="font-semibold text-foreground">Regra aplicada: </span>
+              {entry.rule_description || "Regra padrão do profissional"}
             </div>
           </div>
-        ))}
-        {!entries.length && <EmptyState text={emptyText} />}
+          );
+        })}
+        {!displayedEntries.length && <EmptyState text={emptyText} />}
       </CardContent>
     </Card>
   );
+}
+
+function CommissionEntryFact({
+  label,
+  value,
+  strong,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+}) {
+  return (
+    <div className="min-w-0 rounded-xl bg-muted/30 px-3 py-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div
+        className={`mt-1 truncate tabular-nums ${strong ? "font-bold text-primary" : "font-semibold"}`}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function commissionStatusTone(status: CommissionEntry["status"]) {
+  if (status === "paid") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "scheduled") return "border-sky-200 bg-sky-50 text-sky-700";
+  if (status === "canceled") return "border-rose-200 bg-rose-50 text-rose-700";
+  return "border-amber-200 bg-amber-50 text-amber-700";
 }
 
 function CommissionRulesPanel({
