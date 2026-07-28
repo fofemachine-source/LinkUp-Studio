@@ -634,6 +634,7 @@ async function updateProfessionalSystemAccess(input: {
     userId: string | null;
     created?: boolean;
     linkedExisting?: boolean;
+    passwordReset?: boolean;
     mustChangePassword?: boolean;
     accessProfile?: AccessProfile;
     accessPermissions?: string[];
@@ -850,6 +851,10 @@ function ProDialog({ pro, tenantId, onDone, canManageAccess }: any) {
           toast.success(
             "Login criado. A senha provisória deverá ser trocada no primeiro acesso.",
           );
+        } else if (access.passwordReset) {
+          toast.success(
+            "Senha provisória definida. O colaborador deverá criar uma senha pessoal no próximo acesso.",
+          );
         } else if (access.linkedExisting && !hasSystemAccess) {
           toast.success("Login existente vinculado sem alterar a senha pessoal.");
         }
@@ -902,7 +907,30 @@ function ProDialog({ pro, tenantId, onDone, canManageAccess }: any) {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">WhatsApp</Label><Input value={f.whatsapp} onChange={e=>setF({...f,whatsapp:e.target.value})} placeholder="(99) 99999-9999"/></div>
-        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">E-mail</Label><Input type="email" value={f.email} disabled={hasSystemAccess} onChange={e=>setF({...f,email:e.target.value})} placeholder="email@exemplo.com"/></div>
+        <div><Label className="text-xs uppercase tracking-wide text-muted-foreground">E-mail / Login</Label><Input type="email" value={f.email} disabled={hasSystemAccess} onChange={e=>setF({...f,email:e.target.value})} placeholder="email@exemplo.com"/></div>
+        {canManageAccess && (
+          <div>
+            <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+              Senha provisória de acesso
+            </Label>
+            <Input
+              type="password"
+              autoComplete="new-password"
+              value={accessPassword}
+              disabled={!systemAccessEnabled}
+              onChange={(event) => setAccessPassword(event.target.value)}
+              placeholder={
+                systemAccessEnabled
+                  ? "Defina a senha provisória"
+                  : "Ative o acesso ao sistema"
+              }
+            />
+            <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+              Ao preencher, o colaborador entra com esta senha e será obrigado
+              a criar uma senha pessoal no primeiro acesso.
+            </p>
+          </div>
+        )}
         <div>
           <Label className="text-xs uppercase tracking-wide text-muted-foreground">Cargo / Função</Label>
           <select
@@ -1139,26 +1167,6 @@ function ProDialog({ pro, tenantId, onDone, canManageAccess }: any) {
                 </select>
               </div>
             </div>
-
-            {!hasSystemAccess && canManageAccess && (
-              <div>
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Senha provisória
-                </Label>
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  value={accessPassword}
-                  onChange={(event) => setAccessPassword(event.target.value)}
-                  placeholder="Preencha apenas se for uma conta nova"
-                />
-                <p className="mt-1 text-[10px] text-muted-foreground">
-                  Se o e-mail já tiver conta, o vínculo será feito sem alterar a
-                  senha. Para uma conta nova, informe ao menos 8 caracteres; o
-                  colaborador criará uma senha pessoal no primeiro acesso.
-                </p>
-              </div>
-            )}
 
             <div className="space-y-2">
               <div className="flex items-center gap-2">
@@ -1658,9 +1666,8 @@ function UsersTab() {
           separadamente, se a pessoa participa da agenda e da vitrine.
         </p>
         <p className="text-xs text-muted-foreground">
-          Senhas existentes não são redefinidas pelo cadastro. Contas novas
-          recebem uma senha provisória e exigem a criação de uma senha pessoal
-          no primeiro acesso.
+          Contas novas ou senhas provisórias definidas pelo proprietário exigem
+          a criação de uma senha pessoal no primeiro acesso.
         </p>
       </CardContent>
     </Card>

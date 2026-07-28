@@ -14,6 +14,12 @@ import {
   type SettlementAdjustmentDraft,
   numberValue,
 } from "@/lib/commissions";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -135,6 +141,8 @@ export function SettlementPanel({
     .reduce((total, item) => total + numberValue(item.amount), 0);
   const net = gross + credits - debits;
   const professional = professionals.find((item) => item.id === professionalId);
+  const debitAdjustments = adjustments.filter((item) => item.nature === "debit");
+  const creditAdjustments = adjustments.filter((item) => item.nature === "credit");
 
   function toggleEntry(id: string, checked: boolean) {
     setSelectedIds((current) =>
@@ -238,16 +246,16 @@ export function SettlementPanel({
   }
 
   return (
-    <div className="grid gap-5 2xl:grid-cols-[1.45fr_0.8fr]">
-      <div className="space-y-5">
-        <Card>
-          <CardHeader className="pb-3">
+    <div className="grid min-w-0 gap-4 overflow-x-hidden 2xl:grid-cols-[1.45fr_0.8fr]">
+      <div className="min-w-0 space-y-4">
+        <Card className="overflow-hidden">
+          <CardHeader className="px-4 pb-3 pt-4 sm:px-6 sm:pt-6">
             <CardTitle className="flex items-center gap-2 text-base">
               <ReceiptText className="h-4 w-4 text-primary" />
               Apuração do profissional
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 px-4 pb-4 sm:px-6 sm:pb-6">
             <div className="grid gap-3 md:grid-cols-3">
               <div className="space-y-1.5">
                 <Label>Profissional</Label>
@@ -283,7 +291,103 @@ export function SettlementPanel({
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-xl border">
+            <div className="space-y-3 md:hidden">
+              <div className="rounded-2xl border bg-muted/20 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold">Lançamentos da apuração</div>
+                    <div className="text-xs text-muted-foreground">
+                      {selectedEntries.length} de {availableEntries.length} selecionados
+                    </div>
+                  </div>
+                  <label className="flex shrink-0 items-center gap-2 text-xs font-medium">
+                    Todos
+                    <Checkbox
+                      checked={
+                        availableEntries.length > 0 &&
+                        selectedIds.length === availableEntries.length
+                      }
+                      onCheckedChange={(checked) =>
+                        setSelectedIds(checked ? availableEntries.map((entry) => entry.id) : [])
+                      }
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {!professionalId && (
+                <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  Selecione um profissional para iniciar a prestação.
+                </div>
+              )}
+              {professionalId && !availableEntries.length && (
+                <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  Nenhuma comissão pendente dentro do período.
+                </div>
+              )}
+
+              {availableEntries.map((entry) => (
+                <div key={entry.id} className="rounded-2xl border bg-card p-3 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      className="mt-1"
+                      checked={selectedIds.includes(entry.id)}
+                      onCheckedChange={(checked) => toggleEntry(entry.id, checked === true)}
+                    />
+                    <div className="min-w-0 flex-1 space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold">{entry.item_name}</div>
+                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                            Comanda #{entry.commandas?.number ?? "—"} ·{" "}
+                            {entry.commandas?.client_name || "Cliente"}
+                          </div>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 rounded-full px-2 py-0 text-[11px]"
+                        >
+                          {entry.commission_pct}%
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-xl bg-muted/35 p-2">
+                          <div className="text-muted-foreground">Competência</div>
+                          <div className="font-medium">{dateBR(entry.competence_date)}</div>
+                        </div>
+                        <div className="rounded-xl bg-primary/10 p-2">
+                          <div className="text-muted-foreground">Saldo</div>
+                          <div className="font-semibold text-primary">
+                            {brl(commissionRemaining(entry))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl bg-muted/25 p-2 text-xs text-muted-foreground">
+                        {entry.rule_description || "Regra padrão"}
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Pagar agora</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max={commissionRemaining(entry)}
+                          step="0.01"
+                          value={paymentAmounts[entry.id] ?? ""}
+                          onChange={(event) => updatePaymentAmount(entry.id, event.target.value)}
+                          aria-label={`Valor a pagar de ${entry.item_name}`}
+                          className="h-10 text-right"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto rounded-xl border md:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -344,9 +448,7 @@ export function SettlementPanel({
                           max={commissionRemaining(entry)}
                           step="0.01"
                           value={paymentAmounts[entry.id] ?? ""}
-                          onChange={(event) =>
-                            updatePaymentAmount(entry.id, event.target.value)
-                          }
+                          onChange={(event) => updatePaymentAmount(entry.id, event.target.value)}
                           aria-label={`Valor a pagar de ${entry.item_name}`}
                           className="text-right"
                         />
@@ -369,59 +471,120 @@ export function SettlementPanel({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-3">
+        <Card className="overflow-hidden">
+          <CardHeader className="px-4 pb-3 pt-4 sm:px-6 sm:pt-6">
             <CardTitle className="text-base">Acréscimos e descontos</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2">
-            {adjustments.map((adjustment) => (
-              <div key={adjustment.id} className="rounded-xl border bg-muted/20 p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <Label>{adjustmentLabels[adjustment.adjustment_type]}</Label>
-                  <Badge
-                    variant="outline"
-                    className={
-                      adjustment.nature === "credit"
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : "border-rose-200 bg-rose-50 text-rose-700"
-                    }
-                  >
-                    {adjustment.nature === "credit" ? "Acréscimo" : "Desconto"}
-                  </Badge>
+          <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
+            <Accordion
+              type="multiple"
+              defaultValue={["debits", "credits"]}
+              className="space-y-3 md:hidden"
+            >
+              <AccordionItem value="debits" className="rounded-2xl border bg-muted/20 px-3">
+                <AccordionTrigger className="py-3 hover:no-underline">
+                  <div className="min-w-0 text-left">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">Descontos</span>
+                      <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">
+                        {brl(debits)}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs font-normal text-muted-foreground">
+                      Adiantamentos, consumo, empréstimos e outros abatimentos.
+                    </p>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="space-y-3 pb-3">
+                  {debitAdjustments.map((adjustment) => (
+                    <AdjustmentField
+                      key={adjustment.id}
+                      adjustment={adjustment}
+                      onChange={updateAdjustment}
+                    />
+                  ))}
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="credits" className="rounded-2xl border bg-muted/20 px-3">
+                <AccordionTrigger className="py-3 hover:no-underline">
+                  <div className="min-w-0 text-left">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">Acréscimos</span>
+                      <Badge
+                        variant="outline"
+                        className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                      >
+                        {brl(credits)}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs font-normal text-muted-foreground">
+                      Bonificações e outros valores somados ao pagamento.
+                    </p>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="space-y-3 pb-3">
+                  {creditAdjustments.map((adjustment) => (
+                    <AdjustmentField
+                      key={adjustment.id}
+                      adjustment={adjustment}
+                      onChange={updateAdjustment}
+                    />
+                  ))}
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+
+            <div className="hidden gap-3 md:grid md:grid-cols-2">
+              {adjustments.map((adjustment) => (
+                <div key={adjustment.id} className="rounded-xl border bg-muted/20 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <Label>{adjustmentLabels[adjustment.adjustment_type]}</Label>
+                    <Badge
+                      variant="outline"
+                      className={
+                        adjustment.nature === "credit"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-rose-200 bg-rose-50 text-rose-700"
+                      }
+                    >
+                      {adjustment.nature === "credit" ? "Acréscimo" : "Desconto"}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-[130px_1fr] gap-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={adjustment.amount}
+                      onChange={(event) =>
+                        updateAdjustment(adjustment.id, { amount: event.target.value })
+                      }
+                      placeholder="R$ 0,00"
+                    />
+                    <Input
+                      value={adjustment.notes}
+                      onChange={(event) =>
+                        updateAdjustment(adjustment.id, { notes: event.target.value })
+                      }
+                      placeholder="Referência ou observação"
+                    />
+                  </div>
                 </div>
-                <div className="grid grid-cols-[130px_1fr] gap-2">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={adjustment.amount}
-                    onChange={(event) =>
-                      updateAdjustment(adjustment.id, { amount: event.target.value })
-                    }
-                    placeholder="R$ 0,00"
-                  />
-                  <Input
-                    value={adjustment.notes}
-                    onChange={(event) =>
-                      updateAdjustment(adjustment.id, { notes: event.target.value })
-                    }
-                    placeholder="Referência ou observação"
-                  />
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="h-fit 2xl:sticky 2xl:top-4">
-        <CardHeader>
+      <Card className="h-fit overflow-hidden 2xl:sticky 2xl:top-4">
+        <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-6">
           <CardTitle className="flex items-center gap-2 text-base">
             <WalletCards className="h-4 w-4 text-primary" />
             Confirmar pagamento
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 px-4 pb-5 sm:px-6 sm:pb-6">
           <div className="rounded-xl bg-muted/35 p-4">
             <div className="mb-3 text-sm font-semibold">
               {professional?.full_name || "Profissional não selecionado"}
@@ -517,6 +680,53 @@ export function SettlementPanel({
           </p>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function AdjustmentField({
+  adjustment,
+  onChange,
+}: {
+  adjustment: SettlementAdjustmentDraft;
+  onChange: (id: string, patch: Partial<SettlementAdjustmentDraft>) => void;
+}) {
+  const isCredit = adjustment.nature === "credit";
+
+  return (
+    <div className="rounded-xl border bg-background p-3">
+      <div className="mb-2 flex min-w-0 items-center justify-between gap-2">
+        <Label className="min-w-0 truncate text-sm">
+          {adjustmentLabels[adjustment.adjustment_type]}
+        </Label>
+        <Badge
+          variant="outline"
+          className={
+            isCredit
+              ? "shrink-0 border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "shrink-0 border-rose-200 bg-rose-50 text-rose-700"
+          }
+        >
+          {isCredit ? "Acrésc." : "Desc."}
+        </Badge>
+      </div>
+      <div className="grid gap-2">
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          value={adjustment.amount}
+          onChange={(event) => onChange(adjustment.id, { amount: event.target.value })}
+          placeholder="R$ 0,00"
+          className="h-10"
+        />
+        <Input
+          value={adjustment.notes}
+          onChange={(event) => onChange(adjustment.id, { notes: event.target.value })}
+          placeholder="Referência ou observação"
+          className="h-10"
+        />
+      </div>
     </div>
   );
 }

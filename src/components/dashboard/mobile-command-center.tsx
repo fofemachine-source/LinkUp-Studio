@@ -100,11 +100,10 @@ export function MobileCommandCenter({
       return;
     }
 
-    const shareText = `Agende seu horário pelo LinkUp Studio: ${bookingLink}`;
     try {
-      await navigator.clipboard.writeText(shareText);
+      await navigator.clipboard.writeText(bookingLink);
       setBookingCopied(true);
-      toast.success("Link copiado para compartilhar no WhatsApp.");
+      toast.success("Link de agendamento copiado.");
       window.setTimeout(() => setBookingCopied(false), 2200);
     } catch {
       toast.error("Não foi possível copiar o link neste navegador.");

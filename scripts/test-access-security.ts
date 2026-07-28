@@ -12,6 +12,7 @@ const edgeFunction = readFileSync(
   new URL("../supabase/functions/manage-professional-access/index.ts", import.meta.url),
   "utf8",
 ).replace(/\r\n/g, "\n");
+const edgeFunctionCompact = edgeFunction.replace(/\s+/g, " ");
 
 for (const requiredSql of [
   "create table if not exists public.staff_positions",
@@ -48,9 +49,11 @@ for (const requiredEdgeProtection of [
   "admin.auth.admin.createUser",
   "findUserByEmail",
   "linkedExisting",
+  "passwordReset",
   "isManagingOwnOwnerAccess",
   "O proprietário conectado não pode desativar o próprio acesso.",
-  "A senha de um login existente só pode ser alterada pelo próprio usuário.",
+  "Use a troca de senha da própria conta para alterar o seu acesso.",
+  "admin.auth.admin.updateUserById",
   '.in("role", ["owner", "barber", "staff"])',
 ]) {
   assert.equal(
@@ -61,9 +64,11 @@ for (const requiredEdgeProtection of [
 }
 
 assert.equal(
-  edgeFunction.includes("updateUserById"),
-  false,
-  "O cadastro não deve redefinir senha, e-mail ou metadados de um login existente",
+  edgeFunctionCompact.includes(
+    "mustChangePassword = createdUserId || passwordReset ? true : Boolean(professional.must_change_password)",
+  ),
+  true,
+  "Senha provisória definida pelo proprietário deve exigir troca no próximo acesso",
 );
 
 console.log("Proteções estruturais da migração e da Edge Function aprovadas.");

@@ -319,6 +319,36 @@ function ComissoesPage() {
   const serviceCount = filteredEntries.filter((entry) => entry.item_kind === "service").length;
   const loading =
     professionalsLoading || entriesLoading || settlementsLoading || adjustmentsLoading;
+  const visibleTabs = useMemo(
+    () =>
+      [
+        { value: "resumo", label: "Resumo", mobileLabel: "Resumo", icon: TrendingUp },
+        { value: "profissionais", label: "Profissionais", mobileLabel: "Equipe", icon: UsersRound },
+        canManage
+          ? {
+              value: "prestacao",
+              label: "Prestação de Contas",
+              mobileLabel: "Prestação",
+              icon: ClipboardCheck,
+            }
+          : null,
+        { value: "historico", label: "Histórico", mobileLabel: "Histórico", icon: History },
+        canManage
+          ? {
+              value: "configuracoes",
+              label: "Configurações",
+              mobileLabel: "Config.",
+              icon: Settings2,
+            }
+          : null,
+      ].filter(Boolean) as {
+        value: string;
+        label: string;
+        mobileLabel: string;
+        icon: LucideIcon;
+      }[],
+    [canManage],
+  );
   const auditUserById = useMemo(
     () => new Map(auditUsers.map((user) => [user.id, user.full_name || "Usuário"])),
     [auditUsers],
@@ -386,7 +416,7 @@ function ComissoesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1540px] space-y-5 pb-12">
+    <div className="mx-auto max-w-[1540px] min-w-0 space-y-4 overflow-x-hidden pb-6 md:space-y-5 md:pb-12">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="mb-1 flex items-center gap-2 text-primary">
@@ -406,9 +436,9 @@ function ComissoesPage() {
         </Badge>
       </div>
 
-      <Card>
-        <CardContent className="flex flex-wrap items-end gap-3 p-4">
-          <div>
+      <Card className="overflow-hidden">
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
+          <div className="min-w-0">
             <Label>Atalhos</Label>
             <div className="flex rounded-lg border bg-muted/30 p-1">
               <Button variant="ghost" size="sm" onClick={() => setPeriodPreset("today")}>
@@ -422,11 +452,11 @@ function ComissoesPage() {
               </Button>
             </div>
           </div>
-          <div>
+          <div className="min-w-0">
             <Label>De</Label>
             <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
           </div>
-          <div>
+          <div className="min-w-0">
             <Label>Até</Label>
             <Input
               type="date"
@@ -435,7 +465,7 @@ function ComissoesPage() {
               onChange={(event) => setTo(event.target.value)}
             />
           </div>
-          <div className="min-w-[220px]">
+          <div className="min-w-0 lg:min-w-[220px]">
             <Label>Profissional</Label>
             <Select value={professionalFilter} onValueChange={setProfessionalFilter}>
               <SelectTrigger>
@@ -451,7 +481,7 @@ function ComissoesPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="ml-auto text-xs text-muted-foreground">
+          <div className="text-xs text-muted-foreground sm:col-span-2 lg:ml-auto">
             Regime de competência · {dateBR(from)} a {dateBR(to)}
           </div>
         </CardContent>
@@ -460,7 +490,45 @@ function ComissoesPage() {
       {loading && <div className="text-sm text-muted-foreground">Atualizando comissões…</div>}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
-        <TabsList className="h-auto w-full justify-start overflow-x-auto bg-muted/50 p-1">
+        <div className="space-y-3 md:hidden">
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="h-11 rounded-2xl bg-card">
+              <SelectValue placeholder="Seção" />
+            </SelectTrigger>
+            <SelectContent>
+              {visibleTabs.map((tab) => (
+                <SelectItem key={tab.value} value={tab.value}>
+                  {tab.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="grid grid-cols-3 gap-2 rounded-2xl border bg-muted/40 p-1.5">
+            {visibleTabs.map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.value;
+              return (
+                <button
+                  key={tab.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setActiveTab(tab.value)}
+                  className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2 text-[11px] font-semibold leading-tight transition-colors ${
+                    active
+                      ? "bg-background text-primary shadow-sm"
+                      : "text-muted-foreground active:bg-background/70"
+                  }`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="max-w-full truncate">{tab.mobileLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <TabsList className="hidden h-auto w-full justify-start bg-muted/50 p-1 md:flex">
           <TabsTrigger value="resumo">
             <TrendingUp className="mr-2 h-4 w-4" />
             Resumo
@@ -1079,7 +1147,8 @@ function CommissionEntryHistory({
             <div className="shrink-0 text-right">
               <div className="font-semibold">{brl(entry.commission_amount)}</div>
               <div className="text-xs text-muted-foreground">
-                {commissionStatusLabel(entry.status)} · Pago {brl(entry.paid_amount)} · Saldo {brl(commissionRemaining(entry))}
+                {commissionStatusLabel(entry.status)} · Pago {brl(entry.paid_amount)} · Saldo{" "}
+                {brl(commissionRemaining(entry))}
               </div>
             </div>
           </div>

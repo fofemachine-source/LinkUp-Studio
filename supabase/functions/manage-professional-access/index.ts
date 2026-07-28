@@ -301,11 +301,11 @@ Deno.serve(async (request) => {
           409,
         );
       }
-      if (password) {
+      if (password && professional.auth_user_id === caller.user.id) {
         return json(
           {
             error:
-              "A senha de um login existente só pode ser alterada pelo próprio usuário.",
+              "Use a troca de senha da própria conta para alterar o seu acesso.",
           },
           400,
         );
@@ -368,9 +368,9 @@ Deno.serve(async (request) => {
           ? "barber"
           : "staff";
 
-    const mustChangePassword = createdUserId
-      ? true
-      : Boolean(professional.must_change_password);
+    const passwordReset = Boolean(password && !createdUserId && professional.auth_user_id);
+    const mustChangePassword =
+      createdUserId || passwordReset ? true : Boolean(professional.must_change_password);
 
     try {
       // O vínculo granular é gravado antes do papel legado. Assim, uma falha
@@ -429,6 +429,21 @@ Deno.serve(async (request) => {
           .is("active_tenant_id", null);
         if (profileUpdateError) throw profileUpdateError;
       }
+
+      if (passwordReset) {
+        const { error: passwordUpdateError } = await admin.auth.admin.updateUserById(
+          authUser.id,
+          { password: password! },
+        );
+        if (passwordUpdateError) {
+          await admin
+            .from("professionals")
+            .update({ must_change_password: Boolean(professional.must_change_password) })
+            .eq("id", professionalId)
+            .eq("tenant_id", tenantId);
+          return json({ error: accessErrorMessage(passwordUpdateError) }, 400);
+        }
+      }
     } catch (mutationError) {
       if (createdUserId) {
         await admin.auth.admin.deleteUser(createdUserId);
@@ -442,6 +457,7 @@ Deno.serve(async (request) => {
       userId: authUser.id,
       created: Boolean(createdUserId),
       linkedExisting,
+      passwordReset,
       mustChangePassword,
       accessProfile: requestedProfile,
       accessPermissions: permissions,
