@@ -72,6 +72,7 @@ import {
   DEFAULT_BOOKING_WORK_DAYS,
   includesBookingWeekday,
 } from "@/lib/booking-weekdays";
+import { toast } from "sonner";
 
 export type AgendaViewMode = "day" | "threeDays" | "week" | "agenda";
 type MobileScheduleView = "day" | "week" | "list";
@@ -536,6 +537,43 @@ export function AgendaPremium({
               {mobileKpis.map((kpi, index) => (
                 <MobileKpiCard key={kpi.label} kpi={kpi} index={index} />
               ))}
+            </div>
+
+            <div className="rounded-3xl border border-primary/15 bg-primary/[0.04] p-3 shadow-[0_14px_34px_-30px_rgba(15,23,42,0.4)] md:hidden">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <Globe2 className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-primary/85">
+                    Agendamento online
+                  </div>
+                  <div className="mt-1 text-sm font-medium text-foreground">
+                    Link público do salão
+                  </div>
+                  <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                    Copie ou abra o link para compartilhar os horários com o cliente.
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      variant="outline"
+                      className="h-9 rounded-xl px-3 text-xs"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(bookingLink);
+                        toast.success("Link de agendamento copiado.");
+                      }}
+                      disabled={!bookingLink}
+                    >
+                      <Copy className="mr-2 h-3.5 w-3.5" /> Copiar link
+                    </Button>
+                    <Button asChild variant="secondary" className="h-9 rounded-xl px-3 text-xs">
+                      <a href={bookingLink} target="_blank" rel="noreferrer">
+                        <ExternalLink className="mr-2 h-3.5 w-3.5" /> Abrir página
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="hidden grid-cols-2 gap-2.5 md:grid md:grid-cols-3 2xl:grid-cols-6">

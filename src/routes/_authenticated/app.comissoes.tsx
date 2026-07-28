@@ -457,6 +457,16 @@ function ComissoesPage() {
       }),
     [from, historyPaymentFilter, historyProfessionalFilter, historyStatusFilter, settlements, to],
   );
+  const historyEntries = useMemo(
+    () =>
+      summarizeCommissionEntries(entries, {
+        from,
+        to,
+        professionalIds:
+          historyProfessionalFilter === "all" ? undefined : [historyProfessionalFilter],
+      }).entries,
+    [entries, from, historyProfessionalFilter, to],
+  );
 
   function refresh() {
     queryClient.invalidateQueries({ queryKey: ["commission-entries"] });
@@ -521,43 +531,72 @@ function ComissoesPage() {
         </Badge>
       </div>
 
-      <Card className="overflow-hidden">
-        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
-          <div className="min-w-0">
-            <Label>Atalhos</Label>
-            <div className="flex rounded-lg border bg-muted/30 p-1">
-              <Button variant="ghost" size="sm" onClick={() => setPeriodPreset("today")}>
+      <Card className="overflow-hidden border-border/60 bg-card/95 shadow-[0_12px_30px_-28px_rgba(15,23,42,0.4)]">
+        <CardContent className="grid grid-cols-2 gap-2.5 p-3 sm:p-4 lg:flex lg:flex-wrap lg:items-end">
+          <div className="col-span-2 min-w-0">
+            <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Atalhos
+            </Label>
+            <div className="mt-1 flex flex-wrap gap-1 rounded-xl border bg-muted/30 p-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-3 text-xs"
+                onClick={() => setPeriodPreset("today")}
+              >
                 Hoje
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setPeriodPreset("week")}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-3 text-xs"
+                onClick={() => setPeriodPreset("week")}
+              >
                 Semana
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setPeriodPreset("month")}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-3 text-xs"
+                onClick={() => setPeriodPreset("month")}
+              >
                 Mês
               </Button>
             </div>
           </div>
           <div className="min-w-0">
-            <Label>De</Label>
-            <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+            <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              De
+            </Label>
+            <Input
+              type="date"
+              value={from}
+              onChange={(event) => setFrom(event.target.value)}
+              className="h-10 rounded-xl"
+            />
           </div>
           <div className="min-w-0">
-            <Label>Até</Label>
+            <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Até
+            </Label>
             <Input
               type="date"
               min={from}
               value={to}
               onChange={(event) => setTo(event.target.value)}
+              className="h-10 rounded-xl"
             />
           </div>
-          <div className="min-w-0 lg:min-w-[220px]">
-            <Label>Profissional</Label>
+          <div className="col-span-2 min-w-0 lg:min-w-[220px]">
+            <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Profissional
+            </Label>
             <Select
               value={displayedProfessionalFilter}
               onValueChange={setProfessionalFilter}
               disabled={!canManage}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-10 rounded-xl">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -573,7 +612,7 @@ function ComissoesPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="text-xs text-muted-foreground sm:col-span-2 lg:ml-auto">
+          <div className="col-span-2 text-[11px] leading-tight text-muted-foreground lg:ml-auto lg:text-xs">
             Regime de competência · {dateBR(from)} a {dateBR(to)}
           </div>
         </CardContent>
@@ -785,6 +824,10 @@ function ComissoesPage() {
         )}
 
         <TabsContent value="historico" className="space-y-4">
+          <CommissionEntryHistory
+            entries={historyEntries}
+            emptyText="Nenhum serviço comissionado encontrado para estes filtros."
+          />
           <Card>
             <CardHeader className="space-y-4">
               <CardTitle className="text-base">Prestações de contas realizadas</CardTitle>
