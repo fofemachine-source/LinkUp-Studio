@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { endOfMonth, endOfWeek, format, startOfMonth, startOfWeek } from "date-fns";
 import {
+  AlertTriangle,
   Award,
   BadgeDollarSign,
   BriefcaseBusiness,
@@ -59,6 +60,7 @@ import {
   numberValue,
   paymentLabels,
   settlementStatusLabel,
+  summarizeCommissionEntries,
   type CommissionAdjustment,
   type CommissionEntry,
   type CommissionRule,
@@ -110,24 +112,46 @@ function ComissoesPage() {
     tenantId && access && (canManage || (canReadOwnFinance && restrictedProfessionalId)),
   );
 
-  const { data: professionals = [], isLoading: professionalsLoading } = useQuery({
+  const {
+    data: queriedProfessionals = [],
+    isLoading: professionalsLoading,
+    error: professionalsError,
+  } = useQuery({
     queryKey: ["commission-professionals", tenantId, restrictedProfessionalId, canManage],
     enabled: canLoadCommissionData,
     queryFn: async () => {
-      const query = db
+      let query = db
         .from("professionals")
         .select("id,full_name,photo_url,role_label,active,commission_pct,cost_center_id")
         .eq("tenant_id", tenantId)
         .eq("active", true);
+      if (!canManage && restrictedProfessionalId) {
+        query = query.eq("id", restrictedProfessionalId);
+      }
       const { data, error } = await query.order("full_name");
       if (error) throw error;
       return (data ?? []) as ProfessionalSummary[];
     },
   });
 
+  const professionals = useMemo<ProfessionalSummary[]>(() => {
+    if (canManage || queriedProfessionals.length > 0 || !restrictedProfessionalId) {
+      return queriedProfessionals;
+    }
+    return [{
+      id: restrictedProfessionalId,
+      full_name: access?.profileFullName || "Meu perfil profissional",
+      photo_url: null,
+      role_label: "Profissional",
+      active: true,
+      commission_pct: null,
+      cost_center_id: null,
+    }];
+  }, [access?.profileFullName, canManage, queriedProfessionals, restrictedProfessionalId]);
+
   const restrictedProfessionalIds = useMemo(
-    () => (canManage ? [] : professionals.map((professional) => professional.id)),
-    [canManage, professionals],
+    () => (canManage || !restrictedProfessionalId ? [] : [restrictedProfessionalId]),
+    [canManage, restrictedProfessionalId],
   );
   const restrictedProfessionalIdsKey = restrictedProfessionalIds.join(",");
   const canLoadEntries = Boolean(
@@ -142,7 +166,11 @@ function ComissoesPage() {
       ? restrictedProfessionalIds[0]
       : "all";
 
-  const { data: entries = [], isLoading: entriesLoading } = useQuery({
+  const {
+    data: rawEntries = [],
+    isLoading: entriesLoading,
+    error: entriesError,
+  } = useQuery({
     queryKey: ["commission-entries", tenantId, restrictedProfessionalIdsKey, canManage],
     enabled: canLoadEntries,
     refetchOnWindowFocus: true,
@@ -150,7 +178,9 @@ function ComissoesPage() {
       let query = db
         .from("commission_entries")
         .select(
-          "*, professionals(id,full_name,photo_url,role_label,active,commission_pct,cost_center_id), commandas(number,client_name,closed_at)",
+          canManage
+            ? "*, professionals(id,full_name,photo_url,role_label,active,commission_pct,cost_center_id), commandas(number,client_name,closed_at)"
+            : "*",
         )
         .eq("tenant_id", tenantId)
         .order("competence_date", { ascending: false })
@@ -164,14 +194,20 @@ function ComissoesPage() {
     },
   });
 
-  const { data: settlements = [], isLoading: settlementsLoading } = useQuery({
+  const {
+    data: rawSettlements = [],
+    isLoading: settlementsLoading,
+    error: settlementsError,
+  } = useQuery({
     queryKey: ["commission-settlements", tenantId, restrictedProfessionalIdsKey, canManage],
     enabled: canLoadEntries,
     queryFn: async () => {
       let query = db
         .from("commission_settlements")
         .select(
-          "*, professionals(id,full_name,photo_url,role_label,active,commission_pct,cost_center_id), financial_accounts(name)",
+          canManage
+            ? "*, professionals(id,full_name,photo_url,role_label,active,commission_pct,cost_center_id), financial_accounts(name)"
+            : "*",
         )
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
@@ -185,7 +221,11 @@ function ComissoesPage() {
     },
   });
 
-  const { data: adjustments = [], isLoading: adjustmentsLoading } = useQuery({
+  const {
+    data: adjustments = [],
+    isLoading: adjustmentsLoading,
+    error: adjustmentsError,
+  } = useQuery({
     queryKey: ["commission-adjustments", tenantId, restrictedProfessionalIdsKey, canManage],
     enabled: canLoadEntries,
     queryFn: async () => {
@@ -203,6 +243,31 @@ function ComissoesPage() {
       return (data ?? []) as CommissionAdjustment[];
     },
   });
+
+  const professionalById = useMemo(
+    () => new Map(professionals.map((professional) => [professional.id, professional])),
+    [professionals],
+  );
+  const entries = useMemo(
+    () => canManage
+      ? rawEntries
+      : rawEntries.map((entry) => ({
+          ...entry,
+          professionals: professionalById.get(entry.professional_id) ?? null,
+          commandas: null,
+        })),
+    [canManage, professionalById, rawEntries],
+  );
+  const settlements = useMemo(
+    () => canManage
+      ? rawSettlements
+      : rawSettlements.map((settlement) => ({
+          ...settlement,
+          professionals: professionalById.get(settlement.professional_id) ?? null,
+          financial_accounts: null,
+        })),
+    [canManage, professionalById, rawSettlements],
+  );
 
   const settlementCreatorIds = useMemo(
     () => [...new Set(settlements.map((settlement) => settlement.created_by).filter(Boolean))],
@@ -271,17 +336,16 @@ function ComissoesPage() {
     [entries],
   );
 
-  const filteredEntries = useMemo(
-    () =>
-      serviceEntries.filter(
-        (entry) =>
-          entry.competence_date >= from &&
-          entry.competence_date <= to &&
-          (effectiveProfessionalFilter === "all" ||
-            entry.professional_id === effectiveProfessionalFilter),
-      ),
+  const periodSummary = useMemo(
+    () => summarizeCommissionEntries(serviceEntries, {
+      from,
+      to,
+      professionalIds:
+        effectiveProfessionalFilter === "all" ? undefined : [effectiveProfessionalFilter],
+    }),
     [effectiveProfessionalFilter, from, serviceEntries, to],
   );
+  const filteredEntries = periodSummary.entries;
 
   const professionalSummaries = useMemo(
     () =>
@@ -325,32 +389,21 @@ function ComissoesPage() {
     [filteredEntries, professionals, search, serviceEntries, settlements],
   );
 
-  const pendingEntries = filteredEntries.filter(
-    (entry) =>
-      (entry.status === "pending" || entry.status === "scheduled") &&
-      commissionRemaining(entry) > 0,
-  );
-  const totalGenerated = filteredEntries.reduce(
-    (total, entry) => total + numberValue(entry.commission_amount),
-    0,
-  );
-  const totalPaid = filteredEntries.reduce(
-    (total, entry) => total + numberValue(entry.paid_amount),
-    0,
-  );
-  const totalRevenue = filteredEntries.reduce(
-    (total, entry) => total + numberValue(entry.gross_amount),
-    0,
-  );
+  const totalGenerated = periodSummary.generated;
+  const totalPaid = periodSummary.paid;
+  const totalRevenue = periodSummary.revenue;
   const paidEntries = filteredEntries.filter((entry) => entry.status === "paid");
-  const totalPending = pendingEntries.reduce(
-    (total, entry) => total + commissionRemaining(entry),
-    0,
-  );
+  const totalPending = periodSummary.pending;
   const professionalsWithBalance = professionalSummaries.filter((item) => item.pending > 0);
-  const serviceCount = filteredEntries.filter((entry) => entry.item_kind === "service").length;
+  const serviceCount = periodSummary.servicesCount;
   const loading =
     professionalsLoading || entriesLoading || settlementsLoading || adjustmentsLoading;
+  const commissionReadError =
+    professionalsError || entriesError || settlementsError || adjustmentsError;
+  useEffect(() => {
+    if (!commissionReadError) return;
+    console.error("[LinkUp Studio] falha ao carregar comissões", commissionReadError);
+  }, [commissionReadError]);
   const visibleTabs = useMemo(
     () =>
       [
@@ -528,6 +581,25 @@ function ComissoesPage() {
 
       {loading && <div className="text-sm text-muted-foreground">Atualizando comissões…</div>}
 
+      {commissionReadError && (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold">Não foi possível carregar os dados financeiros.</div>
+              <p className="text-sm text-muted-foreground">
+                Nenhum valor foi tratado como zero. Tente novamente para atualizar seu acesso e
+                suas comissões.
+              </p>
+            </div>
+            <Button type="button" variant="outline" onClick={refresh}>
+              Tentar novamente
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {!commissionReadError && (
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
         <div className="space-y-3 md:hidden">
           <Select value={activeTab} onValueChange={setActiveTab}>
@@ -866,6 +938,7 @@ function ComissoesPage() {
           </TabsContent>
         )}
       </Tabs>
+      )}
 
       <ProfessionalDetails
         professional={selectedProfessional}

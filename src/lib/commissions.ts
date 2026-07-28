@@ -153,8 +153,13 @@ export function numberValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export function commissionRemaining(entry: Pick<CommissionEntry, "commission_amount" | "paid_amount">) {
-  return Math.max(0, Math.round((numberValue(entry.commission_amount) - numberValue(entry.paid_amount)) * 100) / 100);
+export function commissionRemaining(
+  entry: Pick<CommissionEntry, "commission_amount" | "paid_amount">,
+) {
+  return Math.max(
+    0,
+    Math.round((numberValue(entry.commission_amount) - numberValue(entry.paid_amount)) * 100) / 100,
+  );
 }
 
 export function calculateServiceCommission(input: {
@@ -166,13 +171,50 @@ export function calculateServiceCommission(input: {
   const percentage = Math.max(0, Math.min(100, numberValue(input.percentage)));
   const commissionAmount = input.isOwner
     ? 0
-    : Math.round((grossAmount * percentage) / 100 * 100) / 100;
+    : Math.round(((grossAmount * percentage) / 100) * 100) / 100;
 
   return {
     grossAmount,
     percentage,
     commissionAmount,
     storeShare: Math.round((grossAmount - commissionAmount) * 100) / 100,
+  };
+}
+
+export function summarizeCommissionEntries(
+  entries: CommissionEntry[],
+  options: {
+    from: string;
+    to: string;
+    professionalIds?: readonly string[];
+  },
+) {
+  const allowedProfessionalIds = options.professionalIds?.length
+    ? new Set(options.professionalIds)
+    : null;
+  const filteredEntries = entries.filter(
+    (entry) =>
+      entry.item_kind === "service" &&
+      entry.competence_date >= options.from &&
+      entry.competence_date <= options.to &&
+      (!allowedProfessionalIds || allowedProfessionalIds.has(entry.professional_id)),
+  );
+  const pendingEntries = filteredEntries.filter(
+    (entry) =>
+      (entry.status === "pending" || entry.status === "scheduled") &&
+      commissionRemaining(entry) > 0,
+  );
+
+  return {
+    entries: filteredEntries,
+    servicesCount: filteredEntries.reduce((total, entry) => total + numberValue(entry.quantity), 0),
+    revenue: filteredEntries.reduce((total, entry) => total + numberValue(entry.gross_amount), 0),
+    generated: filteredEntries.reduce(
+      (total, entry) => total + numberValue(entry.commission_amount),
+      0,
+    ),
+    paid: filteredEntries.reduce((total, entry) => total + numberValue(entry.paid_amount), 0),
+    pending: pendingEntries.reduce((total, entry) => total + commissionRemaining(entry), 0),
   };
 }
 

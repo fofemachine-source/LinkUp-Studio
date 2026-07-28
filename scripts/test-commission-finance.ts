@@ -1,13 +1,24 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { calculateServiceCommission, commissionRemaining } from "../src/lib/commissions.ts";
+import {
+  calculateServiceCommission,
+  commissionRemaining,
+  summarizeCommissionEntries,
+  type CommissionEntry,
+} from "../src/lib/commissions.ts";
 
 const migration = readFileSync(
-  new URL("../supabase/migrations/20260727175116_commission_professional_payments.sql", import.meta.url),
+  new URL(
+    "../supabase/migrations/20260727175116_commission_professional_payments.sql",
+    import.meta.url,
+  ),
   "utf8",
 );
 const ownFinanceMigration = readFileSync(
-  new URL("../supabase/migrations/20260728034034_restrict_commission_own_finance.sql", import.meta.url),
+  new URL(
+    "../supabase/migrations/20260728034034_restrict_commission_own_finance.sql",
+    import.meta.url,
+  ),
   "utf8",
 );
 const ownFinanceEmailLinkMigration = readFileSync(
@@ -20,6 +31,13 @@ const ownFinanceEmailLinkMigration = readFileSync(
 const commissionReadRepairMigration = readFileSync(
   new URL(
     "../supabase/migrations/20260728042004_repair_professional_commission_read_policies.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const hardenedCommissionReadMigration = readFileSync(
+  new URL(
+    "../supabase/migrations/20260728044524_harden_professional_commission_read.sql",
     import.meta.url,
   ),
   "utf8",
@@ -69,6 +87,52 @@ closeTo(
   "B não recebe serviço de A",
 );
 
+const productionAuditEntries = [
+  {
+    id: "ricardo-1",
+    professional_id: "ricardo",
+    item_kind: "service",
+    competence_date: "2026-07-10",
+    quantity: 10,
+    gross_amount: 500,
+    commission_amount: 225,
+    paid_amount: 0,
+    status: "pending",
+  },
+  {
+    id: "ricardo-2",
+    professional_id: "ricardo",
+    item_kind: "service",
+    competence_date: "2026-07-20",
+    quantity: 8,
+    gross_amount: 405,
+    commission_amount: 182.25,
+    paid_amount: 0,
+    status: "pending",
+  },
+  {
+    id: "francois-1",
+    professional_id: "francois",
+    item_kind: "service",
+    competence_date: "2026-07-15",
+    quantity: 59,
+    gross_amount: 2700,
+    commission_amount: 1215,
+    paid_amount: 0,
+    status: "pending",
+  },
+] as CommissionEntry[];
+const ricardoAudit = summarizeCommissionEntries(productionAuditEntries, {
+  from: "2026-07-01",
+  to: "2026-07-31",
+  professionalIds: ["ricardo"],
+});
+assert.equal(ricardoAudit.entries.length, 2, "resumo inclui somente lançamentos do Ricardo");
+assert.equal(ricardoAudit.servicesCount, 18, "resumo mostra os 18 serviços do Ricardo");
+closeTo(ricardoAudit.revenue, 905, "resumo mostra o faturamento próprio do Ricardo");
+closeTo(ricardoAudit.generated, 407.25, "resumo mostra somente a comissão do Ricardo");
+closeTo(ricardoAudit.pending, 407.25, "resumo mostra o saldo pendente do Ricardo");
+
 const frozen = { commission_amount: 50, paid_amount: 0, commission_pct: 50 };
 const changedPercentage = calculateServiceCommission({ grossAmount: 100, percentage: 75 });
 closeTo(changedPercentage.commissionAmount, 75, "percentual novo vale para novos lançamentos");
@@ -86,9 +150,15 @@ const pay = (amount: number) => {
   paidAmount = Math.round((paidAmount + amount) * 100) / 100;
 };
 pay(40);
-assert.equal(commissionRemaining({ commission_amount: commissionAmount, paid_amount: paidAmount }), 60);
+assert.equal(
+  commissionRemaining({ commission_amount: commissionAmount, paid_amount: paidAmount }),
+  60,
+);
 pay(60);
-assert.equal(commissionRemaining({ commission_amount: commissionAmount, paid_amount: paidAmount }), 0);
+assert.equal(
+  commissionRemaining({ commission_amount: commissionAmount, paid_amount: paidAmount }),
+  0,
+);
 assert.throws(() => pay(1), /saldo restante/);
 
 for (const fragment of [
@@ -119,13 +189,42 @@ for (const fragment of [
   "authorized managers manage commission rules",
   "authorized operators insert commission entries",
   "private.professional_has_permission(tenant_id, 'commandas'",
-  "drop policy if exists \"tenant members manage commission entries\"",
+  'drop policy if exists "tenant members manage commission entries"',
 ]) {
   assert.ok(
     ownFinanceMigration.includes(fragment),
     `migração de acesso próprio deve conter: ${fragment}`,
   );
 }
+for (const fragment of [
+  "can_read_professional_commission_v2",
+  "p_user_id = caller.user_id",
+  "professional.auth_user_id = p_user_id",
+  "auth.jwt() ->> 'email'",
+  "authorized users read professionals",
+  "authorized users read commission entries",
+  "authorized users read commission settlements",
+  "authorized users read commission settlement items",
+  "authorized users read commission adjustments",
+  "notify pgrst, 'reload schema'",
+]) {
+  assert.ok(
+    hardenedCommissionReadMigration.includes(fragment),
+    `leitura financeira endurecida deve conter: ${fragment}`,
+  );
+}
+const hardenedEntryReadPolicy = hardenedCommissionReadMigration.slice(
+  hardenedCommissionReadMigration.indexOf(
+    'create policy "authorized users read commission entries"',
+  ),
+  hardenedCommissionReadMigration.indexOf(
+    'create policy "authorized users read commission settlements"',
+  ),
+);
+assert.ok(
+  !hardenedEntryReadPolicy.includes("'commandas'"),
+  "permissão de comandas não pode liberar comissões de outros profissionais",
+);
 for (const fragment of [
   "current_professional_ids",
   "auth.jwt() ->> 'email'",
@@ -150,8 +249,8 @@ for (const fragment of [
   "authorized users read commission settlements",
   "authorized users read commission settlement items",
   "authorized users read commission adjustments",
-  "drop policy if exists \"tenant members manage commission entries\"",
-  "drop policy if exists \"professionals read own commission entries\"",
+  'drop policy if exists "tenant members manage commission entries"',
+  'drop policy if exists "professionals read own commission entries"',
   "notify pgrst, 'reload schema'",
 ]) {
   assert.ok(
@@ -178,11 +277,16 @@ assert.ok(cadastro.includes("novos serviços concluídos"));
 assert.ok(comissoes.includes("restrictedProfessionalId"));
 assert.ok(comissoes.includes("restrictedProfessionalIds"));
 assert.ok(comissoes.includes("effectiveProfessionalFilter"));
-assert.ok(comissoes.includes(".in(\"professional_id\", restrictedProfessionalIds)"));
-assert.ok(!comissoes.includes(".eq(\"professional_id\", restrictedProfessionalId)"));
+assert.ok(comissoes.includes('.in("professional_id", restrictedProfessionalIds)'));
+assert.ok(!comissoes.includes('.eq("professional_id", restrictedProfessionalId)'));
+assert.ok(comissoes.includes(': "*"'));
+assert.ok(comissoes.includes("Nenhum valor foi tratado como zero"));
+assert.ok(comissoes.includes("summarizeCommissionEntries"));
 assert.ok(comissoes.includes("Faturamento dos serviços"));
 assert.ok(comissoes.includes("Calculada sobre o faturamento do profissional"));
 assert.ok(!comissoes.includes('title="Produtos comissionados"'));
 assert.ok(!comissoes.includes('title="Comissão específica por produto"'));
 
-console.log("Commission finance tests passed: owner, professionals A/B, frozen percentage, partial/full payment, duplicate block, cancellation/audit guards.");
+console.log(
+  "Commission finance tests passed: owner, professionals A/B, frozen percentage, partial/full payment, duplicate block, cancellation/audit guards.",
+);
