@@ -17,6 +17,13 @@ const ownFinanceEmailLinkMigration = readFileSync(
   ),
   "utf8",
 );
+const commissionReadRepairMigration = readFileSync(
+  new URL(
+    "../supabase/migrations/20260728042004_repair_professional_commission_read_policies.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const cadastro = readFileSync(
   new URL("../src/routes/_authenticated/app.cadastros.tsx", import.meta.url),
   "utf8",
@@ -132,6 +139,24 @@ for (const fragment of [
   assert.ok(
     ownFinanceEmailLinkMigration.includes(fragment),
     `migracao de compatibilidade por e-mail deve conter: ${fragment}`,
+  );
+}
+for (const fragment of [
+  "current_professional_ids",
+  "can_manage_commission_finance",
+  "can_operate_commission_entries",
+  "can_read_professional_commission",
+  "authorized users read commission entries",
+  "authorized users read commission settlements",
+  "authorized users read commission settlement items",
+  "authorized users read commission adjustments",
+  "drop policy if exists \"tenant members manage commission entries\"",
+  "drop policy if exists \"professionals read own commission entries\"",
+  "notify pgrst, 'reload schema'",
+]) {
+  assert.ok(
+    commissionReadRepairMigration.includes(fragment),
+    `reparo de leitura de comissoes deve conter: ${fragment}`,
   );
 }
 assert.ok(!migration.includes("item.kind in ('service', 'product')"));
