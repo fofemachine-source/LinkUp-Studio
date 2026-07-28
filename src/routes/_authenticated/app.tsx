@@ -22,7 +22,10 @@ import {
 } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { canAccessAppPath, getDefaultAppPath } from "@/lib/access-control";
-import { validateProjectPassword } from "@/lib/password-policy";
+import {
+  projectPasswordAuthErrorMessage,
+  validateProjectPassword,
+} from "@/lib/password-policy";
 
 export const Route = createFileRoute("/_authenticated/app")({
   beforeLoad: async ({ context, location }) => {
@@ -184,7 +187,12 @@ function ProvisionalPasswordScreen({
     setError("");
     const { error: passwordUpdateError } = await supabase.auth.updateUser({ password });
     if (passwordUpdateError) {
-      setError(passwordUpdateError.message);
+      setError(
+        projectPasswordAuthErrorMessage(
+          passwordUpdateError,
+          "Não foi possível definir sua senha pessoal.",
+        ),
+      );
       setSaving(false);
       return;
     }

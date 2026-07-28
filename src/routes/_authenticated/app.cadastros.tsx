@@ -592,7 +592,11 @@ function PositionsTab() {
 }
 
 function friendlyAccessError(error: any) {
-  return projectPasswordAuthErrorMessage(error, "Não foi possível criar o acesso ao sistema.");
+  return projectPasswordAuthErrorMessage(
+    error,
+    "Não foi possível criar o acesso ao sistema.",
+    { temporaryPassword: true },
+  );
 }
 
 async function updateProfessionalSystemAccess(input: {

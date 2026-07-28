@@ -13,6 +13,14 @@ const edgeFunction = readFileSync(
   "utf8",
 ).replace(/\r\n/g, "\n");
 const edgeFunctionCompact = edgeFunction.replace(/\s+/g, " ");
+const appShell = readFileSync(
+  new URL("../src/routes/_authenticated/app.tsx", import.meta.url),
+  "utf8",
+).replace(/\r\n/g, "\n");
+const passwordPolicy = readFileSync(
+  new URL("../src/lib/password-policy.ts", import.meta.url),
+  "utf8",
+).replace(/\r\n/g, "\n");
 
 for (const requiredSql of [
   "create table if not exists public.staff_positions",
@@ -53,6 +61,7 @@ for (const requiredEdgeProtection of [
   "isManagingOwnOwnerAccess",
   "O proprietário conectado não pode desativar o próprio acesso.",
   "Use a troca de senha da própria conta para alterar o seu acesso.",
+  "O Supabase recusou esta senha provisória simples porque o Password HIBP Check está ativo no Auth.",
   "admin.auth.admin.updateUserById",
   '.in("role", ["owner", "barber", "staff"])',
 ]) {
@@ -70,5 +79,31 @@ assert.equal(
   true,
   "Senha provisória definida pelo proprietário deve exigir troca no próximo acesso",
 );
+
+for (const requiredProfessionalPasswordFlow of [
+  "supabase.auth.updateUser({ password })",
+  "projectPasswordAuthErrorMessage(",
+  "passwordUpdateError",
+  "must_change_password: false",
+  "Crie sua senha pessoal",
+]) {
+  assert.equal(
+    appShell.includes(requiredProfessionalPasswordFlow),
+    true,
+    `A troca de senha pessoal do profissional deve conter: ${requiredProfessionalPasswordFlow}`,
+  );
+}
+
+for (const requiredPasswordPolicy of [
+  "temporaryPassword",
+  "Password HIBP Check",
+  "Escolha outra senha pessoal",
+]) {
+  assert.equal(
+    passwordPolicy.includes(requiredPasswordPolicy),
+    true,
+    `A política de senha deve conter: ${requiredPasswordPolicy}`,
+  );
+}
 
 console.log("Proteções estruturais da migração e da Edge Function aprovadas.");

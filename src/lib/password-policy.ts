@@ -12,13 +12,17 @@ export function validateProjectPassword(password: string) {
 export function projectPasswordAuthErrorMessage(
   error: { code?: string; message?: string } | null | undefined,
   fallback: string,
+  options?: { temporaryPassword?: boolean },
 ) {
   const message = error?.message ?? "";
   if (
     error?.code === "weak_password" ||
     /weak password|weak and easy to guess|known to be weak|password.*guess/i.test(message)
   ) {
-    return "A proteção contra senhas vazadas está ativa no Auth. Desative a opção Password HIBP Check para que a única exigência seja o mínimo de 8 caracteres.";
+    if (options?.temporaryPassword) {
+      return "O Supabase recusou esta senha provisória simples porque o Password HIBP Check está ativo no Auth. Para usar senhas provisórias simples, desative essa proteção no Supabase/Lovable e salve novamente.";
+    }
+    return "O Supabase recusou esta senha pela proteção contra senhas vazadas. Escolha outra senha pessoal ou ajuste o Password HIBP Check no Auth do Supabase/Lovable.";
   }
   return message || fallback;
 }

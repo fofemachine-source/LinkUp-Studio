@@ -97,7 +97,7 @@ function accessErrorMessage(error: { code?: string; message?: string }) {
     error.code === "weak_password" ||
     /weak password|weak and easy to guess|known to be weak/i.test(message)
   ) {
-    return "A proteção contra senhas vazadas está ativa no Auth. Desative Password HIBP Check para aceitar esta senha.";
+    return "O Supabase recusou esta senha provisória simples porque o Password HIBP Check está ativo no Auth. Para usar senhas provisórias simples, desative essa proteção no Supabase/Lovable e salve novamente.";
   }
   return message || "Não foi possível atualizar o acesso do profissional.";
 }
