@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, redirect, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, LockKeyhole } from "lucide-react";
+import { Eye, EyeOff, Loader2, LockKeyhole } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { AppHeader } from "@/components/app-header";
@@ -162,6 +162,8 @@ function ProvisionalPasswordScreen({
   const queryClient = useQueryClient();
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -226,32 +228,64 @@ function ProvisionalPasswordScreen({
           <CardTitle>Crie sua senha pessoal</CardTitle>
           <CardDescription className="text-slate-300">
             Este é seu primeiro acesso com a senha provisória. Defina uma nova senha que
-            somente você conheça para entrar no LinkUp Studio.
+            somente você conheça, com no mínimo 8 caracteres, letras e números.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={submit}>
             <div className="space-y-2">
               <Label htmlFor="new-password">Nova senha</Label>
-              <Input
-                id="new-password"
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                disabled={saving}
-              />
+              <div className="relative">
+                <Input
+                  id="new-password"
+                  className="pr-10"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={saving}
+                />
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-2 grid place-items-center rounded-md px-2 text-slate-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={saving}
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirm-password">Confirme a nova senha</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                autoComplete="new-password"
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-                disabled={saving}
-              />
+              <div className="relative">
+                <Input
+                  id="confirm-password"
+                  className="pr-10"
+                  type={showConfirmation ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={confirmation}
+                  onChange={(event) => setConfirmation(event.target.value)}
+                  disabled={saving}
+                />
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-2 grid place-items-center rounded-md px-2 text-slate-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={saving}
+                  onClick={() => setShowConfirmation((visible) => !visible)}
+                  aria-label={showConfirmation ? "Ocultar senha" : "Mostrar senha"}
+                >
+                  {showConfirmation ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
             {error ? (
               <p role="alert" className="text-sm text-red-300">

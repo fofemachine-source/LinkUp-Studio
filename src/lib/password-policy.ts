@@ -1,10 +1,12 @@
 export const PROJECT_PASSWORD_MIN_LENGTH = 8;
 
 export const PROJECT_PASSWORD_REQUIREMENT =
-  `A senha precisa ter pelo menos ${PROJECT_PASSWORD_MIN_LENGTH} caracteres.`;
+  `Use uma senha com no mínimo ${PROJECT_PASSWORD_MIN_LENGTH} caracteres, incluindo letras e números.`;
 
 export function validateProjectPassword(password: string) {
-  return password.length < PROJECT_PASSWORD_MIN_LENGTH
+  return password.length < PROJECT_PASSWORD_MIN_LENGTH ||
+    !/[A-Za-z]/.test(password) ||
+    !/\d/.test(password)
     ? PROJECT_PASSWORD_REQUIREMENT
     : null;
 }
@@ -20,9 +22,9 @@ export function projectPasswordAuthErrorMessage(
     /weak password|weak and easy to guess|known to be weak|password.*guess/i.test(message)
   ) {
     if (options?.temporaryPassword) {
-      return "O Supabase recusou esta senha provisória simples porque o Password HIBP Check está ativo no Auth. Para usar senhas provisórias simples, desative essa proteção no Supabase/Lovable e salve novamente.";
+      return "Essa senha provisória foi recusada pela proteção do Auth. Use no mínimo 8 caracteres, com letras e números, e evite combinações muito comuns.";
     }
-    return "O Supabase recusou esta senha pela proteção contra senhas vazadas. Escolha outra senha pessoal ou ajuste o Password HIBP Check no Auth do Supabase/Lovable.";
+    return "Essa senha foi recusada pela proteção do Auth. Use no mínimo 8 caracteres, com letras e números, e evite combinações muito comuns.";
   }
   return message || fallback;
 }

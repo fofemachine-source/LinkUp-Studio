@@ -82,9 +82,14 @@ async function fetchTenantAccess(userId?: string | null): Promise<TenantAccess> 
   if (rolesResult.error) throw rolesResult.error;
 
   const roles = rolesResult.data ?? [];
-  const tenantId =
-    profileResult.data?.active_tenant_id ?? roles.find((role) => role.tenant_id)?.tenant_id ?? null;
+  const profileTenantId = profileResult.data?.active_tenant_id ?? null;
   const isSuperAdmin = roles.some((role) => role.role === "super_admin");
+  const profileTenantIsUsable =
+    Boolean(profileTenantId) &&
+    (isSuperAdmin || roles.some((role) => role.tenant_id === profileTenantId));
+  const firstRoleTenantId = roles.find((role) => role.tenant_id)?.tenant_id ?? null;
+  const tenantId =
+    (profileTenantIsUsable ? profileTenantId : null) ?? firstRoleTenantId ?? profileTenantId;
 
   if (!tenantId) {
     return {

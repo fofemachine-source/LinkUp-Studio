@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useCurrentTenant, useTenantAccess } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Users, Scissors, Sparkles, Package, UserCog, KeyRound, ImageIcon, BriefcaseBusiness, ShieldCheck, CalendarCheck, Eye, BellRing } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Scissors, Sparkles, Package, UserCog, KeyRound, ImageIcon, BriefcaseBusiness, ShieldCheck, CalendarCheck, Eye, EyeOff, BellRing } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { brl, cpfMask } from "@/lib/format";
@@ -683,6 +683,7 @@ function ProDialog({ pro, tenantId, onDone, canManageAccess }: any) {
   const [persistedAuthUserId, setPersistedAuthUserId] = useState<string | null>(pro?.auth_user_id ?? null);
   const [allowAccess, setAllowAccess] = useState(Boolean(pro?.auth_user_id));
   const [accessPassword, setAccessPassword] = useState("");
+  const [showAccessPassword, setShowAccessPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [newBlockedDate, setNewBlockedDate] = useState("");
   const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -917,21 +918,38 @@ function ProDialog({ pro, tenantId, onDone, canManageAccess }: any) {
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">
               Senha provisória de acesso
             </Label>
-            <Input
-              type="password"
-              autoComplete="new-password"
-              value={accessPassword}
-              disabled={!systemAccessEnabled}
-              onChange={(event) => setAccessPassword(event.target.value)}
-              placeholder={
-                systemAccessEnabled
-                  ? "Defina a senha provisória"
-                  : "Ative o acesso ao sistema"
-              }
-            />
+            <div className="relative">
+              <Input
+                className="pr-10"
+                type={showAccessPassword ? "text" : "password"}
+                autoComplete="new-password"
+                value={accessPassword}
+                disabled={!systemAccessEnabled}
+                onChange={(event) => setAccessPassword(event.target.value)}
+                placeholder={
+                  systemAccessEnabled
+                    ? "Ex.: Linkup2026"
+                    : "Ative o acesso ao sistema"
+                }
+              />
+              <button
+                type="button"
+                className="absolute inset-y-0 right-2 grid place-items-center rounded-md px-2 text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={!systemAccessEnabled}
+                onClick={() => setShowAccessPassword((visible) => !visible)}
+                aria-label={showAccessPassword ? "Ocultar senha" : "Mostrar senha"}
+              >
+                {showAccessPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+            </div>
             <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-              Ao preencher, o colaborador entra com esta senha e será obrigado
-              a criar uma senha pessoal no primeiro acesso.
+              Use no mínimo 8 caracteres, com letras e números. O colaborador
+              entra com esta senha provisória e cria uma senha pessoal no
+              primeiro acesso.
             </p>
           </div>
         )}

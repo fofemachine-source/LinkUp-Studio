@@ -24,6 +24,9 @@ type AccessRequest = {
 
 type AccessProfile = "owner" | "manager" | "professional" | "reception";
 
+const projectPasswordRequirement =
+  "Use uma senha com no mínimo 8 caracteres, incluindo letras e números.";
+
 const permissionCatalog = new Set([
   "dashboard",
   "own_agenda",
@@ -97,9 +100,15 @@ function accessErrorMessage(error: { code?: string; message?: string }) {
     error.code === "weak_password" ||
     /weak password|weak and easy to guess|known to be weak/i.test(message)
   ) {
-    return "O Supabase recusou esta senha provisória simples porque o Password HIBP Check está ativo no Auth. Para usar senhas provisórias simples, desative essa proteção no Supabase/Lovable e salve novamente.";
+    return "Essa senha foi recusada pela proteção do Auth. Use uma senha provisória com no mínimo 8 caracteres, incluindo letras e números, e evite combinações muito comuns.";
   }
   return message || "Não foi possível atualizar o acesso do profissional.";
+}
+
+function validateProjectPassword(password: string) {
+  return password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)
+    ? projectPasswordRequirement
+    : null;
 }
 
 function environmentKey(jsonName: string, legacyNames: string[]): string | undefined {
@@ -273,6 +282,10 @@ Deno.serve(async (request) => {
     const email = body.email?.toLowerCase().trim();
     const fullName = body.fullName?.trim() || professional.full_name;
     const password = body.password || undefined;
+    const passwordError = password ? validateProjectPassword(password) : null;
+    if (passwordError) {
+      return json({ error: passwordError }, 400);
+    }
     if (!email) {
       return json({ error: "Informe o e-mail para liberar o acesso." }, 400);
     }
@@ -317,11 +330,11 @@ Deno.serve(async (request) => {
     }
 
     if (!authUser) {
-      if (!password || password.length < 8) {
+      if (!password) {
         return json(
           {
             error:
-              "Não existe login com este e-mail. Informe uma senha provisória com no mínimo 8 caracteres para criar a conta.",
+              "Não existe login com este e-mail. Informe uma senha provisória com letras, números e no mínimo 8 caracteres para criar a conta.",
           },
           400,
         );
@@ -361,6 +374,16 @@ Deno.serve(async (request) => {
       );
     }
 
+    if (password && authUser.id === caller.user.id) {
+      return json(
+        {
+          error:
+            "Use a troca de senha da própria conta para alterar o seu acesso.",
+        },
+        400,
+      );
+    }
+
     const appRole =
       requestedProfile === "owner"
         ? "owner"
@@ -368,11 +391,21 @@ Deno.serve(async (request) => {
           ? "barber"
           : "staff";
 
-    const passwordReset = Boolean(password && !createdUserId && professional.auth_user_id);
+    const passwordReset = Boolean(password && !createdUserId);
     const mustChangePassword =
       createdUserId || passwordReset ? true : Boolean(professional.must_change_password);
 
     try {
+      if (passwordReset) {
+        const { error: passwordUpdateError } = await admin.auth.admin.updateUserById(
+          authUser.id,
+          { password: password! },
+        );
+        if (passwordUpdateError) {
+          return json({ error: accessErrorMessage(passwordUpdateError) }, 400);
+        }
+      }
+
       // O vínculo granular é gravado antes do papel legado. Assim, uma falha
       // intermediária não deixa um usuário "staff" sem as restrições novas.
       const { error: linkError } = await admin
@@ -421,28 +454,16 @@ Deno.serve(async (request) => {
           active_tenant_id: tenantId,
         });
         if (profileInsertError) throw profileInsertError;
-      } else if (!existingProfile.active_tenant_id) {
-        const { error: profileUpdateError } = await admin
+      } else if (existingProfile.active_tenant_id !== tenantId) {
+        let profileUpdate = admin
           .from("profiles")
           .update({ active_tenant_id: tenantId })
-          .eq("id", authUser.id)
-          .is("active_tenant_id", null);
+          .eq("id", authUser.id);
+        profileUpdate = existingProfile.active_tenant_id
+          ? profileUpdate.eq("active_tenant_id", existingProfile.active_tenant_id)
+          : profileUpdate.is("active_tenant_id", null);
+        const { error: profileUpdateError } = await profileUpdate;
         if (profileUpdateError) throw profileUpdateError;
-      }
-
-      if (passwordReset) {
-        const { error: passwordUpdateError } = await admin.auth.admin.updateUserById(
-          authUser.id,
-          { password: password! },
-        );
-        if (passwordUpdateError) {
-          await admin
-            .from("professionals")
-            .update({ must_change_password: Boolean(professional.must_change_password) })
-            .eq("id", professionalId)
-            .eq("tenant_id", tenantId);
-          return json({ error: accessErrorMessage(passwordUpdateError) }, 400);
-        }
       }
     } catch (mutationError) {
       if (createdUserId) {

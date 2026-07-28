@@ -21,6 +21,14 @@ const passwordPolicy = readFileSync(
   new URL("../src/lib/password-policy.ts", import.meta.url),
   "utf8",
 ).replace(/\r\n/g, "\n");
+const tenantAccessHook = readFileSync(
+  new URL("../src/hooks/use-tenant.ts", import.meta.url),
+  "utf8",
+).replace(/\r\n/g, "\n");
+const professionalRegistry = readFileSync(
+  new URL("../src/routes/_authenticated/app.cadastros.tsx", import.meta.url),
+  "utf8",
+).replace(/\r\n/g, "\n");
 
 for (const requiredSql of [
   "create table if not exists public.staff_positions",
@@ -61,8 +69,9 @@ for (const requiredEdgeProtection of [
   "isManagingOwnOwnerAccess",
   "O proprietário conectado não pode desativar o próprio acesso.",
   "Use a troca de senha da própria conta para alterar o seu acesso.",
-  "O Supabase recusou esta senha provisória simples porque o Password HIBP Check está ativo no Auth.",
+  "Essa senha foi recusada pela proteção do Auth.",
   "admin.auth.admin.updateUserById",
+  "existingProfile.active_tenant_id !== tenantId",
   '.in("role", ["owner", "barber", "staff"])',
 ]) {
   assert.equal(
@@ -71,6 +80,14 @@ for (const requiredEdgeProtection of [
     `A Edge Function deve conter: ${requiredEdgeProtection}`,
   );
 }
+
+assert.equal(
+  edgeFunctionCompact.includes(
+    "passwordReset = Boolean(password && !createdUserId)",
+  ),
+  true,
+  "Senha provisória deve ser aplicada também quando o usuário Auth já existe",
+);
 
 assert.equal(
   edgeFunctionCompact.includes(
@@ -86,6 +103,9 @@ for (const requiredProfessionalPasswordFlow of [
   "passwordUpdateError",
   "must_change_password: false",
   "Crie sua senha pessoal",
+  "showPassword",
+  "showConfirmation",
+  "Mostrar senha",
 ]) {
   assert.equal(
     appShell.includes(requiredProfessionalPasswordFlow),
@@ -96,13 +116,43 @@ for (const requiredProfessionalPasswordFlow of [
 
 for (const requiredPasswordPolicy of [
   "temporaryPassword",
-  "Password HIBP Check",
-  "Escolha outra senha pessoal",
+  "Essa senha provisória foi recusada",
+  "evite combinações muito comuns",
+  "incluindo letras e números",
+  "!/[A-Za-z]/.test(password)",
+  "!/\\d/.test(password)",
 ]) {
   assert.equal(
     passwordPolicy.includes(requiredPasswordPolicy),
     true,
     `A política de senha deve conter: ${requiredPasswordPolicy}`,
+  );
+}
+
+for (const requiredTenantAccessFallback of [
+  "profileTenantIsUsable",
+  "firstRoleTenantId",
+  "profileTenantIsUsable ? profileTenantId : null",
+]) {
+  assert.equal(
+    tenantAccessHook.includes(requiredTenantAccessFallback),
+    true,
+    `O acesso deve cair para uma loja com papel/permissão se a loja ativa estiver inválida: ${requiredTenantAccessFallback}`,
+  );
+}
+
+for (const requiredRegistryPasswordUx of [
+  "showAccessPassword",
+  "Senha provisória de acesso",
+  "Use no mínimo 8 caracteres, com letras e números.",
+  "Ex.: Linkup2026",
+  "Mostrar senha",
+  "EyeOff",
+]) {
+  assert.equal(
+    professionalRegistry.includes(requiredRegistryPasswordUx),
+    true,
+    `O cadastro deve orientar e permitir visualizar a senha provisória: ${requiredRegistryPasswordUx}`,
   );
 }
 
