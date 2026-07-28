@@ -4,9 +4,15 @@ import { routeTree } from "./routeTree.gen";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 
 function AppErrorComponent({ error }: { error: any }) {
+  const errorMessage =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : error?.message;
   const isChunkError =
-    error?.message?.includes("Failed to fetch dynamically imported module") ||
-    error?.message?.includes("Importing a module script failed");
+    errorMessage?.includes("Failed to fetch dynamically imported module") ||
+    errorMessage?.includes("Importing a module script failed");
 
   const handleForceRefresh = () => {
     if (typeof window !== "undefined") {
@@ -18,7 +24,9 @@ function AppErrorComponent({ error }: { error: any }) {
         }
       } catch (e) {}
 
-      window.location.href = "/app";
+      const url = new URL(window.location.href);
+      url.searchParams.set("__linkup_reload", String(Date.now()));
+      window.location.replace(url.toString());
     }
   };
 
@@ -36,9 +44,9 @@ function AppErrorComponent({ error }: { error: any }) {
             ? "Uma nova versão do sistema foi disponibilizada no servidor. Clique no botão abaixo para carregar os arquivos atualizados."
             : "Identificamos uma alteração na plataforma. Clique abaixo para recarregar."}
         </p>
-        {error?.message && (
+        {errorMessage && (
           <p className="text-[11px] text-amber-400 font-mono bg-black/50 p-3 rounded-lg text-left overflow-x-auto max-h-32 border border-white/5">
-            {error.message}
+            {errorMessage}
           </p>
         )}
         <div className="flex gap-2 justify-center pt-2">
