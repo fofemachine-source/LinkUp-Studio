@@ -1,8 +1,8 @@
 begin;
 
--- Compatibilidade para histÃ³rico de comissÃµes criado antes do vÃ­nculo de login.
--- O acesso continua restrito ao usuÃ¡rio autenticado: ele lÃª o profissional
--- ligado por auth_user_id e, quando existir legado sem auth_user_id, tambÃ©m
+-- Compatibilidade para historico de comissoes criado antes do vinculo de login.
+-- O acesso continua restrito ao usuario autenticado: ele le o profissional
+-- ligado por auth_user_id e, quando existir legado sem auth_user_id, tambem
 -- o cadastro ativo do mesmo e-mail confirmado no Auth.
 
 create or replace function private.current_professional_ids(
