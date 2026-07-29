@@ -98,71 +98,63 @@ function formatCurrencyInput(value: string) {
   return brl(Number(digits) / 100);
 }
 
+function cleanPhoneDigits(value: unknown) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
 function ClientsTab() {
   const tenantId = useTenantId(); const qc = useQueryClient();
   const [open, setOpen] = useState(false); const [edit, setEdit] = useState<any>(null);
   const [issuingAccessCodeFor, setIssuingAccessCodeFor] = useState<string | null>(null);
   const { data } = useQuery({ queryKey: ["clients", tenantId], enabled: !!tenantId, queryFn: async () => (await supabase.from("clients").select("*").eq("tenant_id", tenantId!).order("full_name")).data ?? [] });
-  
-  const { data: subscribers } = useQuery({
-    queryKey: ["subs-sync-cadastros", tenantId],
-    enabled: !!tenantId,
-    queryFn: async () => (await supabase.from("subscribers").select("*").eq("tenant_id", tenantId!)).data ?? []
-  });
 
-  useEffect(() => {
-    if (!data || !subscribers || subscribers.length === 0) return;
+  async function resolveCpfForAccess(client: any) {
+    const currentCpf = cleanCustomerCpf(String(client.cpf ?? ""));
+    if (isValidCustomerCpf(currentCpf)) return currentCpf;
+    if (!tenantId) return "";
 
-    const sync = async () => {
-      let needsRefetch = false;
-      for (const sub of subscribers) {
-        const cleanSubPhone = sub.whatsapp?.replace(/\D/g, "");
-        const cleanSubCpf = cleanCustomerCpf(String(sub.cpf ?? ""));
-        const existingClient = data.find((c: any) => 
-          (sub.client_id && c.id === sub.client_id) || 
-          (cleanSubCpf && cleanCustomerCpf(String(c.cpf ?? "")) === cleanSubCpf) ||
-          (cleanSubPhone && c.whatsapp?.replace(/\D/g, "") === cleanSubPhone)
-        );
+    const candidateSubscribers: any[] = [];
+    const { data: linkedSubscribers, error: linkedError } = await supabase
+      .from("subscribers")
+      .select("id, cpf, whatsapp, client_id")
+      .eq("tenant_id", tenantId)
+      .eq("client_id", client.id)
+      .limit(1);
 
-        if (existingClient) {
-          const updates: any = {};
-          if (!existingClient.is_subscriber) updates.is_subscriber = true;
-          if (cleanSubCpf && cleanCustomerCpf(String(existingClient.cpf ?? "")) !== cleanSubCpf) {
-            updates.cpf = cleanSubCpf;
-          }
-          if (Object.keys(updates).length > 0) {
-            await supabase.from("clients").update(updates).eq("id", existingClient.id);
-            needsRefetch = true;
-          }
-          if (!sub.client_id) {
-            await supabase.from("subscribers").update({ client_id: existingClient.id }).eq("id", sub.id);
-          }
-        } else {
-          // Insert client
-          const { data: newClient } = await supabase
-            .from("clients")
-            .insert({
-              tenant_id: tenantId!,
-              full_name: sub.full_name,
-              whatsapp: cleanSubPhone || null,
-              cpf: cleanSubCpf || null,
-              is_subscriber: true
-            })
-            .select("id")
-            .single();
+    if (linkedError) throw linkedError;
+    candidateSubscribers.push(...(linkedSubscribers ?? []));
 
-          if (newClient) {
-            await supabase.from("subscribers").update({ client_id: newClient.id }).eq("id", sub.id);
-            needsRefetch = true;
-          }
-        }
-      }
-      if (needsRefetch) {
-        qc.invalidateQueries({ queryKey: ["clients"] });
-      }
-    };
-    sync();
-  }, [data, subscribers, tenantId, qc]);
+    const clientPhone = cleanPhoneDigits(client.whatsapp);
+    if (candidateSubscribers.length === 0 && clientPhone) {
+      const { data: tenantSubscribers, error: subscribersError } = await supabase
+        .from("subscribers")
+        .select("id, cpf, whatsapp, client_id")
+        .eq("tenant_id", tenantId);
+
+      if (subscribersError) throw subscribersError;
+      const phoneMatch = (tenantSubscribers ?? []).find(
+        (subscriber: any) => cleanPhoneDigits(subscriber.whatsapp) === clientPhone,
+      );
+      if (phoneMatch) candidateSubscribers.push(phoneMatch);
+    }
+
+    const subscriberCpf = cleanCustomerCpf(
+      String(candidateSubscribers.find((subscriber: any) => isValidCustomerCpf(String(subscriber.cpf ?? "")))?.cpf ?? ""),
+    );
+
+    if (!isValidCustomerCpf(subscriberCpf)) return "";
+
+    const { error: updateClientError } = await supabase
+      .from("clients")
+      .update({ cpf: subscriberCpf, is_subscriber: true })
+      .eq("tenant_id", tenantId)
+      .eq("id", client.id);
+
+    if (updateClientError) throw updateClientError;
+    qc.invalidateQueries({ queryKey: ["clients"] });
+
+    return subscriberCpf;
+  }
 
   async function copyAccessCode(code: string) {
     try {
@@ -184,13 +176,14 @@ function ClientsTab() {
 
   async function issueAccessCode(client: any) {
     if (!tenantId || issuingAccessCodeFor) return;
-    if (!isValidCustomerCpf(String(client.cpf || ""))) {
-      toast.error("Cadastre um CPF válido para liberar ou redefinir o acesso deste cliente.");
-      return;
-    }
-
     setIssuingAccessCodeFor(client.id);
     try {
+      const cpfForAccess = await resolveCpfForAccess(client);
+      if (!isValidCustomerCpf(cpfForAccess)) {
+        toast.error("Este cliente ainda está sem CPF válido. Abra Editar, salve o CPF e tente liberar o acesso novamente.");
+        return;
+      }
+
       const { data: code, error } = await (supabase as any).rpc(
         "create_customer_booking_activation_code",
         { p_tenant_id: tenantId, p_client_id: client.id },
