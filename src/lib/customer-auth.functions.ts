@@ -87,12 +87,12 @@ export const registerBookingCustomer = createServerFn({ method: "POST" })
       }
       if (reason.includes("CUSTOMER_ACCOUNT_EXISTS")) {
         throw new Error(
-          "Já existe uma conta com esse CPF neste salão. Use 'Entrar' com sua senha.",
+          "Esse CPF já tem senha criada neste salão. Use 'Entrar' com sua senha ou peça ajuda ao salão para redefinir.",
         );
       }
       if (reason.includes("EXISTING_CUSTOMER_REQUIRES_ACTIVATION")) {
         throw new Error(
-          "Este CPF possui uma assinatura ativa. Peça o código de liberação ao salão para concluir o primeiro acesso.",
+          "Encontramos esse CPF no salão, mas o WhatsApp informado não confere com o cadastro. Use o WhatsApp cadastrado ou peça um código de liberação ao salão.",
         );
       }
       if (reason.includes("INVALID_CUSTOMER_ACTIVATION")) {

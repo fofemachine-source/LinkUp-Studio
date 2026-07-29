@@ -2150,7 +2150,7 @@ function CustomerAccessCard({
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-white/55">
             {registering
-              ? "Seus dados ficam vinculados a este salão e o acesso permanece salvo neste aparelho."
+              ? "Se você já é cliente ou VIP, informe o WhatsApp cadastrado e crie sua senha. O código só é necessário quando o salão fornecer."
               : "Use seu CPF e senha. Depois do acesso, o agendamento abre normalmente."}
           </p>
         </div>
@@ -2197,7 +2197,7 @@ function CustomerAccessCard({
           {registering && (
             <div className="space-y-2">
               <Label htmlFor="customer-activation-code" className="text-white/70">
-                Código de liberação <span className="text-white/35">(opcional)</span>
+                Código de liberação <span className="text-white/35">(se necessário)</span>
               </Label>
               <Input
                 id="customer-activation-code"
@@ -2206,11 +2206,11 @@ function CustomerAccessCard({
                 className="border-white/10 bg-neutral-900/50 uppercase text-white focus-visible:ring-primary"
                 value={activationCode}
                 onChange={(event) => onActivationCodeChange(event.target.value)}
-                placeholder="Use somente se o salão forneceu um código"
+                placeholder="Somente se o salão pediu"
               />
               <p className="text-[11px] leading-relaxed text-white/40">
-                Clientes já cadastrados pela equipe ou redefinindo a senha usam o código fornecido
-                pelo salão.
+                Para cliente já cadastrado, o WhatsApp informado deve ser o mesmo do cadastro.
+                Se não conferir, o salão pode gerar este código.
               </p>
             </div>
           )}
