@@ -12,14 +12,17 @@ import {
   validateVip,
 } from "@/lib/booking.functions";
 import {
+  getBookingCustomerAccessHint,
   getBookingCustomer,
   loginBookingCustomer,
   logoutBookingCustomer,
   registerBookingCustomer,
 } from "@/lib/customer-auth.functions";
 import {
+  cleanCustomerCpf,
   isValidCustomerCpf,
   isValidCustomerWhatsapp,
+  type BookingCustomerAccessHint,
   type BookingCustomer,
 } from "@/lib/customer-auth";
 import { Card, CardContent } from "@/components/ui/card";
@@ -242,6 +245,7 @@ function BookingPage() {
   const prepareProofUpload = useServerFn(prepareSubscriptionProofUpload);
   const submitProof = useServerFn(submitSubscriptionProof);
   const getCustomer = useServerFn(getBookingCustomer);
+  const getCustomerAccessHint = useServerFn(getBookingCustomerAccessHint);
   const registerCustomer = useServerFn(registerBookingCustomer);
   const loginCustomer = useServerFn(loginBookingCustomer);
   const logoutCustomer = useServerFn(logoutBookingCustomer);
@@ -282,6 +286,7 @@ function BookingPage() {
   const [accessActivationCode, setAccessActivationCode] = useState("");
   const [whatsappConsent, setWhatsappConsent] = useState(false);
   const timeSectionRef = useRef<HTMLDivElement>(null);
+  const accessCpfDigits = cleanCustomerCpf(accessCpf);
 
   const customerQuery = useQuery({
     queryKey: ["booking-customer", tenantId],
@@ -292,6 +297,33 @@ function BookingPage() {
     refetchOnReconnect: false,
     staleTime: Infinity,
   });
+
+  const accessHintQuery = useQuery({
+    queryKey: ["booking-customer-access-hint", tenantId, accessCpfDigits],
+    enabled:
+      Boolean(tenantId) &&
+      !customerQuery.data &&
+      isValidCustomerCpf(accessCpfDigits),
+    queryFn: () =>
+      getCustomerAccessHint({
+        data: { tenantId: tenantId!, cpf: accessCpfDigits },
+      }),
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (!isValidCustomerCpf(accessCpfDigits)) return;
+    if (accessHintQuery.data?.status !== "needs_password_setup") return;
+    if (accessMode === "register") return;
+
+    setAccessMode("register");
+    setAccessPassword("");
+    setAccessActivationCode("");
+    setWhatsappConsent(false);
+  }, [accessCpfDigits, accessHintQuery.data?.status, accessMode]);
 
   useEffect(() => {
     if (!pwaTenant) return;
@@ -900,6 +932,8 @@ function BookingPage() {
             phone={accessPhone}
             password={accessPassword}
             activationCode={accessActivationCode}
+            accessHint={accessHintQuery.data ?? null}
+            checkingAccessHint={accessHintQuery.isFetching}
             whatsappConsent={whatsappConsent}
             pending={registerCustomerMut.isPending || loginCustomerMut.isPending}
             onModeChange={(mode) => {
@@ -2090,6 +2124,8 @@ function CustomerAccessCard({
   phone,
   password,
   activationCode,
+  accessHint,
+  checkingAccessHint,
   whatsappConsent,
   pending,
   onModeChange,
@@ -2107,6 +2143,8 @@ function CustomerAccessCard({
   phone: string;
   password: string;
   activationCode: string;
+  accessHint: BookingCustomerAccessHint | null;
+  checkingAccessHint: boolean;
   whatsappConsent: boolean;
   pending: boolean;
   onModeChange: (mode: CustomerAccessMode) => void;
@@ -2125,6 +2163,19 @@ function CustomerAccessCard({
   const nameOk = name.trim().length >= 2;
   const phoneOk = isValidCustomerWhatsapp(phone);
   const valid = cpfOk && passwordOk && (!registering || (nameOk && phoneOk && whatsappConsent));
+  const needsPasswordSetup = accessHint?.status === "needs_password_setup";
+  const hasPassword = accessHint?.status === "has_password";
+  const isNewCustomer = accessHint?.status === "new_customer";
+  const title = needsPasswordSetup
+    ? "Crie sua senha de acesso"
+    : registering
+      ? "Crie seu cadastro"
+      : "Entre para agendar";
+  const description = needsPasswordSetup
+    ? "Encontramos este CPF no salão, mas ainda não existe senha. Informe o WhatsApp cadastrado e escolha sua senha para liberar o agendamento."
+    : registering
+      ? "Se você já é cliente ou VIP, informe o WhatsApp cadastrado e crie sua senha. O código só é necessário quando o salão fornecer."
+      : "Use seu CPF e senha. Depois do acesso, o agendamento abre normalmente.";
   const disabledReason = (() => {
     if (valid || pending) return "";
     if (!cpfOk) return "Informe um CPF válido.";
@@ -2142,17 +2193,15 @@ function CustomerAccessCard({
           <div className="flex items-center gap-2 text-primary">
             {registering ? <UserPlus className="h-5 w-5" /> : <LogIn className="h-5 w-5" />}
             <span className="text-xs font-bold uppercase tracking-[0.18em]">
-              {registering ? "Primeiro acesso" : "Acesso do cliente"}
+              {needsPasswordSetup
+                ? "Senha ainda não cadastrada"
+                : registering
+                  ? "Primeiro acesso"
+                  : "Acesso do cliente"}
             </span>
           </div>
-          <h2 className="mt-2 text-2xl font-semibold">
-            {registering ? "Crie seu cadastro" : "Entre para agendar"}
-          </h2>
-          <p className="mt-1 text-sm leading-relaxed text-white/55">
-            {registering
-              ? "Se você já é cliente ou VIP, informe o WhatsApp cadastrado e crie sua senha. O código só é necessário quando o salão fornecer."
-              : "Use seu CPF e senha. Depois do acesso, o agendamento abre normalmente."}
-          </p>
+          <h2 className="mt-2 text-2xl font-semibold">{title}</h2>
+          <p className="mt-1 text-sm leading-relaxed text-white/55">{description}</p>
         </div>
 
         <form
@@ -2192,6 +2241,32 @@ function CustomerAccessCard({
               onChange={(event) => onCpfChange(event.target.value)}
               placeholder="000.000.000-00"
             />
+            {cpfOk && checkingAccessHint && (
+              <p className="flex items-center gap-2 text-xs font-medium text-white/55">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Verificando se este CPF já tem senha...
+              </p>
+            )}
+            {cpfOk && !checkingAccessHint && needsPasswordSetup && (
+              <div className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs leading-relaxed text-white">
+                <p className="font-semibold text-primary">Este CPF ainda não tem senha.</p>
+                <p className="mt-1 text-white/70">
+                  Crie sua senha abaixo usando o WhatsApp cadastrado no salão. Depois disso,
+                  o acesso fica salvo para os próximos agendamentos.
+                </p>
+              </div>
+            )}
+            {cpfOk && !checkingAccessHint && hasPassword && !registering && (
+              <p className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-xs leading-relaxed text-emerald-50">
+                Este CPF já tem senha cadastrada. Digite sua senha para entrar.
+              </p>
+            )}
+            {cpfOk && !checkingAccessHint && isNewCustomer && !registering && (
+              <p className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs leading-relaxed text-white/65">
+                Não encontramos uma senha para este CPF. Se for seu primeiro acesso, toque em
+                Cadastre-se para criar sua senha.
+              </p>
+            )}
           </div>
 
           {registering && (
@@ -2208,7 +2283,13 @@ function CustomerAccessCard({
                 onChange={(event) => onActivationCodeChange(event.target.value)}
                 placeholder="Somente se o salão pediu"
               />
-              <p className="text-[11px] leading-relaxed text-white/40">
+              {needsPasswordSetup && (
+                <p className="text-[11px] leading-relaxed text-white/40">
+                  Normalmente não precisa de código. Ele só é usado se o WhatsApp informado
+                  não for o mesmo do cadastro.
+                </p>
+              )}
+              <p className={needsPasswordSetup ? "hidden" : "text-[11px] leading-relaxed text-white/40"}>
                 Para cliente já cadastrado, o WhatsApp informado deve ser o mesmo do cadastro.
                 Se não conferir, o salão pode gerar este código.
               </p>
@@ -2286,7 +2367,13 @@ function CustomerAccessCard({
           >
             <span className="flex items-center">
               {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {pending ? "AGUARDE..." : registering ? "CRIAR CADASTRO" : "ENTRAR"}
+              {pending
+                ? "AGUARDE..."
+                : needsPasswordSetup
+                  ? "CRIAR SENHA E ENTRAR"
+                  : registering
+                    ? "CRIAR CADASTRO"
+                    : "ENTRAR"}
             </span>
             {!pending && <ArrowRight className="h-5 w-5" />}
           </Button>

@@ -9,6 +9,10 @@ export type BookingCustomer = {
   cpfLast4: string;
 };
 
+export type BookingCustomerAccessHint = {
+  status: "has_password" | "needs_password_setup" | "new_customer";
+};
+
 export function cleanCustomerCpf(value: string) {
   return value.replace(/\D/g, "").slice(0, 11);
 }

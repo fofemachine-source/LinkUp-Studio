@@ -8,6 +8,7 @@ import {
   customerPasswordError,
   isValidCustomerCpf,
   isValidCustomerWhatsapp,
+  type BookingCustomerAccessHint,
 } from "@/lib/customer-auth";
 
 const tenantInput = z.object({ tenantId: z.string().uuid() });
@@ -33,6 +34,82 @@ export const getBookingCustomer = createServerFn({ method: "GET" })
     const { loadCustomerSession, publicCustomer } = await import("@/lib/customer-auth.server");
     const customer = await loadCustomerSession(data.tenantId);
     return customer ? publicCustomer(customer) : null;
+  });
+
+export const getBookingCustomerAccessHint = createServerFn({ method: "POST" })
+  .validator((input) => tenantInput.extend({ cpf: cpfInput }).parse(input))
+  .handler(async ({ data }): Promise<BookingCustomerAccessHint> => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { customerCpfHash, enforceCustomerRateLimit } = await import(
+      "@/lib/customer-auth.server"
+    );
+    const db = supabaseAdmin as any;
+
+    await enforceCustomerRateLimit(data.tenantId, "login");
+
+    const cpfHash = customerCpfHash(data.cpf);
+    const { data: account, error: accountError } = await db
+      .from("customer_booking_accounts")
+      .select("id")
+      .eq("tenant_id", data.tenantId)
+      .eq("cpf_hash", cpfHash)
+      .maybeSingle();
+
+    if (accountError) {
+      throw new Error("Não foi possível verificar este CPF agora.");
+    }
+    if (account) {
+      return { status: "has_password" };
+    }
+
+    const { data: client, error: clientError } = await db
+      .from("clients")
+      .select("id")
+      .eq("tenant_id", data.tenantId)
+      .eq("cpf", data.cpf)
+      .maybeSingle();
+
+    if (clientError) {
+      throw new Error("Não foi possível verificar este CPF agora.");
+    }
+
+    const cpfFormatted = data.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+    const activeSubscriptionStatuses = ["pending_activation", "active", "overdue", "suspended"];
+
+    const subscriptionChecks = [
+      db
+        .from("client_subscriptions")
+        .select("id")
+        .eq("tenant_id", data.tenantId)
+        .in("status", activeSubscriptionStatuses)
+        .in("cpf", [data.cpf, cpfFormatted])
+        .limit(1),
+    ];
+
+    if (client?.id) {
+      subscriptionChecks.push(
+        db
+          .from("client_subscriptions")
+          .select("id")
+          .eq("tenant_id", data.tenantId)
+          .in("status", activeSubscriptionStatuses)
+          .eq("client_id", client.id)
+          .limit(1),
+      );
+    }
+
+    const subscriptionResults = await Promise.all(subscriptionChecks);
+    const subscriptionError = subscriptionResults.find((result) => result.error)?.error;
+    if (subscriptionError) {
+      throw new Error("Não foi possível verificar este CPF agora.");
+    }
+
+    const hasSubscription = subscriptionResults.some((result) => (result.data ?? []).length > 0);
+    if (client || hasSubscription) {
+      return { status: "needs_password_setup" };
+    }
+
+    return { status: "new_customer" };
   });
 
 export const registerBookingCustomer = createServerFn({ method: "POST" })
