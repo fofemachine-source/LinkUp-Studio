@@ -200,7 +200,14 @@ function ClientsTab() {
         { duration: 12000 },
       );
     } catch (error: any) {
-      toast.error(error?.message || "Não foi possível gerar o código de acesso.");
+      const message = String(error?.message || "");
+      if (message.includes("permission denied for function create_customer_booking_activation_code")) {
+        toast.error(
+          "A liberação de acesso ainda precisa da atualização do banco. Aplique o SQL de permissão e tente novamente.",
+        );
+        return;
+      }
+      toast.error(message || "Não foi possível gerar o código de acesso.");
     } finally {
       setIssuingAccessCodeFor(null);
     }
