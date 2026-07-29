@@ -88,6 +88,7 @@ export const Route = createFileRoute("/booking/$slug")({
 
 type Step = "vip" | "service" | "pro" | "date" | "form" | "done";
 type CustomerAccessMode = "register" | "login";
+const ALL_SERVICES_CATEGORY = "Todos";
 const DEFAULT_SERVICE_CATEGORY = "Serviços";
 
 function serviceCategory(service: any) {
@@ -611,14 +612,20 @@ function BookingPage() {
     : [];
   const visibleServices = isVip ? includedVipServices : regularServices;
   const serviceCategoryGroups = groupServicesByCategory(visibleServices);
+  const serviceCategoryOptions =
+    visibleServices.length > 0
+      ? [{ category: ALL_SERVICES_CATEGORY, items: visibleServices }, ...serviceCategoryGroups]
+      : [];
   const activeServiceCategory =
     selectedServiceCategory &&
-    serviceCategoryGroups.some((group) => group.category === selectedServiceCategory)
+    serviceCategoryOptions.some((group) => group.category === selectedServiceCategory)
       ? selectedServiceCategory
-      : (serviceCategoryGroups[0]?.category ?? "");
+      : (serviceCategoryOptions[0]?.category ?? "");
   const visibleServicesInCategory =
-    serviceCategoryGroups.find((group) => group.category === activeServiceCategory)?.items ??
-    visibleServices;
+    activeServiceCategory === ALL_SERVICES_CATEGORY
+      ? visibleServices
+      : (serviceCategoryGroups.find((group) => group.category === activeServiceCategory)?.items ??
+        visibleServices);
   const selectedExtraServices = services.filter((service: any) =>
     extraServiceIds.includes(service.id),
   );
@@ -691,6 +698,7 @@ function BookingPage() {
         accentColor={tenant.primary_color}
         className="min-h-screen text-foreground"
         contentClassName="min-h-screen"
+        fixedBackground
       >
         <div
           className="booking-showcase mx-auto flex min-h-screen max-w-xl flex-col justify-center p-4 md:p-8"
@@ -761,6 +769,7 @@ function BookingPage() {
       accentColor={tenant.primary_color}
       className="min-h-screen text-foreground"
       contentClassName="min-h-screen"
+      fixedBackground
     >
       <div
         className="booking-showcase mx-auto flex min-h-screen max-w-xl flex-col justify-center p-4 md:p-8"
@@ -1278,9 +1287,9 @@ function BookingPage() {
                 </div>
               )}
 
-              {serviceCategoryGroups.length > 1 && (
+              {serviceCategoryOptions.length > 1 && (
                 <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-                  {serviceCategoryGroups.map((group) => (
+                  {serviceCategoryOptions.map((group) => (
                     <button
                       key={group.category}
                       type="button"

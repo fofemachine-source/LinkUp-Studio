@@ -27,6 +27,7 @@ export type ImmersiveBackgroundProps = {
   contentClassName?: string;
   imageClassName?: string;
   overlayClassName?: string;
+  fixedBackground?: boolean;
   accentColor?: string | null;
   children?: ReactNode;
   alt?: string;
@@ -96,6 +97,7 @@ export function ImmersiveBackground({
   contentClassName,
   imageClassName,
   overlayClassName,
+  fixedBackground = false,
   accentColor,
   children,
   alt = "",
@@ -120,7 +122,9 @@ export function ImmersiveBackground({
           src={previewUrl}
           aria-hidden={alt ? undefined : true}
           className={cn(
-            "absolute inset-0 z-0 h-full w-full object-cover will-change-transform",
+            fixedBackground
+              ? "fixed inset-0 z-0 h-[100svh] w-full object-cover will-change-transform"
+              : "absolute inset-0 z-0 h-full w-full object-cover will-change-transform",
             imageClassName,
           )}
           style={previewImageStyle(branding, previewViewport)}
@@ -128,7 +132,11 @@ export function ImmersiveBackground({
       ) : !previewViewport && hasResponsiveImage ? (
         <picture
           aria-hidden={alt ? undefined : true}
-          className="absolute inset-0 z-0 block h-full w-full"
+          className={cn(
+            fixedBackground
+              ? "fixed inset-0 z-0 block h-[100svh] w-full"
+              : "absolute inset-0 z-0 block h-full w-full",
+          )}
         >
           {urls.desktop && <source media="(min-width: 1280px)" srcSet={urls.desktop} />}
           {urls.tablet && <source media="(min-width: 768px)" srcSet={urls.tablet} />}
@@ -136,7 +144,9 @@ export function ImmersiveBackground({
             {...imageProps}
             src={urls.mobile ?? urls.tablet ?? urls.desktop ?? undefined}
             className={cn(
-              "h-full w-full object-cover will-change-transform",
+              fixedBackground
+                ? "h-[100svh] w-full object-cover will-change-transform"
+                : "h-full w-full object-cover will-change-transform",
               "[object-position:var(--booking-mobile-position)] [transform:scale(var(--booking-mobile-scale))] [transform-origin:var(--booking-mobile-position)]",
               "md:[object-position:var(--booking-tablet-position)] md:[transform:scale(var(--booking-tablet-scale))] md:[transform-origin:var(--booking-tablet-position)]",
               "xl:[object-position:var(--booking-desktop-position)] xl:[transform:scale(var(--booking-desktop-scale))] xl:[transform-origin:var(--booking-desktop-position)]",
