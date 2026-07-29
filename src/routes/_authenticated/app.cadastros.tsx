@@ -24,7 +24,7 @@ import {
   projectPasswordAuthErrorMessage,
   validateProjectPassword,
 } from "@/lib/password-policy";
-import { isValidCustomerCpf } from "@/lib/customer-auth";
+import { cleanCustomerCpf, isValidCustomerCpf } from "@/lib/customer-auth";
 import {
   DEFAULT_BOOKING_WORK_DAYS,
   normalizeBookingWeekdays,
@@ -117,14 +117,21 @@ function ClientsTab() {
       let needsRefetch = false;
       for (const sub of subscribers) {
         const cleanSubPhone = sub.whatsapp?.replace(/\D/g, "");
+        const cleanSubCpf = cleanCustomerCpf(String(sub.cpf ?? ""));
         const existingClient = data.find((c: any) => 
           (sub.client_id && c.id === sub.client_id) || 
+          (cleanSubCpf && cleanCustomerCpf(String(c.cpf ?? "")) === cleanSubCpf) ||
           (cleanSubPhone && c.whatsapp?.replace(/\D/g, "") === cleanSubPhone)
         );
 
         if (existingClient) {
-          if (!existingClient.is_subscriber) {
-            await supabase.from("clients").update({ is_subscriber: true }).eq("id", existingClient.id);
+          const updates: any = {};
+          if (!existingClient.is_subscriber) updates.is_subscriber = true;
+          if (cleanSubCpf && cleanCustomerCpf(String(existingClient.cpf ?? "")) !== cleanSubCpf) {
+            updates.cpf = cleanSubCpf;
+          }
+          if (Object.keys(updates).length > 0) {
+            await supabase.from("clients").update(updates).eq("id", existingClient.id);
             needsRefetch = true;
           }
           if (!sub.client_id) {
@@ -138,6 +145,7 @@ function ClientsTab() {
               tenant_id: tenantId!,
               full_name: sub.full_name,
               whatsapp: cleanSubPhone || null,
+              cpf: cleanSubCpf || null,
               is_subscriber: true
             })
             .select("id")
