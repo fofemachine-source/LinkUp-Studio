@@ -295,8 +295,7 @@ export function AppHeader() {
     if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
 
     const params = { tenantId: tenant.id, userId: user.id };
-    const shouldRefresh =
-      Notification.permission === "granted" || hasStoredAppointmentPushPreference(params);
+    const shouldRefresh = hasStoredAppointmentPushPreference(params);
 
     if (!shouldRefresh) return;
 
@@ -313,26 +312,16 @@ export function AppHeader() {
       });
     };
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") refresh();
-    };
-
     const handleServiceWorkerMessage = (event: MessageEvent) => {
       if (event.data?.type !== "LINKUP_PUSH_RESUBSCRIBE") return;
       lastRefreshAt = 0;
       refresh();
     };
 
-    const timer = window.setTimeout(refresh, 1500);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
     navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
 
     return () => {
       disposed = true;
-      window.clearTimeout(timer);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
       navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
     };
   }, [tenant?.id, user?.id]);

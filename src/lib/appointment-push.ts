@@ -1,5 +1,4 @@
 import { supabase } from "@/integrations/supabase/client";
-import { dynamicSupabase } from "@/lib/supabase-dynamic";
 
 type PushPublicKeyResponse = {
   ok?: boolean;
@@ -66,6 +65,11 @@ export function hasStoredAppointmentPushPreference(params: { tenantId: string; u
 function rememberAppointmentPushPreference(params: { tenantId: string; userId: string }) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(preferenceKey(params), "true");
+}
+
+function forgetAppointmentPushPreference(params: { tenantId: string; userId: string }) {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(preferenceKey(params));
 }
 
 export function canUseAppointmentPush() {
@@ -165,21 +169,16 @@ export async function ensureAppointmentPushSubscription(params: {
   const endpoint = subscription.endpoint;
   const serialized = subscription.toJSON();
 
-  const { error } = await dynamicSupabase.from<unknown>("push_subscriptions").upsert(
-    {
-      tenant_id: params.tenantId,
-      user_id: params.userId,
-      endpoint,
-      subscription: serialized,
-      user_agent: navigator.userAgent,
-      platform: navigator.platform,
-      enabled: true,
-      last_seen_at: new Date().toISOString(),
-    },
-    { onConflict: "endpoint" },
-  );
+  const { error } = await (supabase as any).rpc("register_appointment_push_subscription", {
+    p_tenant_id: params.tenantId,
+    p_endpoint: endpoint,
+    p_subscription: serialized,
+    p_user_agent: navigator.userAgent,
+    p_platform: navigator.platform,
+  });
 
   if (error) {
+    forgetAppointmentPushPreference(params);
     console.error("[LinkUp Studio] Falha ao salvar dispositivo para notificações.", error);
     return {
       ok: false,
@@ -210,13 +209,16 @@ export async function refreshAppointmentPushSubscription(params: {
     };
   }
 
-  return ensureAppointmentPushSubscription({
+  const result = await ensureAppointmentPushSubscription({
     ...params,
     options: {
       promptForPermission: false,
       rememberDevice: false,
     },
   });
+
+  if (!result.ok) forgetAppointmentPushPreference(params);
+  return result;
 }
 
 export async function getCurrentAppointmentPushPermission() {
