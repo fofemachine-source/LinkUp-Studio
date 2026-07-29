@@ -114,7 +114,7 @@ export function buildAdminPwaManifest(slug: string, tenant: BookingPwaTenant) {
     lang: "pt-BR",
     dir: "ltr",
     start_url: `/app?tenant=${encodedSlug}`,
-    scope: "/app",
+    scope: "/",
     display: "standalone",
     display_override: ["standalone", "minimal-ui", "browser"],
     background_color: DEFAULT_PWA_BACKGROUND_COLOR,

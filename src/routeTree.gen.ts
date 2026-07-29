@@ -14,6 +14,7 @@ import { Route as SaasRouteImport } from './routes/saas'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as InstallSlugRouteImport } from './routes/install.$slug'
 import { Route as BookingSlugRouteImport } from './routes/booking.$slug'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
@@ -53,6 +54,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InstallSlugRoute = InstallSlugRouteImport.update({
+  id: '/install/$slug',
+  path: '/install/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BookingSlugRoute = BookingSlugRouteImport.update({
@@ -151,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/saas-login': typeof SaasLoginRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/booking/$slug': typeof BookingSlugRoute
+  '/install/$slug': typeof InstallSlugRoute
   '/app/agenda': typeof AuthenticatedAppAgendaRoute
   '/app/assinantes': typeof AuthenticatedAppAssinantesRoute
   '/app/assinatura': typeof AuthenticatedAppAssinaturaRoute
@@ -172,6 +179,7 @@ export interface FileRoutesByTo {
   '/saas': typeof SaasRoute
   '/saas-login': typeof SaasLoginRoute
   '/booking/$slug': typeof BookingSlugRoute
+  '/install/$slug': typeof InstallSlugRoute
   '/app/agenda': typeof AuthenticatedAppAgendaRoute
   '/app/assinantes': typeof AuthenticatedAppAssinantesRoute
   '/app/assinatura': typeof AuthenticatedAppAssinaturaRoute
@@ -196,6 +204,7 @@ export interface FileRoutesById {
   '/saas-login': typeof SaasLoginRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/booking/$slug': typeof BookingSlugRoute
+  '/install/$slug': typeof InstallSlugRoute
   '/_authenticated/app/agenda': typeof AuthenticatedAppAgendaRoute
   '/_authenticated/app/assinantes': typeof AuthenticatedAppAssinantesRoute
   '/_authenticated/app/assinatura': typeof AuthenticatedAppAssinaturaRoute
@@ -220,6 +229,7 @@ export interface FileRouteTypes {
     | '/saas-login'
     | '/app'
     | '/booking/$slug'
+    | '/install/$slug'
     | '/app/agenda'
     | '/app/assinantes'
     | '/app/assinatura'
@@ -241,6 +251,7 @@ export interface FileRouteTypes {
     | '/saas'
     | '/saas-login'
     | '/booking/$slug'
+    | '/install/$slug'
     | '/app/agenda'
     | '/app/assinantes'
     | '/app/assinatura'
@@ -264,6 +275,7 @@ export interface FileRouteTypes {
     | '/saas-login'
     | '/_authenticated/app'
     | '/booking/$slug'
+    | '/install/$slug'
     | '/_authenticated/app/agenda'
     | '/_authenticated/app/assinantes'
     | '/_authenticated/app/assinatura'
@@ -287,6 +299,7 @@ export interface RootRouteChildren {
   SaasRoute: typeof SaasRoute
   SaasLoginRoute: typeof SaasLoginRoute
   BookingSlugRoute: typeof BookingSlugRoute
+  InstallSlugRoute: typeof InstallSlugRoute
   ApiPwaIconSlugRoute: typeof ApiPwaIconSlugRoute
   ApiPwaManifestSlugRoute: typeof ApiPwaManifestSlugRoute
 }
@@ -326,6 +339,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/install/$slug': {
+      id: '/install/$slug'
+      path: '/install/$slug'
+      fullPath: '/install/$slug'
+      preLoaderRoute: typeof InstallSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/booking/$slug': {
@@ -494,6 +514,7 @@ const rootRouteChildren: RootRouteChildren = {
   SaasRoute: SaasRoute,
   SaasLoginRoute: SaasLoginRoute,
   BookingSlugRoute: BookingSlugRoute,
+  InstallSlugRoute: InstallSlugRoute,
   ApiPwaIconSlugRoute: ApiPwaIconSlugRoute,
   ApiPwaManifestSlugRoute: ApiPwaManifestSlugRoute,
 }

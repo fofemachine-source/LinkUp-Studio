@@ -15,6 +15,7 @@ const publicBookingUrl = read("src/lib/public-booking-url.ts");
 const mobileCommandCenter = read("src/components/dashboard/mobile-command-center.tsx");
 const agendaPremium = read("src/components/agenda/agenda-premium.tsx");
 const bookingRoute = read("src/routes/booking.$slug.tsx");
+const installRoute = read("src/routes/install.$slug.tsx");
 const manifestRoute = read("src/routes/api.pwa.manifest.$slug.ts");
 const rootRoute = read("src/routes/__root.tsx");
 
@@ -37,7 +38,8 @@ assert(
 assert(
   pwaIdentity.includes("buildAdminPwaManifest") &&
     pwaIdentity.includes("context=admin") &&
-    pwaIdentity.includes("start_url: `/app?tenant=${encodedSlug}`"),
+    pwaIdentity.includes("start_url: `/app?tenant=${encodedSlug}`") &&
+    pwaIdentity.includes('scope: "/"'),
   "Manifesto do ADM deve ser específico por loja.",
 );
 
@@ -68,6 +70,16 @@ assert(
 assert(
   bookingRoute.includes("buildBookingPwaHeadLinks") && bookingRoute.includes("syncPwaDocumentHead"),
   "Vitrine deve manter sincronização dinâmica de PWA.",
+);
+
+assert(
+  installRoute.includes('createFileRoute("/install/$slug")') &&
+    installRoute.includes("getPublicTenantPreview") &&
+    installRoute.includes("buildAdminPwaHeadLinks") &&
+    installRoute.includes('name: "apple-mobile-web-app-title"') &&
+    installRoute.includes('name: "application-name"') &&
+    installRoute.includes('/app?tenant=${encodeURIComponent(slug)}'),
+  "iOS deve ter rota publica de instalacao do ADM com nome, icone e manifest da loja antes do app carregar.",
 );
 
 assert(
