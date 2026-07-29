@@ -9,13 +9,25 @@ type PushPublicKeyResponse = {
 };
 
 export type AppointmentPushStatus =
-  "subscribed" | "unsupported" | "denied" | "missing-vapid" | "failed";
+  | "subscribed"
+  | "unsupported"
+  | "denied"
+  | "permission-required"
+  | "missing-vapid"
+  | "failed";
 
 export type AppointmentPushResult = {
   ok: boolean;
   status: AppointmentPushStatus;
   message: string;
 };
+
+type EnsureAppointmentPushOptions = {
+  promptForPermission?: boolean;
+  rememberDevice?: boolean;
+};
+
+const PUSH_ENABLED_STORAGE_PREFIX = "linkup:appointment-push-enabled";
 
 function base64UrlToUint8Array(base64Url: string) {
   const padding = "=".repeat((4 - (base64Url.length % 4)) % 4);
@@ -40,6 +52,20 @@ function arrayBuffersAreEqual(left: ArrayBuffer | null, right: Uint8Array) {
   }
 
   return true;
+}
+
+function preferenceKey(params: { tenantId: string; userId: string }) {
+  return `${PUSH_ENABLED_STORAGE_PREFIX}:${params.tenantId}:${params.userId}`;
+}
+
+export function hasStoredAppointmentPushPreference(params: { tenantId: string; userId: string }) {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(preferenceKey(params)) === "true";
+}
+
+function rememberAppointmentPushPreference(params: { tenantId: string; userId: string }) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(preferenceKey(params), "true");
 }
 
 export function canUseAppointmentPush() {
@@ -68,7 +94,11 @@ async function getPushPublicKey() {
 export async function ensureAppointmentPushSubscription(params: {
   tenantId: string;
   userId: string;
+  options?: EnsureAppointmentPushOptions;
 }): Promise<AppointmentPushResult> {
+  const shouldPrompt = params.options?.promptForPermission !== false;
+  const shouldRemember = params.options?.rememberDevice !== false;
+
   if (!canUseAppointmentPush()) {
     return {
       ok: false,
@@ -78,9 +108,21 @@ export async function ensureAppointmentPushSubscription(params: {
   }
 
   const permission =
-    Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    Notification.permission === "granted"
+      ? "granted"
+      : shouldPrompt
+        ? await Notification.requestPermission()
+        : Notification.permission;
 
   if (permission !== "granted") {
+    if (permission === "default") {
+      return {
+        ok: false,
+        status: "permission-required",
+        message: "Ative as notificacoes neste dispositivo para receber avisos com o app fechado.",
+      };
+    }
+
     return {
       ok: false,
       status: "denied",
@@ -147,11 +189,34 @@ export async function ensureAppointmentPushSubscription(params: {
     };
   }
 
+  if (shouldRemember) rememberAppointmentPushPreference(params);
+
   return {
     ok: true,
     status: "subscribed",
     message: "Notificações deste dispositivo ativadas.",
   };
+}
+
+export async function refreshAppointmentPushSubscription(params: {
+  tenantId: string;
+  userId: string;
+}) {
+  if (!canUseAppointmentPush() || Notification.permission !== "granted") {
+    return {
+      ok: false,
+      status: "permission-required" as const,
+      message: "Este dispositivo ainda nao autorizou Push.",
+    };
+  }
+
+  return ensureAppointmentPushSubscription({
+    ...params,
+    options: {
+      promptForPermission: false,
+      rememberDevice: false,
+    },
+  });
 }
 
 export async function getCurrentAppointmentPushPermission() {

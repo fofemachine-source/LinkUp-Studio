@@ -66,6 +66,7 @@ import {
   normalizeBookingBranding,
   type BookingBranding,
 } from "@/lib/booking-branding";
+import { buildBookingPwaDisplayName, buildBookingPwaHeadLinks } from "@/lib/pwa-identity";
 import {
   bookingWeekdayFromDate,
   DEFAULT_BOOKING_WORK_DAYS,
@@ -78,6 +79,20 @@ export const Route = createFileRoute("/booking/$slug")({
     cancel: typeof search.cancel === "string" ? search.cancel : undefined,
   }),
   head: ({ params }) => ({
+    links: [
+      {
+        rel: "manifest",
+        href: buildBookingPwaHeadLinks(params.slug).manifestHref,
+      },
+      {
+        rel: "icon",
+        href: buildBookingPwaHeadLinks(params.slug).faviconHref,
+      },
+      {
+        rel: "apple-touch-icon",
+        href: buildBookingPwaHeadLinks(params.slug).appleTouchIconHref,
+      },
+    ],
     meta: [
       { title: `Agende seu horário — ${params.slug}` },
       { name: "description", content: "Agendamento online rápido e prático." },
@@ -88,8 +103,74 @@ export const Route = createFileRoute("/booking/$slug")({
 
 type Step = "vip" | "service" | "pro" | "date" | "form" | "done";
 type CustomerAccessMode = "register" | "login";
+type BookingRouteDataWithTenant = {
+  tenant?: {
+    name?: string | null;
+    primary_color?: string | null;
+    logo_url?: string | null;
+  } | null;
+};
 const ALL_SERVICES_CATEGORY = "Todos";
 const DEFAULT_SERVICE_CATEGORY = "Serviços";
+
+function upsertDocumentMeta(
+  selector: string,
+  createElement: () => HTMLMetaElement,
+  apply: (element: HTMLMetaElement) => void,
+) {
+  const existing = document.head.querySelector(selector);
+  const element = existing instanceof HTMLMetaElement ? existing : createElement();
+  apply(element);
+  if (!existing) document.head.appendChild(element);
+}
+
+function upsertDocumentLink(selector: string, rel: string, href: string) {
+  const existing = document.head.querySelector(selector);
+  const element = existing instanceof HTMLLinkElement ? existing : document.createElement("link");
+  element.rel = rel;
+  element.href = href;
+  if (!existing) document.head.appendChild(element);
+}
+
+function syncBookingPwaHead({
+  slug,
+  tenantName,
+  primaryColor,
+  logoUrl,
+}: {
+  slug: string;
+  tenantName?: string | null;
+  primaryColor?: string | null;
+  logoUrl?: string | null;
+}) {
+  const displayName = buildBookingPwaDisplayName(tenantName);
+  const links = buildBookingPwaHeadLinks(slug, logoUrl);
+
+  document.title = displayName;
+  upsertDocumentMeta(
+    'meta[name="apple-mobile-web-app-title"]',
+    () => {
+      const meta = document.createElement("meta");
+      meta.setAttribute("name", "apple-mobile-web-app-title");
+      return meta;
+    },
+    (meta) => meta.setAttribute("content", displayName),
+  );
+  upsertDocumentMeta(
+    'meta[name="theme-color"]',
+    () => {
+      const meta = document.createElement("meta");
+      meta.setAttribute("name", "theme-color");
+      return meta;
+    },
+    (meta) => {
+      if (primaryColor) meta.setAttribute("content", primaryColor);
+    },
+  );
+  upsertDocumentLink('link[rel="manifest"]', "manifest", links.manifestHref);
+  upsertDocumentLink('link[rel="icon"]', "icon", links.faviconHref);
+  upsertDocumentLink('link[rel="apple-touch-icon"]', "apple-touch-icon", links.appleTouchIconHref);
+}
 
 function serviceCategory(service: any) {
   const category = String(
@@ -178,6 +259,7 @@ function BookingPage() {
     refetchOnReconnect: "always",
   });
   const tenantId = (data as any)?.tenant?.id as string | undefined;
+  const pwaTenant = (data as BookingRouteDataWithTenant | undefined)?.tenant;
   const [step, setStep] = useState<Step>("vip");
   const [isVip, setIsVip] = useState(false);
   const [vipInfo, setVipInfo] = useState<any>(null);
@@ -210,6 +292,16 @@ function BookingPage() {
     refetchOnReconnect: false,
     staleTime: Infinity,
   });
+
+  useEffect(() => {
+    if (!pwaTenant) return;
+    syncBookingPwaHead({
+      slug,
+      tenantName: pwaTenant.name,
+      primaryColor: pwaTenant.primary_color,
+      logoUrl: pwaTenant.logo_url,
+    });
+  }, [slug, pwaTenant?.name, pwaTenant?.primary_color, pwaTenant?.logo_url]);
 
   const applyCustomer = useCallback((customer: BookingCustomer) => {
     setName(customer.fullName);

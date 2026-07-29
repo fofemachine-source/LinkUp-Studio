@@ -28,6 +28,8 @@ import { Route as AuthenticatedAppCadastrosRouteImport } from './routes/_authent
 import { Route as AuthenticatedAppAssinaturaRouteImport } from './routes/_authenticated/app.assinatura'
 import { Route as AuthenticatedAppAssinantesRouteImport } from './routes/_authenticated/app.assinantes'
 import { Route as AuthenticatedAppAgendaRouteImport } from './routes/_authenticated/app.agenda'
+import { Route as ApiPwaManifestSlugRouteImport } from './routes/api.pwa.manifest.$slug'
+import { Route as ApiPwaIconSlugRouteImport } from './routes/api.pwa.icon.$slug'
 
 const SaasLoginRoute = SaasLoginRouteImport.update({
   id: '/saas-login',
@@ -131,6 +133,16 @@ const AuthenticatedAppAgendaRoute = AuthenticatedAppAgendaRouteImport.update({
   path: '/agenda',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const ApiPwaManifestSlugRoute = ApiPwaManifestSlugRouteImport.update({
+  id: '/api/pwa/manifest/$slug',
+  path: '/api/pwa/manifest/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPwaIconSlugRoute = ApiPwaIconSlugRouteImport.update({
+  id: '/api/pwa/icon/$slug',
+  path: '/api/pwa/icon/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -151,6 +163,8 @@ export interface FileRoutesByFullPath {
   '/app/financeiro': typeof AuthenticatedAppFinanceiroRoute
   '/app/relatorios': typeof AuthenticatedAppRelatoriosRoute
   '/app/': typeof AuthenticatedAppIndexRoute
+  '/api/pwa/icon/$slug': typeof ApiPwaIconSlugRoute
+  '/api/pwa/manifest/$slug': typeof ApiPwaManifestSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -170,6 +184,8 @@ export interface FileRoutesByTo {
   '/app/financeiro': typeof AuthenticatedAppFinanceiroRoute
   '/app/relatorios': typeof AuthenticatedAppRelatoriosRoute
   '/app': typeof AuthenticatedAppIndexRoute
+  '/api/pwa/icon/$slug': typeof ApiPwaIconSlugRoute
+  '/api/pwa/manifest/$slug': typeof ApiPwaManifestSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -192,6 +208,8 @@ export interface FileRoutesById {
   '/_authenticated/app/financeiro': typeof AuthenticatedAppFinanceiroRoute
   '/_authenticated/app/relatorios': typeof AuthenticatedAppRelatoriosRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
+  '/api/pwa/icon/$slug': typeof ApiPwaIconSlugRoute
+  '/api/pwa/manifest/$slug': typeof ApiPwaManifestSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -214,6 +232,8 @@ export interface FileRouteTypes {
     | '/app/financeiro'
     | '/app/relatorios'
     | '/app/'
+    | '/api/pwa/icon/$slug'
+    | '/api/pwa/manifest/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -233,6 +253,8 @@ export interface FileRouteTypes {
     | '/app/financeiro'
     | '/app/relatorios'
     | '/app'
+    | '/api/pwa/icon/$slug'
+    | '/api/pwa/manifest/$slug'
   id:
     | '__root__'
     | '/'
@@ -254,6 +276,8 @@ export interface FileRouteTypes {
     | '/_authenticated/app/financeiro'
     | '/_authenticated/app/relatorios'
     | '/_authenticated/app/'
+    | '/api/pwa/icon/$slug'
+    | '/api/pwa/manifest/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -263,6 +287,8 @@ export interface RootRouteChildren {
   SaasRoute: typeof SaasRoute
   SaasLoginRoute: typeof SaasLoginRoute
   BookingSlugRoute: typeof BookingSlugRoute
+  ApiPwaIconSlugRoute: typeof ApiPwaIconSlugRoute
+  ApiPwaManifestSlugRoute: typeof ApiPwaManifestSlugRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -400,6 +426,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppAgendaRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/api/pwa/manifest/$slug': {
+      id: '/api/pwa/manifest/$slug'
+      path: '/api/pwa/manifest/$slug'
+      fullPath: '/api/pwa/manifest/$slug'
+      preLoaderRoute: typeof ApiPwaManifestSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/pwa/icon/$slug': {
+      id: '/api/pwa/icon/$slug'
+      path: '/api/pwa/icon/$slug'
+      fullPath: '/api/pwa/icon/$slug'
+      preLoaderRoute: typeof ApiPwaIconSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -454,6 +494,8 @@ const rootRouteChildren: RootRouteChildren = {
   SaasRoute: SaasRoute,
   SaasLoginRoute: SaasLoginRoute,
   BookingSlugRoute: BookingSlugRoute,
+  ApiPwaIconSlugRoute: ApiPwaIconSlugRoute,
+  ApiPwaManifestSlugRoute: ApiPwaManifestSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

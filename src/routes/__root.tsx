@@ -39,6 +39,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "theme-color", content: "#f59e0b" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-title", content: "LinkUp Studio" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "default" },
       { title: "LinkUp Studio — Gestão Premium" },
       {
         name: "description",

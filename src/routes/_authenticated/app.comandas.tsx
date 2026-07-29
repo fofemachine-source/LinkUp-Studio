@@ -126,6 +126,24 @@ function isReceivableCommanda(cmd: any) {
   return RECEIVABLE_COMANDA_STATUSES.has(status) || Boolean(cmd.appointment_id || cmd.source === "online");
 }
 
+function isSubscriptionLinkedCommanda(cmd: any) {
+  return Boolean(
+    cmd.subscription_id ||
+      linkedAppointmentOf(cmd)?.subscription_id ||
+      (cmd.commanda_items ?? []).some(
+        (item: any) => item.covered_by_subscription === true || item.subscription_id,
+      ),
+  );
+}
+
+function isBenefitOnlyCommanda(cmd: any) {
+  return isReceivableCommanda(cmd) && isSubscriptionLinkedCommanda(cmd) && money(cmd.total) <= 0.009;
+}
+
+function isSubscriptionExtraCommanda(cmd: any) {
+  return isReceivableCommanda(cmd) && isSubscriptionLinkedCommanda(cmd) && money(cmd.total) > 0.009;
+}
+
 function normalizeSearch(value: unknown) {
   return String(value ?? "")
     .normalize("NFD")
@@ -143,6 +161,20 @@ function professionalsOf(cmd: any) {
 }
 
 function statusMeta(cmd: any) {
+  if (isBenefitOnlyCommanda(cmd)) {
+    return {
+      label: "Baixa de benefício",
+      tone: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      edge: "border-l-emerald-500",
+    };
+  }
+  if (isSubscriptionExtraCommanda(cmd)) {
+    return {
+      label: "Benefício + extra",
+      tone: "bg-amber-50 text-amber-800 border-amber-200",
+      edge: "border-l-amber-500",
+    };
+  }
   if (cmd.status === "closed") {
     return {
       label: "Fechada",
@@ -310,10 +342,12 @@ function FrenteDeCaixaPage() {
 
   const listCopy = {
     pending: {
-      title: "Comandas a receber",
-      emptyTitle: "Nenhuma comanda aguardando recebimento",
-      emptyHint:
+      title: "Comandas a receber / baixar",
+      emptyTitle: "Nenhuma comanda aguardando recebimento ou baixa",
+      oldEmptyHint:
         "As comandas pagas saem automaticamente desta visão e ficam disponíveis em Fechadas.",
+      emptyHint:
+        "Comandas pagas ou benefícios baixados saem automaticamente desta visão e ficam disponíveis em Fechadas.",
     },
     closed: {
       title: "Comandas fechadas",
@@ -344,8 +378,10 @@ function FrenteDeCaixaPage() {
   }
 
   function openCommanda(cmd: any, checkout = false) {
+    const isSubscriptionSettlement = isSubscriptionLinkedCommanda(cmd);
     const canMoveToCheckout =
       checkout &&
+      !isSubscriptionSettlement &&
       isReceivableCommanda(cmd) &&
       String(cmd.status ?? "").toLowerCase() !== "awaiting_payment";
     const next = canMoveToCheckout ? { ...cmd, status: "awaiting_payment" } : cmd;
@@ -435,7 +471,7 @@ function FrenteDeCaixaPage() {
                 onCreated={(cmd: any) => {
                   setNewOpen(false);
                   refresh();
-                  openCommanda({ ...cmd, commanda_items: [], clients: null });
+                  openCommanda({ ...cmd, commanda_items: [], clients: cmd.clients ?? null });
                 }}
               />
             </Dialog>
@@ -466,7 +502,7 @@ function FrenteDeCaixaPage() {
           <div className="flex gap-1 overflow-x-auto rounded-xl border bg-muted/40 p-1">
             {(
               [
-                ["pending", "A receber", open.length],
+                ["pending", "Receber / baixar", open.length],
                 ["closed", "Fechadas", closed.length],
                 ["canceled", "Canceladas", canceled.length],
                 ["all", "Histórico", dayCommandas.length],
@@ -661,6 +697,13 @@ function CommandaCard({
   const products = items.filter((item: any) => item.kind === "product");
   const professionals = professionalsOf(cmd);
   const canReceive = isReceivableCommanda(cmd);
+  const benefitOnly = isBenefitOnlyCommanda(cmd);
+  const subscriptionExtra = isSubscriptionExtraCommanda(cmd);
+  const actionLabel = benefitOnly
+    ? "Baixar benefício"
+    : subscriptionExtra
+      ? "Receber extra"
+      : "Receber";
   const sourceLabel =
     cmd.source === "online"
       ? "Agendamento online"
@@ -697,6 +740,9 @@ function CommandaCard({
               </div>
             </div>
             <div className="shrink-0 text-right">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {benefitOnly ? "Uso do plano" : subscriptionExtra ? "Excedente" : "Total"}
+              </div>
               <div className="text-lg font-bold text-foreground">{brl(cmd.total)}</div>
               <Badge
                 variant="outline"
@@ -734,7 +780,7 @@ function CommandaCard({
             </Button>
             {canReceive && (
               <Button size="sm" className="h-8 px-4" onClick={onCheckout}>
-                Receber
+                {actionLabel}
               </Button>
             )}
           </div>
@@ -772,12 +818,55 @@ function ItemPreview({
 }
 
 function NewCmdDialog({ tenantId, scheduledAt, onCreated }: any) {
+  const [clientMode, setClientMode] = useState<"registered" | "manual">("registered");
+  const [clientId, setClientId] = useState("");
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const { data: clients = [] } = useQuery({
+    queryKey: ["pos-new-commanda-clients", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("clients")
+        .select("id,full_name,whatsapp,is_subscriber")
+        .eq("tenant_id", tenantId)
+        .order("full_name", { ascending: true })
+        .limit(300);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const selectedClient = clients.find((client: any) => client.id === clientId);
+
+  const { data: activeSubscription, isFetching: loadingSubscription } = useQuery({
+    queryKey: ["pos-new-commanda-active-subscription", tenantId, clientId],
+    enabled: !!tenantId && clientMode === "registered" && !!clientId,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("client_subscriptions")
+        .select("id,subscriber_name,sessions_remaining,plan_id,ends_at")
+        .eq("tenant_id", tenantId)
+        .eq("client_id", clientId)
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data ?? null;
+    },
+  });
+
   async function create() {
     if (!tenantId) return;
-    if (!name.trim()) return toast.error("Informe o nome do cliente.");
+    const usesRegisteredClient = clientMode === "registered";
+    if (usesRegisteredClient && !selectedClient)
+      return toast.error("Selecione um cliente cadastrado ou use a digitação manual.");
+    if (usesRegisteredClient && loadingSubscription)
+      return toast.error("Aguarde a consulta da assinatura ativa do cliente.");
+    if (!usesRegisteredClient && !name.trim()) return toast.error("Informe o nome do cliente.");
+    const selectedRegisteredClient = usesRegisteredClient ? selectedClient : null;
     setSaving(true);
 
     const { data: last } = await supabase
@@ -792,7 +881,9 @@ function NewCmdDialog({ tenantId, scheduledAt, onCreated }: any) {
       .from("commandas")
       .insert({
         tenant_id: tenantId,
-        client_name: name.trim(),
+        client_id: selectedRegisteredClient?.id ?? null,
+        client_name: selectedRegisteredClient?.full_name ?? name.trim(),
+        subscription_id: usesRegisteredClient ? (activeSubscription?.id ?? null) : null,
         number: Number(last?.number ?? 0) + 1,
         status: "open",
         scheduled_at: scheduledAt,
@@ -803,8 +894,21 @@ function NewCmdDialog({ tenantId, scheduledAt, onCreated }: any) {
 
     setSaving(false);
     if (error) return toast.error(error.message);
-    toast.success("Comanda aberta e pronta para receber itens.");
-    onCreated(data);
+    if (usesRegisteredClient && selectedClient?.is_subscriber && !activeSubscription) {
+      toast.warning("Cliente marcado como assinante, mas sem assinatura ativa. A comanda foi aberta como venda avulsa.");
+    } else {
+      toast.success(
+        activeSubscription
+          ? "Comanda VIP aberta para baixa de benefício."
+          : "Comanda aberta e pronta para receber itens.",
+      );
+    }
+    onCreated({
+      ...data,
+      clients: usesRegisteredClient
+        ? { whatsapp: selectedClient?.whatsapp ?? null, is_subscriber: selectedClient?.is_subscriber ?? false }
+        : null,
+    });
   }
 
   return (
@@ -812,18 +916,78 @@ function NewCmdDialog({ tenantId, scheduledAt, onCreated }: any) {
       <DialogHeader>
         <DialogTitle>Nova comanda manual</DialogTitle>
       </DialogHeader>
-      <div className="space-y-2">
-        <Label htmlFor="new-client-name">Nome do cliente</Label>
-        <Input
-          id="new-client-name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          onKeyDown={(event) => event.key === "Enter" && create()}
-          autoFocus
-        />
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-2 rounded-xl border bg-muted/30 p-1">
+          <Button
+            type="button"
+            variant={clientMode === "registered" ? "default" : "ghost"}
+            onClick={() => setClientMode("registered")}
+          >
+            Cliente cadastrado
+          </Button>
+          <Button
+            type="button"
+            variant={clientMode === "manual" ? "default" : "ghost"}
+            onClick={() => setClientMode("manual")}
+          >
+            Digitar nome
+          </Button>
+        </div>
+
+        {clientMode === "registered" ? (
+          <div className="space-y-2">
+            <Label>Cliente</Label>
+            <Select value={clientId} onValueChange={setClientId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione um cliente..." />
+              </SelectTrigger>
+              <SelectContent>
+                {clients.map((client: any) => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.full_name}
+                    {client.whatsapp ? ` · ${client.whatsapp}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor="new-client-name">Nome do cliente</Label>
+            <Input
+              id="new-client-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && create()}
+              autoFocus
+            />
+          </div>
+        )}
+
+        {clientMode === "registered" && selectedClient && (
+          <div
+            className={`rounded-xl border p-3 text-sm ${
+              activeSubscription
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : selectedClient.is_subscriber
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-slate-200 bg-slate-50 text-slate-700"
+            }`}
+          >
+            {loadingSubscription
+              ? "Consultando assinatura ativa..."
+              : activeSubscription
+                ? `Assinatura ativa encontrada. Saldo: ${
+                    activeSubscription.sessions_remaining ?? "ilimitado"
+                  }. Serviços inclusos serão baixados como benefício.`
+                : selectedClient.is_subscriber
+                  ? "Cliente está marcado como assinante, mas não há assinatura ativa. Esta comanda ficará como venda avulsa até regularizar."
+                  : "Cliente sem assinatura ativa. A comanda será venda avulsa."}
+          </div>
+        )}
       </div>
       <DialogFooter>
-        <Button onClick={create} disabled={saving}>
+        <Button onClick={create} disabled={saving || (clientMode === "registered" && loadingSubscription)}>
           {saving ? "Abrindo..." : "Abrir comanda"}
         </Button>
       </DialogFooter>
@@ -997,6 +1161,11 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
       .filter((benefit: any) => benefit.benefit_type === "service" && benefit.service_id)
       .map((benefit: any) => benefit.service_id),
   );
+  const subscriptionBenefitByServiceId = new Map<string, string>(
+    (activeSubscription?.benefits ?? [])
+      .filter((benefit: any) => benefit.benefit_type === "service" && benefit.service_id)
+      .map((benefit: any) => [String(benefit.service_id), String(benefit.id)]),
+  );
   const isCoveredByActiveSubscriptionPlan = (item: any) =>
     Boolean(
       activeSubscription &&
@@ -1044,10 +1213,15 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
   const total = Math.max(0, adjustedTotal);
   const fullyCoveredBySubscription = hasSubscriptionCoverage && total <= 0.009;
   const usesSubscriptionSettlement = canEditSale && hasSubscriptionCoverage;
+  const paymentSummaryLabel = hasSubscriptionCoverage
+    ? total > 0
+      ? "Excedente"
+      : "Pagamento necessário"
+    : "A receber";
   const primaryActionLabel = usesSubscriptionSettlement
     ? fullyCoveredBySubscription
       ? "Confirmar utilização e fechar"
-      : `Receber ${brl(total)} e fechar`
+      : `Receber excedente ${brl(total)} e fechar`
     : "Receber e fechar comanda";
 
   useEffect(() => {
@@ -1102,6 +1276,54 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
         },
       ]);
     }
+  }
+
+  function nextCoverageSnapshot(item: any) {
+    const covered = isItemCoveredBySubscription(item);
+    const lineTotal = itemLineTotal(item);
+    const benefitId =
+      covered && item.kind === "service" && item.ref_id
+        ? (subscriptionBenefitByServiceId.get(item.ref_id) ?? item.subscription_benefit_id ?? null)
+        : null;
+
+    return {
+      covered_by_subscription: covered,
+      subscription_id: covered ? (activeSubscription?.id ?? item.subscription_id ?? null) : null,
+      subscription_benefit_id: covered ? benefitId : null,
+      billable_amount: covered ? 0 : lineTotal,
+    };
+  }
+
+  async function persistSubscriptionCoverageSnapshot() {
+    if (!activeSubscription?.id || !hasSubscriptionCoverage) return items;
+
+    const nextItems = items.map((item) => ({ ...item, ...nextCoverageSnapshot(item) }));
+    const changedItems = nextItems.filter((nextItem, index) => {
+      const current = items[index];
+      return (
+        Boolean(current.covered_by_subscription) !== Boolean(nextItem.covered_by_subscription) ||
+        (current.subscription_id ?? null) !== (nextItem.subscription_id ?? null) ||
+        (current.subscription_benefit_id ?? null) !== (nextItem.subscription_benefit_id ?? null) ||
+        money(current.billable_amount) !== money(nextItem.billable_amount)
+      );
+    });
+
+    for (const item of changedItems) {
+      const { error } = await supabase
+        .from("commanda_items")
+        .update({
+          covered_by_subscription: item.covered_by_subscription,
+          subscription_id: item.subscription_id,
+          subscription_benefit_id: item.subscription_benefit_id,
+          billable_amount: item.billable_amount,
+        })
+        .eq("id", item.id)
+        .eq("tenant_id", tenantId);
+      if (error) throw error;
+    }
+
+    if (changedItems.length) setItems(nextItems);
+    return nextItems;
   }
 
   async function updateQuantity(item: any, nextQuantity: number) {
@@ -1162,6 +1384,29 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
     if (!selectedIds.length) return toast.error("Selecione pelo menos um item.");
     const professional = professionals.find((entry: any) => entry.id === professionalId);
     const inserted: any[] = [];
+    const selectedReferences = selectedIds
+      .map((id) => selectedCatalog.find((entry: any) => entry.id === id))
+      .filter(Boolean) as any[];
+    const coveredUnitsToAdd =
+      tab === "service"
+        ? selectedReferences.reduce((sum, reference) => {
+            const covered = Boolean(
+              activeSubscription?.id &&
+                reference?.id &&
+                coveredServiceIds.has(reference.id),
+            );
+            return sum + (covered ? Math.max(1, quantity) : 0);
+          }, 0)
+        : 0;
+
+    if (
+      coveredUnitsToAdd > 0 &&
+      subscriptionRemainingBefore !== null &&
+      !Number.isNaN(subscriptionRemainingBefore) &&
+      subscriptionRemainingBefore < subscriptionCoveredItemCount + coveredUnitsToAdd
+    ) {
+      return toast.error("Saldo insuficiente para baixar estes benefícios da assinatura.");
+    }
 
     for (const id of selectedIds) {
       const reference: any = selectedCatalog.find((entry: any) => entry.id === id);
@@ -1170,7 +1415,16 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
       const commissionValue = money(
         (money(reference.price) * Math.max(1, quantity) * commissionPct) / 100,
       );
-      const billableAmount = money(money(reference.price) * Math.max(1, quantity));
+      const lineBillableAmount = money(money(reference.price) * Math.max(1, quantity));
+      const coveredBySubscription = Boolean(
+        tab === "service" &&
+          activeSubscription?.id &&
+          reference.id &&
+          coveredServiceIds.has(reference.id),
+      );
+      const benefitId = coveredBySubscription
+        ? (subscriptionBenefitByServiceId.get(reference.id) ?? null)
+        : null;
       const { data, error } = await supabase
         .from("commanda_items")
         .insert({
@@ -1185,10 +1439,10 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
           professional_id: tab === "service" ? professionalId || null : null,
           commission_pct: commissionPct,
           commission_value: commissionValue,
-          covered_by_subscription: false,
-          subscription_id: null,
-          subscription_benefit_id: null,
-          billable_amount: billableAmount,
+          covered_by_subscription: coveredBySubscription,
+          subscription_id: coveredBySubscription ? activeSubscription.id : null,
+          subscription_benefit_id: benefitId,
+          billable_amount: coveredBySubscription ? 0 : lineBillableAmount,
         })
         .select("*, professionals(full_name)")
         .single();
@@ -1197,10 +1451,49 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
     }
 
     if (inserted.length) {
-      setItems((current) => [...current, ...inserted]);
+      const nextItems = [...items, ...inserted];
+      const nextBillableSubtotal = money(
+        nextItems.reduce((sum, item) => {
+          const lineTotal = money(money(item.unit_price) * Number(item.quantity ?? 1));
+          const covered = Boolean(
+            item.covered_by_subscription === true ||
+              (activeSubscription?.id &&
+                item.kind === "service" &&
+                item.ref_id &&
+                coveredServiceIds.has(item.ref_id)),
+          );
+          return sum + (covered ? 0 : money(item.billable_amount ?? lineTotal));
+        }, 0),
+      );
+      const nextTotal = Math.max(0, money(nextBillableSubtotal - money(discount) + money(addition)));
+      const { error: commandaUpdateError } = await supabase
+        .from("commandas")
+        .update({
+          subscription_id: activeSubscription?.id ?? cmd.subscription_id ?? null,
+          subtotal:
+            hasSubscriptionCoverage || activeSubscription?.id
+              ? nextBillableSubtotal
+              : money(subtotal + selectedSubtotal),
+          total:
+            hasSubscriptionCoverage || activeSubscription?.id
+              ? nextTotal
+              : Math.max(0, money(subtotal + selectedSubtotal - money(discount) + money(addition))),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", cmd.id)
+        .eq("tenant_id", tenantId);
+
+      if (commandaUpdateError) toast.error(commandaUpdateError.message);
+      setItems(nextItems);
       setSelectedIds([]);
       setQuantity(1);
-      toast.success(inserted.length === 1 ? "Item adicionado." : "Itens adicionados.");
+      toast.success(
+        inserted.some((item) => item.covered_by_subscription)
+          ? "Item incluso no plano marcado para baixa de benefício."
+          : inserted.length === 1
+            ? "Item adicionado."
+            : "Itens adicionados.",
+      );
     }
   }
 
@@ -1221,6 +1514,7 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
     const { error } = await supabase
       .from("commandas")
       .update({
+        subscription_id: activeSubscription?.id ?? cmd.subscription_id ?? null,
         subtotal: checkoutSubtotal,
         discount: money(discount),
         addition: money(addition),
@@ -1408,6 +1702,14 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
       paymentPayload = [{ method: paymentMode, amount: total, received: total }];
     }
 
+    if (usesSubscriptionSettlement) {
+      try {
+        await persistSubscriptionCoverageSnapshot();
+      } catch (error: any) {
+        return toast.error(error?.message ?? "Não foi possível preparar a baixa da assinatura.");
+      }
+    }
+
     setSaving(true);
     const rpcName = usesSubscriptionSettlement
       ? "finalize_commanda_with_subscription"
@@ -1495,7 +1797,9 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
               </p>
             </div>
             <div className="shrink-0 text-right">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">A receber</div>
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                {paymentSummaryLabel}
+              </div>
               <div className="text-2xl font-bold text-primary">{brl(total)}</div>
             </div>
           </div>
@@ -1749,7 +2053,7 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
                       </span>
                       {isItemCoveredBySubscription(item) && (
                         <div className="text-xs font-medium text-emerald-700">
-                          A receber R$ 0,00
+                          Baixa no plano
                         </div>
                       )}
                     </div>
@@ -2233,7 +2537,13 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
             <div className="font-medium text-foreground">+ {brl(addition)}</div>
           </div>
           <div className="flex justify-between gap-2 sm:block">
-            <span className="font-semibold">Total a receber</span>
+            <span className="font-semibold">
+              {hasSubscriptionCoverage
+                ? total > 0
+                  ? "Excedente a receber"
+                  : "Nenhum pagamento"
+                : "Total a receber"}
+            </span>
             <div className="text-xl font-bold text-primary">{brl(total)}</div>
           </div>
         </div>
@@ -2273,7 +2583,11 @@ function CmdDetail({ cmd, tenantId, checkoutFocus, onDone }: any) {
           <div
             className={`rounded-lg border px-4 py-3 text-center text-sm font-semibold ${meta.tone}`}
           >
-            {isClosed ? "Pagamento concluído e comanda fechada" : meta.label}
+            {isClosed
+              ? cmd.subscription_id || cmd.payment_method === "vip"
+                ? "Benefício baixado e comanda fechada"
+                : "Pagamento concluído e comanda fechada"
+              : meta.label}
           </div>
         )}
       </div>

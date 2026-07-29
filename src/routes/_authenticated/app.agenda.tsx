@@ -77,6 +77,91 @@ async function loadCoveredServiceIds(
   return serviceIds.filter((serviceId) => covered.has(serviceId));
 }
 
+async function resolveVipCoverageForInternalAppointment(
+  db: typeof supabase,
+  tenantId: string | null | undefined,
+  clientId: string | null | undefined,
+  serviceIds: string[],
+  appointmentDate: string,
+) {
+  if (!tenantId) throw new Error("Salão não identificado.");
+  if (!clientId) {
+    throw new Error("Para usar assinatura VIP, selecione um cliente cadastrado com plano ativo.");
+  }
+  if (serviceIds.length === 0) {
+    throw new Error("Selecione pelo menos um serviço para validar a assinatura VIP.");
+  }
+
+  const { data: subscription, error: subscriptionError } = await db
+    .from("client_subscriptions")
+    .select("id,plan_id,sessions_remaining,starts_at,ends_at")
+    .eq("tenant_id", tenantId)
+    .eq("client_id", clientId)
+    .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (subscriptionError) throw subscriptionError;
+  if (!subscription) {
+    throw new Error("Este cliente não possui assinatura ativa para baixar benefício.");
+  }
+  if (subscription.starts_at && subscription.starts_at > appointmentDate) {
+    throw new Error("A assinatura deste cliente ainda não está vigente nesta data.");
+  }
+  if (subscription.ends_at && subscription.ends_at < appointmentDate) {
+    throw new Error("A assinatura deste cliente não está vigente nesta data.");
+  }
+
+  const [{ data: plan }, { data: benefits, error: benefitsError }] = await Promise.all([
+    (db as any)
+      .from("subscription_plans")
+      .select("id,allow_extras")
+      .eq("tenant_id", tenantId)
+      .eq("id", subscription.plan_id)
+      .maybeSingle(),
+    db
+      .from("subscription_plan_benefits")
+      .select("service_id,benefit_type,active")
+      .eq("tenant_id", tenantId)
+      .eq("plan_id", subscription.plan_id)
+      .eq("benefit_type", "service")
+      .eq("active", true),
+  ]);
+
+  if (benefitsError) throw benefitsError;
+  if (!plan) throw new Error("O plano desta assinatura não foi encontrado.");
+
+  const coveredServices = new Set(
+    (benefits ?? [])
+      .map((benefit) => benefit.service_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const coveredServiceIds = serviceIds.filter((serviceId) => coveredServices.has(serviceId));
+  const extraServiceIds = serviceIds.filter((serviceId) => !coveredServices.has(serviceId));
+
+  if (coveredServiceIds.length === 0) {
+    throw new Error("Selecione pelo menos um serviço incluso no pacote VIP antes de adicionar extras.");
+  }
+  if (extraServiceIds.length > 0 && plan.allow_extras === false) {
+    throw new Error("Este plano não permite adicionar serviços extras fora do pacote.");
+  }
+
+  const sessionsRemaining =
+    subscription.sessions_remaining === null || subscription.sessions_remaining === undefined
+      ? null
+      : Number(subscription.sessions_remaining);
+  if (
+    sessionsRemaining !== null &&
+    !Number.isNaN(sessionsRemaining) &&
+    sessionsRemaining < coveredServiceIds.length
+  ) {
+    throw new Error("Este cliente não possui saldo suficiente para os serviços VIP selecionados.");
+  }
+
+  return { subscriptionId: subscription.id, coveredServiceIds };
+}
+
 function AgendaPage() {
   const { data: tenant } = useCurrentTenant();
   const { data: access } = useTenantAccess();
@@ -255,17 +340,31 @@ function AgendaPage() {
     };
 
     const uniqueServiceIds = [...new Set(serviceIds)];
-    const coveredServiceIds = await loadCoveredServiceIds(
-      supabase,
-      tenantId,
-      appointment.subscription_id ?? null,
-      uniqueServiceIds,
-    );
+    let subscriptionId = appointment.subscription_id ?? null;
+    let coveredServiceIds: string[] = [];
+    if (appointment.is_vip) {
+      const coverage = await resolveVipCoverageForInternalAppointment(
+        supabase,
+        tenantId,
+        appointment.client_id ?? null,
+        uniqueServiceIds,
+        format(new Date(appointment.start_at), "yyyy-MM-dd"),
+      );
+      subscriptionId = coverage.subscriptionId;
+      coveredServiceIds = coverage.coveredServiceIds;
+    } else {
+      coveredServiceIds = await loadCoveredServiceIds(
+        supabase,
+        tenantId,
+        subscriptionId,
+        uniqueServiceIds,
+      );
+    }
 
     await syncAppointmentComanda(supabase, {
       appointmentId: appointment.id,
       tenantId,
-      subscriptionId: appointment.subscription_id ?? null,
+      subscriptionId,
       coveredServiceIds,
       clientId: appointment.client_id ?? null,
       clientName: appointment.client_name || appointment.clients?.full_name || "Cliente",
@@ -724,24 +823,16 @@ function NewAppointmentDialog({ tenantId, pros, onDone, defaultDate, defaultProI
       let linkedSubscriptionId: string | null = null;
       let coveredServiceIds: string[] = [];
 
-      if (isVip && finalClientId) {
-        const { data: subscription } = await supabase
-          .from("client_subscriptions")
-          .select("id")
-          .eq("tenant_id", tenantId!)
-          .eq("client_id", finalClientId)
-          .eq("status", "active")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        linkedSubscriptionId = subscription?.id ?? null;
-        coveredServiceIds = await loadCoveredServiceIds(
+      if (isVip) {
+        const coverage = await resolveVipCoverageForInternalAppointment(
           supabase,
           tenantId,
-          linkedSubscriptionId,
+          finalClientId || null,
           selectedSvcs,
+          dateStr,
         );
+        linkedSubscriptionId = coverage.subscriptionId;
+        coveredServiceIds = coverage.coveredServiceIds;
       }
 
       const { data: appt, error } = await supabase.from("appointments").insert({
@@ -1120,20 +1211,19 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
       const mappedMethod = paymentMapped[paymentMethod] ?? null;
 
       const finalObs = [obs, svcsText, prodsText, payText].filter(Boolean).join(" | ");
-      let linkedSubscriptionId = appt.subscription_id ?? null;
+      let linkedSubscriptionId: string | null = null;
+      let coveredServiceIds: string[] = [];
 
-      if (!linkedSubscriptionId && isVip && finalClientId) {
-        const { data: subscription } = await supabase
-          .from("client_subscriptions")
-          .select("id")
-          .eq("tenant_id", tenantId!)
-          .eq("client_id", finalClientId)
-          .eq("status", "active")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        linkedSubscriptionId = subscription?.id ?? null;
+      if (isVip) {
+        const coverage = await resolveVipCoverageForInternalAppointment(
+          supabase,
+          tenantId,
+          finalClientId || null,
+          selectedSvcs,
+          dateStr,
+        );
+        linkedSubscriptionId = coverage.subscriptionId;
+        coveredServiceIds = coverage.coveredServiceIds;
       }
 
       const extraIdsToDelete = chain.map(x => x.id).filter((id) => id !== appt.id);
@@ -1159,13 +1249,6 @@ function EditAppointmentDialog({ appt, tenantId, pros, onDone, onDelete, appts }
         is_vip: isVip,
       }).eq("id", appt.id);
       if (error) throw error;
-
-      const coveredServiceIds = await loadCoveredServiceIds(
-        supabase,
-        tenantId,
-        linkedSubscriptionId,
-        selectedSvcs,
-      );
 
       await syncAppointmentComanda(supabase, {
         appointmentId: appt.id,

@@ -40,7 +40,11 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { authUserQueryKey, fetchAuthUser } from "@/lib/auth-cache";
-import { ensureAppointmentPushSubscription } from "@/lib/appointment-push";
+import {
+  ensureAppointmentPushSubscription,
+  hasStoredAppointmentPushPreference,
+  refreshAppointmentPushSubscription,
+} from "@/lib/appointment-push";
 import { dynamicSupabase, errorMessage } from "@/lib/supabase-dynamic";
 import { ImageCropDialog } from "@/components/ui/image-crop-dialog";
 import { hasAccessPermission } from "@/lib/access-control";
@@ -285,6 +289,53 @@ export function AppHeader() {
       setActivatingPush(false);
     }
   };
+
+  useEffect(() => {
+    if (!tenant?.id || !user?.id || typeof window === "undefined") return;
+    if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
+
+    const params = { tenantId: tenant.id, userId: user.id };
+    const shouldRefresh =
+      Notification.permission === "granted" || hasStoredAppointmentPushPreference(params);
+
+    if (!shouldRefresh) return;
+
+    let disposed = false;
+    let lastRefreshAt = 0;
+
+    const refresh = () => {
+      if (disposed || document.visibilityState === "hidden") return;
+      if (Date.now() - lastRefreshAt < 5 * 60 * 1000) return;
+      lastRefreshAt = Date.now();
+
+      void refreshAppointmentPushSubscription(params).catch((error) => {
+        console.warn("[LinkUp Studio] Nao foi possivel revalidar Push neste dispositivo.", error);
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type !== "LINKUP_PUSH_RESUBSCRIBE") return;
+      lastRefreshAt = 0;
+      refresh();
+    };
+
+    const timer = window.setTimeout(refresh, 1500);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
+    };
+  }, [tenant?.id, user?.id]);
 
   useEffect(() => {
     return () => {

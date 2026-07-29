@@ -23,6 +23,9 @@ import { getTenantOperationalSettings } from "@/lib/tenant-operational-settings"
 const NOTIFICATION_SOUND_URL = "/sounds/new-appointment.wav";
 const SOUND_READY_STORAGE_KEY = "linkup:new-appointment-sound-ready";
 const RECENT_ALERT_WINDOW_MS = 2 * 60 * 1000;
+const APPOINTMENT_ALERT_QUERY_PARAM = "appointmentAlert";
+const APPOINTMENT_NOTIFICATION_SELECT =
+  "id, recipient_user_id, appointment_id, kind, title, body, data, acknowledged_at, created_at";
 
 type AppointmentNotificationData = {
   appointmentId?: string;
@@ -202,8 +205,9 @@ export function ProfessionalAppointmentNotifier() {
   }, [latestAlert, queryClient, userId]);
 
   const notifyAppointment = useCallback(
-    (notification: AppointmentNotificationRow) => {
-      if (!notification?.id || seenNotifications.current.has(notification.id)) return;
+    (notification: AppointmentNotificationRow, options?: { force?: boolean }) => {
+      if (!notification?.id) return;
+      if (!options?.force && seenNotifications.current.has(notification.id)) return;
 
       seenNotifications.current.add(notification.id);
       if (seenNotifications.current.size > 120) {
@@ -247,6 +251,26 @@ export function ProfessionalAppointmentNotifier() {
     [openAgenda, queryClient],
   );
 
+  const showAppointmentAlertByNotificationId = useCallback(
+    async (notificationId: string | null | undefined) => {
+      const id = notificationId?.trim();
+      if (!tenantId || !userId || !id) return;
+
+      const { data, error } = await dynamicSupabase
+        .from<AppointmentNotificationRow[]>("app_notifications")
+        .select(APPOINTMENT_NOTIFICATION_SELECT)
+        .eq("tenant_id", tenantId)
+        .eq("recipient_user_id", userId)
+        .eq("id", id)
+        .eq("kind", "appointment_created")
+        .maybeSingle();
+
+      if (error || !data) return;
+      notifyAppointment(data as AppointmentNotificationRow, { force: true });
+    },
+    [notifyAppointment, tenantId, userId],
+  );
+
   useEffect(() => {
     if (!latestAlert || !soundReady) return;
 
@@ -270,9 +294,7 @@ export function ProfessionalAppointmentNotifier() {
 
     void dynamicSupabase
       .from<AppointmentNotificationRow[]>("app_notifications")
-      .select(
-        "id, recipient_user_id, appointment_id, kind, title, body, data, acknowledged_at, created_at",
-      )
+      .select(APPOINTMENT_NOTIFICATION_SELECT)
       .eq("tenant_id", tenantId)
       .eq("recipient_user_id", userId)
       .eq("kind", "appointment_created")
@@ -309,6 +331,45 @@ export function ProfessionalAppointmentNotifier() {
       supabase.removeChannel(channel);
     };
   }, [notifyAppointment, tenantId, userId]);
+
+  useEffect(() => {
+    if (!tenantId || !userId || typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const notificationId = params.get(APPOINTMENT_ALERT_QUERY_PARAM);
+    if (!notificationId) return;
+
+    void showAppointmentAlertByNotificationId(notificationId).finally(() => {
+      const nextParams = new URLSearchParams(window.location.search);
+      nextParams.delete(APPOINTMENT_ALERT_QUERY_PARAM);
+      nextParams.delete("appointmentId");
+      const nextSearch = nextParams.toString();
+      const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+      window.history.replaceState(window.history.state, "", nextUrl);
+    });
+  }, [showAppointmentAlertByNotificationId, tenantId, userId]);
+
+  useEffect(() => {
+    if (!tenantId || !userId || typeof navigator === "undefined" || !navigator.serviceWorker) {
+      return;
+    }
+
+    const onServiceWorkerMessage = (event: MessageEvent) => {
+      const message = event.data;
+      if (
+        message?.source !== "linkup-service-worker" ||
+        message?.type !== "LINKUP_APPOINTMENT_PUSH_CLICK"
+      ) {
+        return;
+      }
+
+      const notificationId = message.notification?.notificationId || message.notification?.id;
+      void showAppointmentAlertByNotificationId(notificationId);
+    };
+
+    navigator.serviceWorker.addEventListener("message", onServiceWorkerMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onServiceWorkerMessage);
+  }, [showAppointmentAlertByNotificationId, tenantId, userId]);
 
   const shouldShowSoundActivator =
     canReceiveAppointmentAlerts && (!soundReady || soundBlocked);

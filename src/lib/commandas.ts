@@ -171,6 +171,10 @@ export async function syncAppointmentComanda(db: DbClient, input: AppointmentCom
   const shouldCancel = appointmentCanceledStatuses.has(input.status ?? "");
   const shouldClose = input.status === "completed";
   const total = appointmentComandaTotal(input);
+  const coveredServiceIds = coveredServiceIdSet(input);
+  const shouldSettleSubscription =
+    shouldClose && Boolean(input.subscriptionId && coveredServiceIds.size > 0);
+  const shouldCloseDirectly = shouldClose && !shouldSettleSubscription;
 
   const { data: existing, error: existingError } = await db
     .from("commandas")
@@ -222,9 +226,9 @@ export async function syncAppointmentComanda(db: DbClient, input: AppointmentCom
         client_id: input.clientId ?? null,
         client_name: input.clientName,
         number,
-        status: shouldClose ? "closed" : "open",
-        closed_at: shouldClose ? new Date().toISOString() : null,
-        payment_method: shouldClose ? (input.paymentMethod ?? null) : null,
+        status: shouldCloseDirectly ? "closed" : "open",
+        closed_at: shouldCloseDirectly ? new Date().toISOString() : null,
+        payment_method: shouldCloseDirectly ? (input.paymentMethod ?? null) : null,
         subtotal: total,
         total,
       })
@@ -244,9 +248,9 @@ export async function syncAppointmentComanda(db: DbClient, input: AppointmentCom
         source: input.source,
         client_id: input.clientId ?? null,
         client_name: input.clientName,
-        status: shouldClose ? "closed" : "open",
-        closed_at: shouldClose ? new Date().toISOString() : null,
-        payment_method: shouldClose ? (input.paymentMethod ?? null) : null,
+        status: shouldCloseDirectly ? "closed" : "open",
+        closed_at: shouldCloseDirectly ? new Date().toISOString() : null,
+        payment_method: shouldCloseDirectly ? (input.paymentMethod ?? null) : null,
         subtotal: total,
         total,
       })
@@ -275,6 +279,47 @@ export async function syncAppointmentComanda(db: DbClient, input: AppointmentCom
     .eq("description", cashDescription);
   if (cashDeleteError) throw cashDeleteError;
 
+  if (shouldSettleSubscription) {
+    const extraPaymentMethod = ["pix", "cash", "debit", "credit"].includes(
+      input.paymentMethod ?? "",
+    )
+      ? (input.paymentMethod as "pix" | "cash" | "debit" | "credit")
+      : null;
+
+    if (total > 0 && !extraPaymentMethod) {
+      throw new Error(
+        "Esta comanda VIP possui valor extra. Finalize pela comanda para escolher a forma de pagamento do excedente.",
+      );
+    }
+
+    const payments: Array<{ method: "vip" | "pix" | "cash" | "debit" | "credit"; amount: number; received: number }> = [
+      { method: "vip", amount: 0, received: 0 },
+    ];
+    if (total > 0 && extraPaymentMethod) {
+      payments.push({ method: extraPaymentMethod, amount: total, received: total });
+    }
+
+    const { error: finalizeError } = await (db as any).rpc(
+      "finalize_commanda_with_subscription",
+      {
+        p_commanda_id: commanda.id,
+        p_tenant_id: input.tenantId,
+        p_subscription_id: input.subscriptionId,
+        p_subtotal: total,
+        p_discount: 0,
+        p_addition: 0,
+        p_total: total,
+        p_notes: null,
+        p_amount_received: total,
+        p_change_amount: 0,
+        p_payments: payments,
+      },
+    );
+    if (finalizeError) throw finalizeError;
+
+    return { ...commanda, status: "closed" };
+  }
+
   if (shouldClose && input.paymentMethod !== "vip" && total > 0) {
     const { error: cashInsertError } = await db.from("cash_movements").insert({
       tenant_id: input.tenantId,
@@ -289,5 +334,5 @@ export async function syncAppointmentComanda(db: DbClient, input: AppointmentCom
     if (cashInsertError) throw cashInsertError;
   }
 
-  return { ...commanda, status: shouldClose ? "closed" : "open" };
+  return { ...commanda, status: shouldCloseDirectly ? "closed" : "open" };
 }
