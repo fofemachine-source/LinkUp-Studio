@@ -17,6 +17,24 @@ function isMissingPostgrestColumn(error: any, column: string) {
   );
 }
 
+// Public: lightweight identity for link previews and crawler metadata.
+export const getPublicTenantPreview = createServerFn({ method: "GET" })
+  .inputValidator((d: { slug: string }) => z.object({ slug: z.string() }).parse(d))
+  .handler(async ({ data }) => {
+    const supabase = await pub();
+    const { data: tenant, error } = await supabase
+      .from("tenants")
+      .select("name,subtitle,logo_url,slug,primary_color")
+      .eq("slug", data.slug)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!tenant) return null;
+
+    return { tenant };
+  });
+
 async function loadPublicTenantSettings(supabase: any, tenantId: string) {
   const settingsWithClosedDates = await supabase
     .from("tenant_settings")

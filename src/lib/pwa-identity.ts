@@ -30,6 +30,10 @@ export function buildBookingPwaDisplayName(tenantName: string | null | undefined
   return name ? `Agenda ${name}` : "Agenda LinkUp Studio";
 }
 
+export function buildAdminPwaDisplayName(tenantName: string | null | undefined) {
+  return cleanText(tenantName) || "LinkUp Studio";
+}
+
 function buildShortName(displayName: string) {
   if (displayName.length <= 28) return displayName;
   return `${displayName.slice(0, 25).trimEnd()}...`;
@@ -96,10 +100,60 @@ export function buildBookingPwaManifest(slug: string, tenant: BookingPwaTenant) 
   };
 }
 
+export function buildAdminPwaManifest(slug: string, tenant: BookingPwaTenant) {
+  const displayName = buildAdminPwaDisplayName(tenant.name);
+  const encodedSlug = encodeURIComponent(slug);
+  const iconVersion = hashForUrl(tenant.logo_url);
+  const themeColor = normalizePwaHexColor(tenant.primary_color);
+
+  return {
+    id: `/app?tenant=${encodedSlug}`,
+    name: displayName,
+    short_name: buildShortName(displayName),
+    description: `Gestao de ${cleanText(tenant.name) || "LinkUp Studio"}.`,
+    lang: "pt-BR",
+    dir: "ltr",
+    start_url: `/app?tenant=${encodedSlug}`,
+    scope: "/app",
+    display: "standalone",
+    display_override: ["standalone", "minimal-ui", "browser"],
+    background_color: DEFAULT_PWA_BACKGROUND_COLOR,
+    theme_color: themeColor,
+    categories: ["business", "productivity"],
+    prefer_related_applications: false,
+    icons: [
+      {
+        src: buildBookingPwaIconPath(slug, { size: 192, version: iconVersion }),
+        sizes: "192x192",
+        purpose: "any",
+      },
+      {
+        src: buildBookingPwaIconPath(slug, { size: 512, version: iconVersion }),
+        sizes: "512x512",
+        purpose: "any",
+      },
+    ],
+  };
+}
+
 export function buildBookingPwaHeadLinks(slug: string, logoUrl?: string | null) {
   const version = hashForUrl(logoUrl);
   return {
     manifestHref: `/api/pwa/manifest/${encodeURIComponent(slug)}?v=${version}`,
+    faviconHref: buildBookingPwaIconPath(slug, { size: 48, version }),
+    appleTouchIconHref: buildBookingPwaIconPath(slug, { size: 180, version }),
+  };
+}
+
+export function buildBookingPwaSocialImagePath(slug: string, logoUrl?: string | null) {
+  return buildBookingPwaIconPath(slug, { size: 512, version: hashForUrl(logoUrl) });
+}
+
+export function buildAdminPwaHeadLinks(slug: string, logoUrl?: string | null) {
+  const version = hashForUrl(logoUrl);
+  const encodedSlug = encodeURIComponent(slug);
+  return {
+    manifestHref: `/api/pwa/manifest/${encodedSlug}?context=admin&v=${version}`,
     faviconHref: buildBookingPwaIconPath(slug, { size: 48, version }),
     appleTouchIconHref: buildBookingPwaIconPath(slug, { size: 180, version }),
   };

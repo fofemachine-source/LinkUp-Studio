@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { buildBookingPwaManifest } from "@/lib/pwa-identity";
+import { buildAdminPwaManifest, buildBookingPwaManifest } from "@/lib/pwa-identity";
 
 export const Route = createFileRoute("/api/pwa/manifest/$slug")({
   server: {
     handlers: {
-      GET: async ({ params }: { params?: { slug?: string } }) => {
+      GET: async ({ params, request }: { params?: { slug?: string }; request: Request }) => {
         const slug = String(params?.slug ?? "").trim();
         if (!slug) return Response.json({ error: "Loja nao informada." }, { status: 400 });
+        const context = new URL(request.url).searchParams.get("context");
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { data, error } = await supabaseAdmin
@@ -27,11 +28,15 @@ export const Route = createFileRoute("/api/pwa/manifest/$slug")({
           return Response.json({ error: "Loja nao encontrada." }, { status: 404 });
         }
 
-        const manifest = buildBookingPwaManifest(slug, {
+        const manifestTenant = {
           name: data.name,
           logo_url: data.logo_url,
           primary_color: data.primary_color,
-        });
+        };
+        const manifest =
+          context === "admin"
+            ? buildAdminPwaManifest(data.slug || slug, manifestTenant)
+            : buildBookingPwaManifest(data.slug || slug, manifestTenant);
 
         return Response.json(manifest, {
           headers: {

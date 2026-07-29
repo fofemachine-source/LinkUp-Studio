@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, redirect, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, Loader2, LockKeyhole } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { AppHeader } from "@/components/app-header";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -22,6 +22,12 @@ import {
 } from "@/hooks/use-tenant";
 import { supabase } from "@/integrations/supabase/client";
 import { canAccessAppPath, getDefaultAppPath } from "@/lib/access-control";
+import {
+  buildAdminPwaDisplayName,
+  buildAdminPwaHeadLinks,
+  normalizePwaHexColor,
+} from "@/lib/pwa-identity";
+import { syncPwaDocumentHead } from "@/lib/pwa-head";
 import {
   projectPasswordAuthErrorMessage,
   validateProjectPassword,
@@ -69,6 +75,17 @@ function AppLayout() {
     accessQuery.data?.activeTenantId ||
       accessQuery.data?.roles.some(({ tenant_id }) => tenant_id),
   );
+
+  useEffect(() => {
+    if (!tenant?.slug) return;
+
+    const links = buildAdminPwaHeadLinks(tenant.slug, tenant.logo_url);
+    syncPwaDocumentHead({
+      title: buildAdminPwaDisplayName(tenant.name),
+      themeColor: normalizePwaHexColor(tenant.primary_color),
+      ...links,
+    });
+  }, [tenant?.slug, tenant?.name, tenant?.logo_url, tenant?.primary_color]);
 
   async function signOut() {
     await queryClient.cancelQueries();

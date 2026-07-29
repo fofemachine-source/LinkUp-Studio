@@ -7,6 +7,7 @@ import {
   createBooking,
   getBookedSlots,
   getPublicTenant,
+  getPublicTenantPreview,
   prepareSubscriptionProofUpload,
   submitSubscriptionProof,
   validateVip,
@@ -69,7 +70,13 @@ import {
   normalizeBookingBranding,
   type BookingBranding,
 } from "@/lib/booking-branding";
-import { buildBookingPwaDisplayName, buildBookingPwaHeadLinks } from "@/lib/pwa-identity";
+import {
+  buildBookingPwaDisplayName,
+  buildBookingPwaHeadLinks,
+  buildBookingPwaSocialImagePath,
+} from "@/lib/pwa-identity";
+import { syncPwaDocumentHead } from "@/lib/pwa-head";
+import { getPublicAppUrl, getPublicBookingUrl } from "@/lib/public-booking-url";
 import {
   bookingWeekdayFromDate,
   DEFAULT_BOOKING_WORK_DAYS,
@@ -81,26 +88,50 @@ export const Route = createFileRoute("/booking/$slug")({
   validateSearch: (search: Record<string, unknown>) => ({
     cancel: typeof search.cancel === "string" ? search.cancel : undefined,
   }),
-  head: ({ params }) => ({
-    links: [
-      {
-        rel: "manifest",
-        href: buildBookingPwaHeadLinks(params.slug).manifestHref,
-      },
-      {
-        rel: "icon",
-        href: buildBookingPwaHeadLinks(params.slug).faviconHref,
-      },
-      {
-        rel: "apple-touch-icon",
-        href: buildBookingPwaHeadLinks(params.slug).appleTouchIconHref,
-      },
-    ],
-    meta: [
-      { title: `Agende seu horário — ${params.slug}` },
-      { name: "description", content: "Agendamento online rápido e prático." },
-    ],
-  }),
+  loader: async ({ params }) => getPublicTenantPreview({ data: { slug: params.slug } }),
+  head: ({ params, loaderData }) => {
+    const tenant = (loaderData as BookingPreviewRouteData | null | undefined)?.tenant;
+    const title = bookingPreviewTitle(params.slug, tenant);
+    const description = bookingPreviewDescription(title, tenant);
+    const links = buildBookingPwaHeadLinks(params.slug, tenant?.logo_url);
+    const url = getPublicBookingUrl(params.slug);
+    const image = absolutePublicUrl(buildBookingPwaSocialImagePath(params.slug, tenant?.logo_url));
+
+    return {
+      links: [
+        {
+          rel: "manifest",
+          href: links.manifestHref,
+        },
+        {
+          rel: "icon",
+          href: links.faviconHref,
+        },
+        {
+          rel: "apple-touch-icon",
+          href: links.appleTouchIconHref,
+        },
+      ],
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:type", content: "website" },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:site_name", content: "LinkUp Studio" },
+        { property: "og:url", content: url },
+        { property: "og:image", content: image },
+        { property: "og:image:secure_url", content: image },
+        { property: "og:image:alt", content: `Logo de ${title}` },
+        { property: "og:image:width", content: "512" },
+        { property: "og:image:height", content: "512" },
+        { name: "twitter:card", content: "summary" },
+        { name: "twitter:title", content: title },
+        { name: "twitter:description", content: description },
+        { name: "twitter:image", content: image },
+      ],
+    };
+  },
   component: BookingPage,
 });
 
@@ -113,26 +144,32 @@ type BookingRouteDataWithTenant = {
     logo_url?: string | null;
   } | null;
 };
+type BookingPreviewRouteData = {
+  tenant?: {
+    name?: string | null;
+    subtitle?: string | null;
+    logo_url?: string | null;
+  } | null;
+};
 const ALL_SERVICES_CATEGORY = "Todos";
 const DEFAULT_SERVICE_CATEGORY = "Serviços";
 
-function upsertDocumentMeta(
-  selector: string,
-  createElement: () => HTMLMetaElement,
-  apply: (element: HTMLMetaElement) => void,
-) {
-  const existing = document.head.querySelector(selector);
-  const element = existing instanceof HTMLMetaElement ? existing : createElement();
-  apply(element);
-  if (!existing) document.head.appendChild(element);
+function cleanPreviewText(value: string | null | undefined) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function upsertDocumentLink(selector: string, rel: string, href: string) {
-  const existing = document.head.querySelector(selector);
-  const element = existing instanceof HTMLLinkElement ? existing : document.createElement("link");
-  element.rel = rel;
-  element.href = href;
-  if (!existing) document.head.appendChild(element);
+function bookingPreviewTitle(slug: string, tenant?: BookingPreviewRouteData["tenant"]) {
+  return cleanPreviewText(tenant?.name) || `Agendamento ${slug}`;
+}
+
+function bookingPreviewDescription(title: string, tenant?: BookingPreviewRouteData["tenant"]) {
+  return cleanPreviewText(tenant?.subtitle) || `Agende seu horário em ${title}.`;
+}
+
+function absolutePublicUrl(pathOrUrl: string) {
+  return new URL(pathOrUrl, `${getPublicAppUrl()}/`).toString();
 }
 
 function syncBookingPwaHead({
@@ -149,30 +186,11 @@ function syncBookingPwaHead({
   const displayName = buildBookingPwaDisplayName(tenantName);
   const links = buildBookingPwaHeadLinks(slug, logoUrl);
 
-  document.title = displayName;
-  upsertDocumentMeta(
-    'meta[name="apple-mobile-web-app-title"]',
-    () => {
-      const meta = document.createElement("meta");
-      meta.setAttribute("name", "apple-mobile-web-app-title");
-      return meta;
-    },
-    (meta) => meta.setAttribute("content", displayName),
-  );
-  upsertDocumentMeta(
-    'meta[name="theme-color"]',
-    () => {
-      const meta = document.createElement("meta");
-      meta.setAttribute("name", "theme-color");
-      return meta;
-    },
-    (meta) => {
-      if (primaryColor) meta.setAttribute("content", primaryColor);
-    },
-  );
-  upsertDocumentLink('link[rel="manifest"]', "manifest", links.manifestHref);
-  upsertDocumentLink('link[rel="icon"]', "icon", links.faviconHref);
-  upsertDocumentLink('link[rel="apple-touch-icon"]', "apple-touch-icon", links.appleTouchIconHref);
+  syncPwaDocumentHead({
+    title: displayName,
+    themeColor: primaryColor,
+    ...links,
+  });
 }
 
 function serviceCategory(service: any) {
@@ -231,7 +249,6 @@ function vipSubscriptionStatusLabel(status: string) {
 
 import { buildPixPayload } from "@/lib/pix";
 import { QrCode } from "@/lib/qr";
-import { getPublicBookingUrl } from "@/lib/public-booking-url";
 
 function BookingPage() {
   const queryClient = useQueryClient();
