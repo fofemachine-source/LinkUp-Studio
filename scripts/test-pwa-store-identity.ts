@@ -44,14 +44,18 @@ assert(
 assert(
   pwaHead.includes('meta[name="apple-mobile-web-app-title"]') &&
     pwaHead.includes('link[rel="apple-touch-icon"]') &&
-    pwaHead.includes('meta[name="application-name"]'),
+    pwaHead.includes('meta[name="application-name"]') &&
+    pwaHead.includes('currentUrl.searchParams.set("tenant", tenantSlug)'),
   "Tags Apple e nome do aplicativo devem ser atualizadas no navegador.",
 );
 
 assert(
   appRoute.includes("buildAdminPwaHeadLinks") &&
+    appRoute.includes("loader: async") &&
+    appRoute.includes('name: "apple-mobile-web-app-title"') &&
     appRoute.includes("syncPwaDocumentHead") &&
     appRoute.includes("tenant?.slug") &&
+    appRoute.includes("tenantSlug: tenant.slug") &&
     appRoute.includes("tenant.logo_url"),
   "Área ADM deve sincronizar nome, manifesto e ícone com a loja ativa.",
 );

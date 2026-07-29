@@ -7,6 +7,7 @@ type PwaHeadLinks = {
 type PwaHeadOptions = PwaHeadLinks & {
   title: string;
   themeColor?: string | null;
+  tenantSlug?: string | null;
 };
 
 function upsertDocumentMeta(
@@ -34,6 +35,7 @@ export function syncPwaDocumentHead({
   manifestHref,
   faviconHref,
   appleTouchIconHref,
+  tenantSlug,
 }: PwaHeadOptions) {
   if (typeof document === "undefined") return;
 
@@ -75,5 +77,13 @@ export function syncPwaDocumentHead({
   if (faviconHref) upsertDocumentLink('link[rel="icon"]', "icon", faviconHref);
   if (appleTouchIconHref) {
     upsertDocumentLink('link[rel="apple-touch-icon"]', "apple-touch-icon", appleTouchIconHref);
+  }
+
+  if (tenantSlug && window.location.pathname.startsWith("/app")) {
+    const currentUrl = new URL(window.location.href);
+    if (currentUrl.searchParams.get("tenant") !== tenantSlug) {
+      currentUrl.searchParams.set("tenant", tenantSlug);
+      window.history.replaceState(window.history.state, "", currentUrl);
+    }
   }
 }

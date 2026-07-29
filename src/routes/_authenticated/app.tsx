@@ -59,6 +59,28 @@ export const Route = createFileRoute("/_authenticated/app")({
       });
     }
   },
+  loader: async ({ context }) => getTenantAccess(context.queryClient),
+  head: ({ loaderData }) => {
+    const tenant = loaderData?.tenant;
+    if (!tenant?.slug) return {};
+
+    const title = buildAdminPwaDisplayName(tenant.name);
+    const links = buildAdminPwaHeadLinks(tenant.slug, tenant.logo_url);
+
+    return {
+      links: [
+        { rel: "manifest", href: links.manifestHref },
+        { rel: "icon", href: links.faviconHref },
+        { rel: "apple-touch-icon", href: links.appleTouchIconHref },
+      ],
+      meta: [
+        { title },
+        { name: "apple-mobile-web-app-title", content: title },
+        { name: "application-name", content: title },
+        { name: "theme-color", content: normalizePwaHexColor(tenant.primary_color) },
+      ],
+    };
+  },
   component: AppLayout,
 });
 
@@ -83,6 +105,7 @@ function AppLayout() {
     syncPwaDocumentHead({
       title: buildAdminPwaDisplayName(tenant.name),
       themeColor: normalizePwaHexColor(tenant.primary_color),
+      tenantSlug: tenant.slug,
       ...links,
     });
   }, [tenant?.slug, tenant?.name, tenant?.logo_url, tenant?.primary_color]);
