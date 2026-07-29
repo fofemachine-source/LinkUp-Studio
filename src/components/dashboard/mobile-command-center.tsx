@@ -9,7 +9,6 @@ import {
   CircleDollarSign,
   Copy,
   Clock3,
-  Filter,
   MessageCircle,
   RefreshCw,
   Timer,
@@ -30,7 +29,8 @@ type MobileCommandCenterProps = {
   loading: boolean;
   fetching: boolean;
   periodLabel: string;
-  filtersContent: ReactNode;
+  selectedDate: string;
+  onSelectedDateChange: (date: string) => void;
   onRefresh: () => void;
   bookingLink?: string;
 };
@@ -83,16 +83,20 @@ export function MobileCommandCenter({
   loading,
   fetching,
   periodLabel,
-  filtersContent,
+  selectedDate,
+  onSelectedDateChange,
   onRefresh,
   bookingLink,
 }: MobileCommandCenterProps) {
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [bookingCopied, setBookingCopied] = useState(false);
   const operation = data?.todayOperation;
   const nextAppointment = data?.smartAgenda?.[0] ?? null;
   const upcomingAppointments = data?.smartAgenda?.slice(1, 5) ?? [];
   const alerts = data?.mobileAlerts ?? data?.alerts ?? [];
+  const todayValue = dateInputValueFromOffset(0);
+  const tomorrowValue = dateInputValueFromOffset(1);
+  const yesterdayValue = dateInputValueFromOffset(-1);
 
   async function copyBookingLink() {
     if (!bookingLink) {
@@ -171,10 +175,48 @@ export function MobileCommandCenter({
 
       <section className={cardClass}>
         <SectionHeading
-          eyebrow="Agora"
-          title="Operação de hoje"
+          eyebrow={periodLabel}
+          title="Operação do dia"
           icon={<CalendarDays className="h-4 w-4" />}
+          actionLabel="Escolher data do painel"
+          onAction={() => setDatePickerOpen((current) => !current)}
         />
+        {datePickerOpen ? (
+          <div className="border-t bg-muted/20 p-3">
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: "Ontem", value: yesterdayValue },
+                { label: "Hoje", value: todayValue },
+                { label: "Amanhã", value: tomorrowValue },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => onSelectedDateChange(option.value)}
+                  className={`h-10 rounded-xl border text-xs font-semibold transition-colors ${
+                    selectedDate === option.value
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "bg-card text-foreground active:bg-muted"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Escolher outra data
+            </label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(event) => onSelectedDateChange(event.target.value)}
+              className="mt-1 h-11 w-full rounded-xl border bg-card px-3 text-sm font-semibold text-foreground outline-none ring-primary/20 transition focus:ring-4"
+            />
+            <p className="mt-2 text-xs leading-snug text-muted-foreground">
+              Os agendamentos, previsão e indicadores abaixo acompanham esta data.
+            </p>
+          </div>
+        ) : null}
         <div className="grid grid-cols-2 border-t">
           <OperationMetric
             label="Agendamentos"
@@ -387,28 +429,6 @@ export function MobileCommandCenter({
         </div>
       </section>
 
-      <div>
-        <button
-          type="button"
-          onClick={() => setFiltersOpen((current) => !current)}
-          className="flex h-12 w-full items-center justify-between rounded-2xl border bg-card px-4 text-left transition-colors active:bg-muted"
-          aria-expanded={filtersOpen}
-        >
-          <span className="flex min-w-0 items-center gap-3">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-              <Filter className="h-4 w-4" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-xs text-muted-foreground">Período e filtros</span>
-              <span className="block truncate text-sm font-semibold">{periodLabel}</span>
-            </span>
-          </span>
-          <ChevronRight
-            className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${filtersOpen ? "rotate-90" : ""}`}
-          />
-        </button>
-        {filtersOpen ? <div className="mt-3">{filtersContent}</div> : null}
-      </div>
     </div>
   );
 }
@@ -417,10 +437,14 @@ function SectionHeading({
   eyebrow,
   title,
   icon,
+  actionLabel,
+  onAction,
 }: {
   eyebrow: string;
   title: string;
   icon: ReactNode;
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-3 p-4">
@@ -430,11 +454,31 @@ function SectionHeading({
         </p>
         <h2 className="mt-1 text-base font-semibold tracking-tight">{title}</h2>
       </div>
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-        {icon}
-      </span>
+      {onAction ? (
+        <button
+          type="button"
+          onClick={onAction}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary transition-colors active:bg-primary/20"
+          aria-label={actionLabel}
+        >
+          {icon}
+        </button>
+      ) : (
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+          {icon}
+        </span>
+      )}
     </div>
   );
+}
+
+function dateInputValueFromOffset(offset: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + offset);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function OperationMetric({

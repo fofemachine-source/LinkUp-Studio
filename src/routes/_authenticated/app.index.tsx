@@ -244,10 +244,39 @@ function PainelGeral() {
     commissions: false,
   });
 
-  const range = useMemo(
-    () => getRange(filters.period, filters.customStart, filters.customEnd),
-    [filters.period, filters.customStart, filters.customEnd],
+  const effectiveFilters = useMemo(
+    () => (isMobile ? getMobileDashboardFilters(filters) : filters),
+    [filters, isMobile],
   );
+
+  const range = useMemo(
+    () =>
+      getRange(effectiveFilters.period, effectiveFilters.customStart, effectiveFilters.customEnd),
+    [effectiveFilters.period, effectiveFilters.customStart, effectiveFilters.customEnd],
+  );
+  const selectedMobileDate =
+    effectiveFilters.period === "custom" &&
+    effectiveFilters.customStart &&
+    effectiveFilters.customStart === effectiveFilters.customEnd
+      ? effectiveFilters.customStart
+      : format(range.start, "yyyy-MM-dd");
+
+  const handleMobileDateChange = (dateValue: string) => {
+    if (!dateValue) return;
+    const todayValue = format(new Date(), "yyyy-MM-dd");
+    setFilters((current) => ({
+      ...current,
+      period: dateValue === todayValue ? "today" : "custom",
+      customStart: dateValue,
+      customEnd: dateValue,
+      professionalId: "all",
+      serviceId: "all",
+      paymentMethod: "all",
+      status: "all",
+      client: "",
+      source: "all",
+    }));
+  };
 
   const bookingSlug = tenant?.slug || "linkup-studio";
   const bookingLink = getPublicBookingUrl(bookingSlug);
@@ -290,14 +319,14 @@ function PainelGeral() {
     queryKey: [
       "dashboard-command-center",
       tenantId,
-      filters,
+      effectiveFilters,
       range.start.toISOString(),
       range.end.toISOString(),
     ],
     enabled: !!tenantId,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
-    queryFn: async () => loadDashboardData(tenantId!, filters, range, options, tenant),
+    queryFn: async () => loadDashboardData(tenantId!, effectiveFilters, range, options, tenant),
   });
 
   const greeting = getGreeting(access?.profileFullName ?? "Gestor");
@@ -339,17 +368,10 @@ function PainelGeral() {
         loading={isLoading}
         fetching={isFetching}
         periodLabel={range.label}
+        selectedDate={selectedMobileDate}
+        onSelectedDateChange={handleMobileDateChange}
         onRefresh={() => void refetch()}
         bookingLink={bookingLink}
-        filtersContent={
-          <DashboardFiltersBar
-            filters={filters}
-            onChange={setFilters}
-            professionals={options?.professionals ?? []}
-            services={options?.services ?? []}
-            loading={loadingOptions}
-          />
-        }
       />
     );
   }
@@ -1020,16 +1042,16 @@ async function loadDashboardData(
       ["pending", "confirmed"].includes(appointment.status ?? "pending"),
     ).length,
   };
-  const todayOperationalAppointments = todayAppointments.filter(isOperationalAppointment);
+  const periodOperationalAppointments = periodAppointments.filter(isOperationalAppointment);
   const todayOperation = {
-    total: todayOperationalAppointments.length,
-    inProgress: todayOperationalAppointments.filter(
+    total: periodOperationalAppointments.length,
+    inProgress: periodOperationalAppointments.filter(
       (appointment: any) => appointment.status === "in_progress",
     ).length,
-    completed: todayOperationalAppointments.filter(
+    completed: periodOperationalAppointments.filter(
       (appointment: any) => appointment.status === "completed",
     ).length,
-    delayed: todayOperationalAppointments.filter(
+    delayed: periodOperationalAppointments.filter(
       (appointment: any) =>
         ["pending", "confirmed", "arrived"].includes(appointment.status ?? "pending") &&
         new Date(appointment.start_at) < now,
@@ -2179,6 +2201,21 @@ function EmptyState({ icon: Icon, text }: { icon: any; text: string }) {
   );
 }
 
+function getMobileDashboardFilters(filters: DashboardFilters): DashboardFilters {
+  const isSingleCustomDay =
+    filters.period === "custom" &&
+    !!filters.customStart &&
+    !!filters.customEnd &&
+    filters.customStart === filters.customEnd;
+
+  return {
+    ...defaultFilters,
+    period: isSingleCustomDay ? "custom" : "today",
+    customStart: isSingleCustomDay ? filters.customStart : defaultFilters.customStart,
+    customEnd: isSingleCustomDay ? filters.customEnd : defaultFilters.customEnd,
+  };
+}
+
 function getRange(period: PeriodPreset, customStart: string, customEnd: string): RangeInfo {
   const now = new Date();
   let start = startOfDay(now);
@@ -2208,7 +2245,14 @@ function getRange(period: PeriodPreset, customStart: string, customEnd: string):
     start = startOfDay(new Date(`${customStart}T12:00:00`));
     end = endOfDay(new Date(`${customEnd}T12:00:00`));
     if (end < start) [start, end] = [end, start];
-    label = `${format(start, "dd/MM")} a ${format(end, "dd/MM")}`;
+    if (isSameDay(start, end)) {
+      if (isSameDay(start, now)) label = "Hoje";
+      else if (isSameDay(start, addDays(now, 1))) label = "Amanhã";
+      else if (isSameDay(start, subDays(now, 1))) label = "Ontem";
+      else label = format(start, "dd/MM/yyyy");
+    } else {
+      label = `${format(start, "dd/MM")} a ${format(end, "dd/MM")}`;
+    }
   }
 
   const days = Math.max(1, differenceInCalendarDays(end, start) + 1);

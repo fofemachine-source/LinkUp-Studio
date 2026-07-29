@@ -1784,106 +1784,110 @@ function BookingPage() {
         )}
 
         {customerQuery.data && step === "done" && (
-          <Card className="bg-white border-none text-black shadow-2xl overflow-hidden rounded-3xl mx-auto w-full max-w-lg">
-            <div className="bg-white p-6 md:p-8">
-              <div className="text-center mb-6 mt-4">
+          <Card className="mx-auto w-full max-w-lg overflow-hidden rounded-3xl border border-white/70 bg-[#fffaf3]/95 text-[#241b13] shadow-[0_28px_80px_-48px_rgba(78,48,20,0.5)] backdrop-blur-xl">
+            <div className="bg-gradient-to-b from-white/96 to-[#fff8ef]/96 p-6 md:p-8">
+              <div className="mb-6 mt-3 text-center">
                 <div
-                  className={`h-16 w-16 rounded-full border-2 mx-auto flex items-center justify-center mb-4 ${bookingCancelled ? "border-rose-500 bg-rose-50" : "border-amber-500"}`}
+                  className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border ${bookingCancelled ? "border-rose-300 bg-rose-50 text-rose-500" : "border-[#d59b42] bg-[#fff3dc] text-[#b87314]"}`}
                 >
                   {bookingCancelled ? (
-                    <XCircle className="h-8 w-8 text-rose-500" />
+                    <XCircle className="h-8 w-8" />
                   ) : (
-                    <Check className="h-8 w-8 text-amber-500" />
+                    <Check className="h-8 w-8" />
                   )}
                 </div>
-                <h3 className="text-2xl font-bold uppercase tracking-wide text-black">
-                  {bookingCancelled ? "RESERVA CANCELADA" : "RESERVA CONFIRMADA"}
+                <h3 className="text-[1.7rem] font-semibold leading-tight tracking-[-0.035em] text-[#21180f]">
+                  {bookingCancelled ? "Reserva cancelada" : "Reserva confirmada"}
                 </h3>
                 <p
-                  className={`text-sm font-semibold uppercase tracking-wider mt-1 ${bookingCancelled ? "text-rose-600" : "text-amber-600"}`}
+                  className={`mt-1 text-sm font-medium tracking-[-0.01em] ${bookingCancelled ? "text-rose-600" : "text-[#b87314]"}`}
                 >
-                  {bookingCancelled ? "O HORARIO FOI LIBERADO" : "O SEU HORARIO FOI GARANTIDO!"}
+                  {bookingCancelled ? "O horário foi liberado" : "Seu horário foi garantido"}
                 </p>
               </div>
 
-              <div className="border border-amber-500/20 rounded-2xl p-5 bg-[#faf8f5] space-y-5">
+              <div className="space-y-5 rounded-[1.35rem] border border-[#ead9c2] bg-white/72 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_18px_45px_-42px_rgba(78,48,20,0.45)]">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b8b79]">
                       CÓDIGO DA RESERVA
                     </div>
-                    <div className="text-sm font-bold text-black">
+                    <div className="text-sm font-semibold leading-snug text-[#21180f]">
                       {bookMut.data?.id?.split("-")[0].toUpperCase() || "NSFRAYOLVI"}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b8b79]">
                       DATA E HORA
                     </div>
-                    <div className="text-sm font-bold text-black">
+                    <div className="text-sm font-semibold leading-snug text-[#21180f]">
                       {date && format(date, "dd/MM/yyyy")} às {time}
                     </div>
                   </div>
                 </div>
 
-                <div className="border-t border-amber-500/10 pt-4">
+                <div className="border-t border-[#ead9c2] pt-4">
                   <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 shrink-0">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fff2dc] text-[#b87314]">
                       <Scissors className="h-4 w-4" />
                     </div>
                     <div>
-                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b8b79]">
                         BARBEARIA / ESTABELECIMENTO
                       </div>
-                      <div className="text-sm font-bold text-black">{tenant.name}</div>
+                      <div className="text-sm font-semibold leading-snug text-[#21180f]">{tenant.name}</div>
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-y-4 gap-x-4 border-t border-amber-500/10 pt-4">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-4 border-t border-[#ead9c2] pt-4">
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b8b79]">
                       CLIENTE
                     </div>
-                    <div className="text-sm font-bold text-black">{name}</div>
+                    <div className="break-words text-sm font-semibold leading-snug text-[#21180f]">
+                      {name}
+                    </div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b8b79]">
                       TELEFONE
                     </div>
-                    <div className="text-sm font-bold text-black">{phoneMask(phone)}</div>
+                    <div className="break-words text-sm font-semibold leading-snug text-[#21180f]">
+                      {phoneMask(phone)}
+                    </div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b8b79]">
                       BARBEIRO
                     </div>
-                    <div className="text-sm font-bold text-black">
+                    <div className="break-words text-sm font-semibold leading-snug text-[#21180f]">
                       {professionals.find((p: any) => p.id === proId)?.full_name}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b8b79]">
                       SERVIÇO
                     </div>
-                    <div className="text-sm font-bold text-black">
+                    <div className="break-words text-sm font-semibold leading-snug text-[#21180f]">
                       {selectedServices.map((service: any) => service.name).join(", ")}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b8b79]">
                       VALOR
                     </div>
-                    <div className="text-sm font-bold text-amber-600">
+                    <div className="text-sm font-semibold leading-snug text-[#a26312]">
                       {isVip && billableServicesTotal <= 0
                         ? "Incluso no plano"
                         : brl(billableServicesTotal)}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b8b79]">
                       FORMA DE PAGAMENTO
                     </div>
-                    <div className="text-xs font-bold leading-tight text-black">
+                    <div className="text-xs font-semibold leading-snug text-[#21180f]">
                       No Local (Pix, Cartão ou Dinheiro)
                     </div>
                   </div>
@@ -1899,7 +1903,7 @@ function BookingPage() {
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <Button
                     variant="outline"
-                    className="border-rose-200 text-xs font-bold text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                    className="rounded-xl border-rose-200 bg-white/60 text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                     disabled={cancelMut.isPending}
                     onClick={() => {
                       if (window.confirm("Deseja realmente cancelar este agendamento?"))
@@ -1915,7 +1919,7 @@ function BookingPage() {
                   </Button>
                   <Button
                     variant="outline"
-                    className="border-amber-500/20 text-xs font-bold hover:bg-amber-50"
+                    className="rounded-xl border-[#ead9c2] bg-white/60 text-xs font-semibold text-[#32261b] hover:bg-[#fff2dc]"
                     disabled={!cancellationUrl}
                     onClick={async () => {
                       await navigator.clipboard.writeText(cancellationUrl);
@@ -1929,19 +1933,21 @@ function BookingPage() {
               )}
 
               <div
-                className="border border-amber-500/20 rounded-2xl p-5 mt-4 bg-[#faf8f5] cursor-pointer hover:bg-amber-50 transition-colors"
+                className="mt-4 cursor-pointer rounded-[1.35rem] border border-[#ead9c2] bg-white/72 p-5 transition-colors hover:bg-[#fff2dc]"
                 onClick={() => window.open(`https://maps.google.com/?q=${tenant.name}`, "_blank")}
               >
                 <div className="flex items-start gap-3">
-                  <div className="h-8 w-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 shrink-0">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fff2dc] text-[#b87314]">
                     <MapPin className="h-4 w-4" />
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b8b79]">
                       LOCALIZAÇÃO DO ESTABELECIMENTO
                     </div>
-                    <div className="text-sm font-bold text-black mb-1">{tenant.name}</div>
-                    <div className="text-xs text-gray-500">Toque para abrir no mapa</div>
+                    <div className="mb-1 text-sm font-semibold leading-snug text-[#21180f]">
+                      {tenant.name}
+                    </div>
+                    <div className="text-xs text-[#6f6255]">Toque para abrir no mapa</div>
                   </div>
                 </div>
               </div>
@@ -1949,14 +1955,14 @@ function BookingPage() {
               <div className="mt-6 grid grid-cols-2 gap-3">
                 <Button
                   variant="outline"
-                  className="border-amber-500/20 hover:bg-amber-50 text-xs font-bold"
+                  className="rounded-xl border-[#ead9c2] bg-white/60 text-xs font-semibold text-[#32261b] hover:bg-[#fff2dc]"
                   onClick={() => window.open(`https://maps.google.com/?q=${tenant.name}`, "_blank")}
                 >
                   <MapPin className="h-4 w-4 mr-2" /> GOOGLE MAPS
                 </Button>
                 <Button
                   variant="outline"
-                  className="bg-black hover:bg-neutral-800 text-amber-500 border-none text-xs font-bold"
+                  className="rounded-xl border-none bg-[#241b13] text-xs font-semibold text-[#f6c46c] hover:bg-[#33261a]"
                   onClick={() => {
                     const message = `Olá! Fiz um agendamento na ${tenant.name} para o dia ${format(date!, "dd/MM/yyyy")} às ${time}. Link para cancelar: ${cancellationUrl}`;
                     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
@@ -1968,7 +1974,7 @@ function BookingPage() {
 
               <div className="mt-4">
                 <Button
-                  className="w-full bg-black hover:bg-neutral-900 text-amber-500 text-xs font-bold py-6 rounded-xl shadow-xl"
+                  className="w-full rounded-xl bg-[#241b13] py-6 text-xs font-semibold text-[#f6c46c] shadow-[0_18px_42px_-28px_rgba(36,27,19,0.75)] hover:bg-[#33261a]"
                   onClick={() => window.location.reload()}
                 >
                   <Plus className="h-4 w-4 mr-2 text-amber-500" /> NOVA RESERVA
