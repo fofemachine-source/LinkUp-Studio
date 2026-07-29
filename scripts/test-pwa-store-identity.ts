@@ -119,8 +119,11 @@ assert(
 );
 
 assert(
-  rootRoute.includes('rel: "apple-touch-icon"') && rootRoute.includes('name: "application-name"'),
-  "HTML base deve ter fallback Apple para evitar ícone/nome ausente antes do tenant carregar.",
+  !rootRoute.includes('name: "apple-mobile-web-app-title"') &&
+    !rootRoute.includes('name: "application-name"') &&
+    !rootRoute.includes('rel: "apple-touch-icon"') &&
+    !rootRoute.includes('rel: "manifest"'),
+  "HTML base nao deve anunciar nome/manifesto generico que o iOS possa priorizar antes da loja.",
 );
 
 console.log("PWA store identity checks passed.");
