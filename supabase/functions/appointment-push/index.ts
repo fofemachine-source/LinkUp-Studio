@@ -226,8 +226,11 @@ Deno.serve(async (request) => {
       const vapid = getVapidConfig();
       return json({
         ok: true,
-        configured: Boolean(vapid.publicKey),
+        configured: vapid.configured,
         publicKey: vapid.publicKey || null,
+        publicKeyConfigured: Boolean(vapid.publicKey),
+        privateKeyConfigured: Boolean(vapid.privateKey),
+        subjectConfigured: Boolean(vapid.subject),
       });
     }
 
