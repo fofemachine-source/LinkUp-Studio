@@ -324,6 +324,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "cash_movements_commanda_id_fkey"
+            columns: ["commanda_id"]
+            isOneToOne: false
+            referencedRelation: "vip_commanda_audit_review"
+            referencedColumns: ["commanda_id"]
+          },
+          {
             foreignKeyName: "cash_movements_cost_center_id_fkey"
             columns: ["cost_center_id"]
             isOneToOne: false
@@ -583,11 +590,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "commanda_items_commanda_id_fkey"
+            columns: ["commanda_id"]
+            isOneToOne: false
+            referencedRelation: "vip_commanda_audit_review"
+            referencedColumns: ["commanda_id"]
+          },
+          {
             foreignKeyName: "commanda_items_commanda_tenant_fk"
             columns: ["commanda_id", "tenant_id"]
             isOneToOne: false
             referencedRelation: "commandas"
             referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "commanda_items_commanda_tenant_fk"
+            columns: ["commanda_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "vip_commanda_audit_review"
+            referencedColumns: ["commanda_id", "tenant_id"]
           },
           {
             foreignKeyName: "commanda_items_professional_id_fkey"
@@ -642,11 +663,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "commanda_payments_commanda_id_fkey"
+            columns: ["commanda_id"]
+            isOneToOne: false
+            referencedRelation: "vip_commanda_audit_review"
+            referencedColumns: ["commanda_id"]
+          },
+          {
             foreignKeyName: "commanda_payments_commanda_tenant_fk"
             columns: ["commanda_id", "tenant_id"]
             isOneToOne: false
             referencedRelation: "commandas"
             referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "commanda_payments_commanda_tenant_fk"
+            columns: ["commanda_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "vip_commanda_audit_review"
+            referencedColumns: ["commanda_id", "tenant_id"]
           },
           {
             foreignKeyName: "commanda_payments_tenant_id_fkey"
@@ -867,6 +902,7 @@ export type Database = {
           id: string
           item_kind: string
           item_name: string
+          paid_amount: number
           paid_at: string | null
           payable_movement_id: string | null
           professional_id: string
@@ -897,6 +933,7 @@ export type Database = {
           id?: string
           item_kind: string
           item_name: string
+          paid_amount?: number
           paid_at?: string | null
           payable_movement_id?: string | null
           professional_id: string
@@ -927,6 +964,7 @@ export type Database = {
           id?: string
           item_kind?: string
           item_name?: string
+          paid_amount?: number
           paid_at?: string | null
           payable_movement_id?: string | null
           professional_id?: string
@@ -948,6 +986,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "commandas"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commission_entries_commanda_id_fkey"
+            columns: ["commanda_id"]
+            isOneToOne: false
+            referencedRelation: "vip_commanda_audit_review"
+            referencedColumns: ["commanda_id"]
           },
           {
             foreignKeyName: "commission_entries_commanda_item_id_fkey"
@@ -1089,7 +1134,7 @@ export type Database = {
           {
             foreignKeyName: "commission_settlement_items_commission_entry_id_fkey"
             columns: ["commission_entry_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "commission_entries"
             referencedColumns: ["id"]
           },
@@ -2298,47 +2343,6 @@ export type Database = {
           },
         ]
       }
-      staff_positions: {
-        Row: {
-          active: boolean
-          created_at: string
-          description: string | null
-          id: string
-          name: string
-          sort_order: number
-          tenant_id: string
-          updated_at: string
-        }
-        Insert: {
-          active?: boolean
-          created_at?: string
-          description?: string | null
-          id?: string
-          name: string
-          sort_order?: number
-          tenant_id: string
-          updated_at?: string
-        }
-        Update: {
-          active?: boolean
-          created_at?: string
-          description?: string | null
-          id?: string
-          name?: string
-          sort_order?: number
-          tenant_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "staff_positions_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       professional_time_off: {
         Row: {
           all_day: boolean
@@ -2423,7 +2427,6 @@ export type Database = {
           show_on_booking: boolean
           specialty: string | null
           tenant_id: string
-          must_change_password: boolean
           whatsapp: string | null
           work_days: number[] | null
         }
@@ -2450,7 +2453,6 @@ export type Database = {
           show_on_booking?: boolean
           specialty?: string | null
           tenant_id: string
-          must_change_password?: boolean
           whatsapp?: string | null
           work_days?: number[] | null
         }
@@ -2477,7 +2479,6 @@ export type Database = {
           show_on_booking?: boolean
           specialty?: string | null
           tenant_id?: string
-          must_change_password?: boolean
           whatsapp?: string | null
           work_days?: number[] | null
         }
@@ -3320,6 +3321,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "subscription_usages_commanda_id_fkey"
+            columns: ["commanda_id"]
+            isOneToOne: false
+            referencedRelation: "vip_commanda_audit_review"
+            referencedColumns: ["commanda_id"]
+          },
+          {
             foreignKeyName: "subscription_usages_commanda_item_id_fkey"
             columns: ["commanda_item_id"]
             isOneToOne: false
@@ -4052,13 +4060,54 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      vip_commanda_audit_review: {
+        Row: {
+          appointment_id: string | null
+          appointment_is_vip: boolean | null
+          client_id: string | null
+          client_name: string | null
+          closed_at: string | null
+          commanda_id: string | null
+          entrada_caixa_registrada: number | null
+          excedente_calculado: number | null
+          itens_cobertos: number | null
+          itens_extras: number | null
+          number: number | null
+          scheduled_at: string | null
+          sinal_revisao: string | null
+          status: string | null
+          subscription_id: string | null
+          tenant_id: string | null
+          valor_a_receber_registrado: number | null
+          valor_coberto_assinatura: number | null
+          valor_comercial_itens: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commandas_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commandas_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commandas_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
-      get_tenant_operational_settings: {
-        Args: { p_tenant_id: string }
-        Returns: Json
-      }
       apply_platform_billing_charge_state: {
         Args: {
           p_bank_slip_url?: string
@@ -4089,6 +4138,10 @@ export type Database = {
           p_tenant_id: string
         }
         Returns: Json
+      }
+      cancel_commissions_for_commanda: {
+        Args: { p_commanda_id: string; p_reason?: string; p_tenant_id: string }
+        Returns: number
       }
       cancel_payable: {
         Args: { p_movement_id: string; p_reason: string; p_tenant_id: string }
@@ -4223,6 +4276,22 @@ export type Database = {
       record_booking_customer_login_success: {
         Args: { p_account_id: string; p_tenant_id: string }
         Returns: boolean
+      }
+      record_commission_payment: {
+        Args: {
+          p_account_id: string
+          p_adjustments: Json
+          p_allocations: Json
+          p_notes: string
+          p_payment_date: string
+          p_payment_method: string
+          p_period_end: string
+          p_period_start: string
+          p_professional_id: string
+          p_proof_url: string
+          p_tenant_id: string
+        }
+        Returns: Json
       }
       register_booking_customer: {
         Args: {
