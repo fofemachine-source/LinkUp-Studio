@@ -30,7 +30,7 @@ import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { brl } from "@/lib/format";
 import { syncAppointmentComanda } from "@/lib/commandas";
-import { getPublicBookingUrl } from "@/lib/public-booking-url";
+import { buildPublicBookingPreviewVersion, getPublicBookingUrl } from "@/lib/public-booking-url";
 import {
   AgendaPremium,
   type AgendaAppointment,
@@ -315,6 +315,13 @@ function AgendaPage() {
 
   const bookingSlug = tenant?.slug || "ernesth";
   const bookingLink = getPublicBookingUrl(bookingSlug);
+  const bookingShareLink = getPublicBookingUrl(bookingSlug, {
+    previewVersion: buildPublicBookingPreviewVersion({
+      name: tenant?.name,
+      subtitle: tenant?.subtitle,
+      logoUrl: tenant?.logo_url,
+    }),
+  });
 
   async function syncOperationalAppointment(appointment: AgendaAppointment) {
     if (!tenantId) throw new Error("Salão não identificado.");
@@ -495,6 +502,7 @@ function AgendaPage() {
           slotMinutes={slotMin}
           isDayClosed={isDayClosed}
           bookingLink={bookingLink}
+          bookingShareLink={bookingShareLink}
           movingAppointmentId={movingAppointmentId}
           onDateChange={setDate}
           onViewModeChange={setViewMode}
@@ -578,7 +586,7 @@ function AgendaPage() {
             <div className="text-xs text-muted-foreground">Envie para os clientes agendarem sozinhos.</div>
           </div>
           <Input readOnly value={bookingLink} className="max-w-lg font-mono text-xs bg-background" />
-          <Button variant="outline" onClick={() => { navigator.clipboard.writeText(bookingLink); toast.success("Link copiado"); }} disabled={!bookingLink}>Copiar</Button>
+          <Button variant="outline" onClick={() => { navigator.clipboard.writeText(bookingShareLink); toast.success("Link copiado"); }} disabled={!bookingLink}>Copiar</Button>
           <Button asChild disabled={!bookingLink}><a href={bookingLink} target="_blank" rel="noreferrer">Abrir</a></Button>
         </CardContent>
       </Card>

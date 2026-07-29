@@ -33,6 +33,7 @@ type MobileCommandCenterProps = {
   onSelectedDateChange: (date: string) => void;
   onRefresh: () => void;
   bookingLink?: string;
+  bookingShareLink?: string;
 };
 
 type MobileAgendaItem = {
@@ -87,6 +88,7 @@ export function MobileCommandCenter({
   onSelectedDateChange,
   onRefresh,
   bookingLink,
+  bookingShareLink,
 }: MobileCommandCenterProps) {
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [bookingCopied, setBookingCopied] = useState(false);
@@ -105,7 +107,7 @@ export function MobileCommandCenter({
     }
 
     try {
-      await navigator.clipboard.writeText(bookingLink);
+      await navigator.clipboard.writeText(bookingShareLink || bookingLink);
       setBookingCopied(true);
       toast.success("Link de agendamento copiado.");
       window.setTimeout(() => setBookingCopied(false), 2200);

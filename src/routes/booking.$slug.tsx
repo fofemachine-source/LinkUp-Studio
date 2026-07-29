@@ -87,14 +87,16 @@ import {
 export const Route = createFileRoute("/booking/$slug")({
   validateSearch: (search: Record<string, unknown>) => ({
     cancel: typeof search.cancel === "string" ? search.cancel : undefined,
+    v: typeof search.v === "string" ? search.v : undefined,
   }),
   loader: async ({ params }) => getPublicTenantPreview({ data: { slug: params.slug } }),
-  head: ({ params, loaderData }) => {
+  head: ({ params, loaderData, match }) => {
     const tenant = (loaderData as BookingPreviewRouteData | null | undefined)?.tenant;
     const title = bookingPreviewTitle(params.slug, tenant);
     const description = bookingPreviewDescription(title, tenant);
     const links = buildBookingPwaHeadLinks(params.slug, tenant?.logo_url);
-    const url = getPublicBookingUrl(params.slug);
+    const previewVersion = typeof match.search.v === "string" ? match.search.v : undefined;
+    const url = getPublicBookingUrl(params.slug, { previewVersion });
     const image = absolutePublicUrl(buildBookingPwaSocialImagePath(params.slug, tenant?.logo_url));
 
     return {

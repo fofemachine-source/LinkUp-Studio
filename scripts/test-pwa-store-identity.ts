@@ -11,6 +11,9 @@ function assert(condition: unknown, message: string) {
 const pwaIdentity = read("src/lib/pwa-identity.ts");
 const pwaHead = read("src/lib/pwa-head.ts");
 const appRoute = read("src/routes/_authenticated/app.tsx");
+const publicBookingUrl = read("src/lib/public-booking-url.ts");
+const mobileCommandCenter = read("src/components/dashboard/mobile-command-center.tsx");
+const agendaPremium = read("src/components/agenda/agenda-premium.tsx");
 const bookingRoute = read("src/routes/booking.$slug.tsx");
 const manifestRoute = read("src/routes/api.pwa.manifest.$slug.ts");
 const rootRoute = read("src/routes/__root.tsx");
@@ -60,12 +63,26 @@ assert(
 
 assert(
   bookingRoute.includes("getPublicTenantPreview") &&
+    bookingRoute.includes("match.search.v") &&
     bookingRoute.includes('property: "og:title"') &&
     bookingRoute.includes('property: "og:description"') &&
     bookingRoute.includes('property: "og:site_name", content: "LinkUp Studio"') &&
     bookingRoute.includes('property: "og:image"') &&
     bookingRoute.includes('name: "twitter:image"'),
   "Link de agendamento deve gerar preview social com nome, lema, LinkUp Studio e logo da loja.",
+);
+
+assert(
+  publicBookingUrl.includes("buildPublicBookingPreviewVersion") &&
+    publicBookingUrl.includes("previewVersion") &&
+    publicBookingUrl.includes('url.searchParams.set("v", previewVersion)'),
+  "Link compartilhado deve incluir versao de preview para contornar cache do WhatsApp.",
+);
+
+assert(
+  mobileCommandCenter.includes("bookingShareLink || bookingLink") &&
+    agendaPremium.includes("bookingShareLink || bookingLink"),
+  "Botoes de copiar/compartilhar devem usar link versionado sem quebrar o link visual limpo.",
 );
 
 assert(

@@ -86,7 +86,7 @@ import {
 } from "@/components/dashboard/mobile-command-center";
 import { QrCode } from "@/lib/qr";
 import { brl } from "@/lib/format";
-import { getPublicBookingUrl } from "@/lib/public-booking-url";
+import { buildPublicBookingPreviewVersion, getPublicBookingUrl } from "@/lib/public-booking-url";
 import {
   getTenantAccess,
   useCurrentTenant,
@@ -280,6 +280,13 @@ function PainelGeral() {
 
   const bookingSlug = tenant?.slug || "linkup-studio";
   const bookingLink = getPublicBookingUrl(bookingSlug);
+  const bookingShareLink = getPublicBookingUrl(bookingSlug, {
+    previewVersion: buildPublicBookingPreviewVersion({
+      name: tenant?.name,
+      subtitle: tenant?.subtitle,
+      logoUrl: tenant?.logo_url,
+    }),
+  });
 
   const { data: options, isLoading: loadingOptions } = useQuery({
     queryKey: ["dashboard-options", tenantId],
@@ -372,6 +379,7 @@ function PainelGeral() {
         onSelectedDateChange={handleMobileDateChange}
         onRefresh={() => void refetch()}
         bookingLink={bookingLink}
+        bookingShareLink={bookingShareLink}
       />
     );
   }
@@ -508,7 +516,7 @@ function PainelGeral() {
       <section className="grid gap-6 xl:grid-cols-3">
         <SmartAlerts alerts={data?.alerts ?? []} loading={isLoading} />
         <RecentActivity items={data?.activities ?? []} loading={isLoading} />
-        <BookingLinkCard bookingLink={bookingLink} />
+        <BookingLinkCard bookingLink={bookingLink} bookingShareLink={bookingShareLink} />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
@@ -535,7 +543,7 @@ function PainelGeral() {
         <VacantSlotsCard
           slots={data?.vacantSlots ?? []}
           loading={isLoading}
-          bookingLink={bookingLink}
+          bookingShareLink={bookingShareLink}
           tenantName={tenant?.name ?? "seu salão"}
         />
       </section>
@@ -1745,13 +1753,19 @@ function RecentActivity({ items, loading }: { items: any[]; loading: boolean }) 
   );
 }
 
-function BookingLinkCard({ bookingLink }: { bookingLink: string }) {
+function BookingLinkCard({
+  bookingLink,
+  bookingShareLink,
+}: {
+  bookingLink: string;
+  bookingShareLink: string;
+}) {
   const share = async () => {
     if (navigator.share) {
-      await navigator.share({ title: "Agendamento LinkUp Studio", url: bookingLink });
+      await navigator.share({ title: "Agendamento LinkUp Studio", url: bookingShareLink });
       return;
     }
-    await navigator.clipboard.writeText(bookingLink);
+    await navigator.clipboard.writeText(bookingShareLink);
     toast.success("Link copiado para compartilhar.");
   };
 
@@ -1778,7 +1792,7 @@ function BookingLinkCard({ bookingLink }: { bookingLink: string }) {
                 size="sm"
                 className="rounded-full"
                 onClick={() => {
-                  navigator.clipboard.writeText(bookingLink);
+                  navigator.clipboard.writeText(bookingShareLink);
                   toast.success("Link copiado!");
                 }}
               >
@@ -1973,12 +1987,12 @@ function SimplePieCard({
 function VacantSlotsCard({
   slots,
   loading,
-  bookingLink,
+  bookingShareLink,
   tenantName,
 }: {
   slots: any[];
   loading: boolean;
-  bookingLink: string;
+  bookingShareLink: string;
   tenantName: string;
 }) {
   const shareSlots = async () => {
@@ -1991,11 +2005,11 @@ function VacantSlotsCard({
             `${slot.time} (${slot.available} profissional${slot.available === 1 ? "" : "is"})`,
         )
         .join(" · "),
-      `Agende aqui: ${bookingLink}`,
+      `Agende aqui: ${bookingShareLink}`,
     ].join("\n");
     try {
       if (navigator.share)
-        await navigator.share({ title: `Horários do ${tenantName}`, text, url: bookingLink });
+        await navigator.share({ title: `Horários do ${tenantName}`, text, url: bookingShareLink });
       else {
         await navigator.clipboard.writeText(text);
         toast.success("Horários copiados para compartilhar.");

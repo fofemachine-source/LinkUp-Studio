@@ -150,6 +150,7 @@ type AgendaPremiumProps = {
   slotMinutes: number;
   isDayClosed: boolean;
   bookingLink: string;
+  bookingShareLink?: string;
   movingAppointmentId?: string | null;
   onDateChange: (date: Date) => void;
   onViewModeChange: (mode: AgendaViewMode) => void;
@@ -232,6 +233,7 @@ export function AgendaPremium({
   slotMinutes,
   isDayClosed,
   bookingLink,
+  bookingShareLink,
   movingAppointmentId,
   onDateChange,
   onViewModeChange,
@@ -559,7 +561,7 @@ export function AgendaPremium({
                       variant="outline"
                       className="h-9 rounded-xl px-3 text-xs"
                       onClick={async () => {
-                        await navigator.clipboard.writeText(bookingLink);
+                        await navigator.clipboard.writeText(bookingShareLink || bookingLink);
                         toast.success("Link de agendamento copiado.");
                       }}
                       disabled={!bookingLink}
@@ -620,7 +622,7 @@ export function AgendaPremium({
                   size="sm"
                   className="h-8 rounded-lg px-2 text-[10px]"
                   onClick={() => {
-                    navigator.clipboard.writeText(bookingLink);
+                    navigator.clipboard.writeText(bookingShareLink || bookingLink);
                   }}
                 >
                   <Copy className="mr-1 h-3 w-3" /> Copiar
@@ -885,7 +887,7 @@ export function AgendaPremium({
           <Button
             variant="outline"
             className="rounded-xl"
-            onClick={() => navigator.clipboard.writeText(bookingLink)}
+            onClick={() => navigator.clipboard.writeText(bookingShareLink || bookingLink)}
           >
             <Copy className="mr-2 h-4 w-4" /> Copiar link
           </Button>
