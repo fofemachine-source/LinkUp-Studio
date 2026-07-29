@@ -29,6 +29,19 @@ function upsertDocumentLink(selector: string, rel: string, href: string) {
   if (!existing) document.head.appendChild(element);
 }
 
+function shouldReloadForTenantInitialHead(tenantSlug: string, hadTenantSearch: boolean) {
+  if (hadTenantSearch) return false;
+
+  try {
+    const key = `linkup:pwa-initial-head:${tenantSlug}`;
+    if (window.sessionStorage.getItem(key) === "1") return false;
+    window.sessionStorage.setItem(key, "1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function syncPwaDocumentHead({
   title,
   themeColor,
@@ -81,8 +94,19 @@ export function syncPwaDocumentHead({
 
   if (tenantSlug && window.location.pathname.startsWith("/app")) {
     const currentUrl = new URL(window.location.href);
-    if (currentUrl.searchParams.get("tenant") !== tenantSlug) {
+    const currentTenant = currentUrl.searchParams.get("tenant");
+
+    if (currentTenant !== tenantSlug) {
       currentUrl.searchParams.set("tenant", tenantSlug);
+
+      if (
+        currentUrl.pathname === "/app" &&
+        shouldReloadForTenantInitialHead(tenantSlug, Boolean(currentTenant))
+      ) {
+        window.location.replace(currentUrl.toString());
+        return;
+      }
+
       window.history.replaceState(window.history.state, "", currentUrl);
     }
   }

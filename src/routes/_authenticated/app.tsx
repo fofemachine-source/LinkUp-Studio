@@ -28,12 +28,41 @@ import {
   normalizePwaHexColor,
 } from "@/lib/pwa-identity";
 import { syncPwaDocumentHead } from "@/lib/pwa-head";
+import { getPublicTenantPreview } from "@/lib/booking.functions";
 import {
   projectPasswordAuthErrorMessage,
   validateProjectPassword,
 } from "@/lib/password-policy";
 
+type AppRouteSearch = {
+  tenant?: string;
+};
+
+type AppPwaTenant = {
+  name?: string | null;
+  slug?: string | null;
+  logo_url?: string | null;
+  primary_color?: string | null;
+};
+
+function normalizeTenantSearch(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+async function getPublicPwaTenant(slug?: string | null): Promise<AppPwaTenant | null> {
+  if (!slug) return null;
+
+  try {
+    return await getPublicTenantPreview({ data: { slug } });
+  } catch {
+    return null;
+  }
+}
+
 export const Route = createFileRoute("/_authenticated/app")({
+  validateSearch: (search: Record<string, unknown>): AppRouteSearch => ({
+    tenant: normalizeTenantSearch(search.tenant),
+  }),
   beforeLoad: async ({ context, location }) => {
     const access = await getTenantAccess(context.queryClient);
     const hasTenant = Boolean(
@@ -59,9 +88,18 @@ export const Route = createFileRoute("/_authenticated/app")({
       });
     }
   },
-  loader: async ({ context }) => getTenantAccess(context.queryClient),
+  loader: async ({ context, location }) => {
+    const access = await getTenantAccess(context.queryClient);
+    const search = location.search as AppRouteSearch;
+    const publicTenant = await getPublicPwaTenant(search.tenant);
+
+    return {
+      ...access,
+      pwaTenant: access.tenant?.slug ? access.tenant : publicTenant,
+    };
+  },
   head: ({ loaderData }) => {
-    const tenant = loaderData?.tenant;
+    const tenant = loaderData?.pwaTenant;
     if (!tenant?.slug) return {};
 
     const title = buildAdminPwaDisplayName(tenant.name);

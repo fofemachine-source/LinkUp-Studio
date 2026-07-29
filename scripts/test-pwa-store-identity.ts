@@ -45,13 +45,18 @@ assert(
   pwaHead.includes('meta[name="apple-mobile-web-app-title"]') &&
     pwaHead.includes('link[rel="apple-touch-icon"]') &&
     pwaHead.includes('meta[name="application-name"]') &&
-    pwaHead.includes('currentUrl.searchParams.set("tenant", tenantSlug)'),
-  "Tags Apple e nome do aplicativo devem ser atualizadas no navegador.",
+    pwaHead.includes('currentUrl.searchParams.set("tenant", tenantSlug)') &&
+    pwaHead.includes("window.location.replace") &&
+    pwaHead.includes("linkup:pwa-initial-head"),
+  "Tags Apple e nome do aplicativo devem ser atualizadas e o ADM deve recarregar uma vez com tenant no iOS.",
 );
 
 assert(
   appRoute.includes("buildAdminPwaHeadLinks") &&
+    appRoute.includes("getPublicTenantPreview") &&
+    appRoute.includes("validateSearch") &&
     appRoute.includes("loader: async") &&
+    appRoute.includes("pwaTenant") &&
     appRoute.includes('name: "apple-mobile-web-app-title"') &&
     appRoute.includes("syncPwaDocumentHead") &&
     appRoute.includes("tenant?.slug") &&
