@@ -51,6 +51,7 @@ const editableBooleanFields = [
   "notify_client_reschedule",
   "notify_professional_reschedule",
   "reminder_enabled",
+  "inbound_auto_reply_enabled",
 ] as const;
 
 function json(body: unknown, status = 200) {
@@ -264,7 +265,8 @@ async function cachePlatformConnectorStatus(
     .update({
       platform_whatsapp_connection_status: status,
       platform_whatsapp_connected_phone: digits(payload.phone) || null,
-      platform_whatsapp_last_connection_error: text(payload.error ?? payload.lastError, 1000) || null,
+      platform_whatsapp_last_connection_error:
+        text(payload.error ?? payload.lastError, 1000) || null,
       platform_whatsapp_last_status_at: new Date().toISOString(),
     })
     .eq("id", "global");
@@ -308,6 +310,15 @@ function buildCancellationLink(payload: Record<string, unknown>, appUrl: string)
   return `${appUrl}/booking/${encodeURIComponent(slug)}?cancel=${encodeURIComponent(token)}`;
 }
 
+function buildBookingLink(payload: Record<string, unknown>, appUrl: string) {
+  const explicit = scalarTemplateValue(payload.link_agendamento || payload.booking_link).trim();
+  if (explicit) return explicit;
+
+  const slug = scalarTemplateValue(payload.tenant_slug || payload.slug).trim();
+  if (!appUrl || !slug) return "";
+  return `${appUrl}/booking/${encodeURIComponent(slug)}`;
+}
+
 function renderTemplate(template: unknown, payloadValue: unknown, appUrl: string) {
   const payload = isRecord(payloadValue) ? payloadValue : {};
   const variables: Record<string, string> = {};
@@ -318,6 +329,8 @@ function renderTemplate(template: unknown, payloadValue: unknown, appUrl: string
 
   variables.link_cancelamento = buildCancellationLink(payload, appUrl);
   variables.cancellation_link = variables.link_cancelamento;
+  variables.link_agendamento = buildBookingLink(payload, appUrl);
+  variables.booking_link = variables.link_agendamento;
 
   const rendered = normalizeWhatsAppFormatting(
     String(template || "")
@@ -796,11 +809,7 @@ async function processQueue(admin: SupabaseClient, limit: number, request: Reque
         );
 
         if (!platformEnabled) {
-          await cancelQueueRow(
-            admin,
-            row.id,
-            "Avisos WhatsApp da matriz estão desativados.",
-          );
+          await cancelQueueRow(admin, row.id, "Avisos WhatsApp da matriz estão desativados.");
           summary.cancelled += 1;
           continue;
         }
@@ -814,41 +823,37 @@ async function processQueue(admin: SupabaseClient, limit: number, request: Reque
         }
       } else {
         const { data: settings, error: settingsError } = await admin
-        .from("tenant_whatsapp_settings")
-        .select("enabled, session_id")
-        .eq("tenant_id", row.tenant_id)
-        .maybeSingle();
-      if (settingsError) throw settingsError;
-      if (!settings?.enabled) {
-        await cancelQueueRow(
-          admin,
-          row.id,
-          "AutomaÃ§Ã£o do WhatsApp estÃ¡ desativada para esta loja.",
-        );
-        summary.cancelled += 1;
-        continue;
-      }
+          .from("tenant_whatsapp_settings")
+          .select("enabled, session_id")
+          .eq("tenant_id", row.tenant_id)
+          .maybeSingle();
+        if (settingsError) throw settingsError;
+        if (!settings?.enabled) {
+          await cancelQueueRow(
+            admin,
+            row.id,
+            "AutomaÃ§Ã£o do WhatsApp estÃ¡ desativada para esta loja.",
+          );
+          summary.cancelled += 1;
+          continue;
+        }
 
         senderSessionId = String(settings.session_id || row.session_id || row.tenant_id);
       }
 
       renderedMessage = renderTemplate(row.template, row.payload, appUrl);
-      const result = await connectorRequest(
-        senderSessionId,
-        "/send",
-        {
-          method: "POST",
-          timeoutMs: 30_000,
-          body: {
-            phone: row.recipient_phone,
-            message: renderedMessage,
-            kind: row.event_type,
-            tenantId: row.tenant_id,
-            senderScope,
-            queueId: row.id,
-          },
+      const result = await connectorRequest(senderSessionId, "/send", {
+        method: "POST",
+        timeoutMs: 30_000,
+        body: {
+          phone: row.recipient_phone,
+          message: renderedMessage,
+          kind: row.event_type,
+          tenantId: row.tenant_id,
+          senderScope,
+          queueId: row.id,
         },
-      );
+      });
 
       if (!result.ok || result.sent === false) {
         throw result;
@@ -1176,6 +1181,28 @@ Deno.serve(async (request) => {
           );
         }
         update.reminder_minutes_before = reminder;
+      }
+      if ("inbound_auto_reply_cooldown_minutes" in incoming) {
+        const cooldown = Number(incoming.inbound_auto_reply_cooldown_minutes);
+        if (!Number.isInteger(cooldown) || cooldown < 0 || cooldown > 43200) {
+          return json(
+            {
+              error: "O intervalo da resposta automática deve ficar entre 0 e 30 dias.",
+            },
+            400,
+          );
+        }
+        update.inbound_auto_reply_cooldown_minutes = cooldown;
+      }
+      if ("inbound_auto_reply_template" in incoming) {
+        const template = text(
+          normalizeWhatsAppFormatting(incoming.inbound_auto_reply_template),
+          3900,
+        );
+        if (!template) {
+          return json({ error: "A resposta automática não pode ficar vazia." }, 400);
+        }
+        update.inbound_auto_reply_template = template;
       }
 
       const { data, error } = await admin

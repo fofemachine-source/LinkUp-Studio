@@ -73,6 +73,9 @@ type WhatsAppSettingsRow = {
   notify_professional_reschedule: boolean;
   reminder_enabled: boolean;
   reminder_minutes_before: number;
+  inbound_auto_reply_enabled: boolean;
+  inbound_auto_reply_cooldown_minutes: number;
+  inbound_auto_reply_template: string;
   client_registration_template: string;
   client_booking_template: string;
   professional_booking_template: string;
@@ -97,6 +100,9 @@ type WhatsAppForm = Pick<
   | "notify_professional_reschedule"
   | "reminder_enabled"
   | "reminder_minutes_before"
+  | "inbound_auto_reply_enabled"
+  | "inbound_auto_reply_cooldown_minutes"
+  | "inbound_auto_reply_template"
   | "client_registration_template"
   | "client_booking_template"
   | "professional_booking_template"
@@ -146,6 +152,14 @@ const defaultForm: WhatsAppForm = {
   notify_professional_reschedule: true,
   reminder_enabled: true,
   reminder_minutes_before: 120,
+  inbound_auto_reply_enabled: false,
+  inbound_auto_reply_cooldown_minutes: 0,
+  inbound_auto_reply_template: `Olá! 👋 Recebemos sua mensagem no(a) *{salao}*.
+
+Para consultar horários e fazer seu agendamento, acesse:
+{link_agendamento}
+
+Se precisar de ajuda, nossa equipe responderá por aqui.`,
   client_registration_template: `🎉 *Tudo pronto, {cliente}!*
 
 Seu cadastro no(a) *{salao}* foi confirmado com sucesso.
@@ -227,6 +241,9 @@ const settingsColumns = [
   "notify_professional_reschedule",
   "reminder_enabled",
   "reminder_minutes_before",
+  "inbound_auto_reply_enabled",
+  "inbound_auto_reply_cooldown_minutes",
+  "inbound_auto_reply_template",
   "client_registration_template",
   "client_booking_template",
   "professional_booking_template",
@@ -304,6 +321,7 @@ const eventLabels: Record<string, string> = {
   subscription_payment_reminder: "Lembrete de assinatura",
   subscription_payment_confirmed: "Pagamento de assinatura confirmado",
   subscription_overdue: "Assinatura em atraso",
+  inbound_auto_reply: "Resposta automática recebida",
   test: "Teste",
 };
 
@@ -342,6 +360,7 @@ function dateTimeDisplay(value: string | null | undefined) {
 function normalizeWhatsAppForm(form: WhatsAppForm): WhatsAppForm {
   return {
     ...form,
+    inbound_auto_reply_template: normalizeWhatsAppFormatting(form.inbound_auto_reply_template),
     client_registration_template: normalizeWhatsAppFormatting(form.client_registration_template),
     client_booking_template: normalizeWhatsAppFormatting(form.client_booking_template),
     professional_booking_template: normalizeWhatsAppFormatting(form.professional_booking_template),
@@ -377,6 +396,13 @@ function formFromSettings(settings: WhatsAppSettingsRow): WhatsAppForm {
     reminder_enabled: settings.reminder_enabled ?? defaultForm.reminder_enabled,
     reminder_minutes_before:
       settings.reminder_minutes_before ?? defaultForm.reminder_minutes_before,
+    inbound_auto_reply_enabled:
+      settings.inbound_auto_reply_enabled ?? defaultForm.inbound_auto_reply_enabled,
+    inbound_auto_reply_cooldown_minutes:
+      settings.inbound_auto_reply_cooldown_minutes ??
+      defaultForm.inbound_auto_reply_cooldown_minutes,
+    inbound_auto_reply_template:
+      settings.inbound_auto_reply_template || defaultForm.inbound_auto_reply_template,
     client_registration_template:
       settings.client_registration_template || defaultForm.client_registration_template,
     client_booking_template:
@@ -462,13 +488,13 @@ export function WhatsAppSettings({ tenantId }: { tenantId?: string }) {
     enabled: Boolean(tenantId),
     refetchInterval: 15_000,
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from("tenant_whatsapp_settings")
         .select(settingsColumns)
-        .eq("tenant_id", tenantId)
+        .eq("tenant_id", tenantId!)
         .maybeSingle();
       if (error) throw error;
-      return (data ?? null) as WhatsAppSettingsRow | null;
+      return (data ?? null) as unknown as WhatsAppSettingsRow | null;
     },
   });
 
@@ -477,14 +503,14 @@ export function WhatsAppSettings({ tenantId }: { tenantId?: string }) {
     enabled: Boolean(tenantId),
     refetchInterval: 20_000,
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from("whatsapp_message_queue")
         .select(queueColumns)
-        .eq("tenant_id", tenantId)
+        .eq("tenant_id", tenantId!)
         .order("created_at", { ascending: false })
         .limit(30);
       if (error) throw error;
-      return (data ?? []) as QueueRow[];
+      return (data ?? []) as unknown as QueueRow[];
     },
   });
 
@@ -961,6 +987,61 @@ export function WhatsAppSettings({ tenantId }: { tenantId?: string }) {
             </div>
           </div>
 
+          <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+            <div className="grid items-end gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+              <SettingSwitch
+                label="Responder mensagens recebidas"
+                description="Quando um cliente escrever no WhatsApp da loja, envia esta resposta com o link de agendamento. Grupos, status e mensagens da própria loja são ignorados."
+                checked={form.inbound_auto_reply_enabled}
+                onCheckedChange={(inbound_auto_reply_enabled) =>
+                  setForm((current) => ({ ...current, inbound_auto_reply_enabled }))
+                }
+              />
+              <div className="space-y-2">
+                <Label htmlFor="inbound-auto-reply-cooldown">Repetir após (minutos)</Label>
+                <Input
+                  id="inbound-auto-reply-cooldown"
+                  type="number"
+                  min={0}
+                  max={43200}
+                  step={1}
+                  disabled={!form.inbound_auto_reply_enabled}
+                  value={form.inbound_auto_reply_cooldown_minutes}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      inbound_auto_reply_cooldown_minutes: Number(event.target.value),
+                    }))
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Use 0 para responder a cada nova mensagem. Se preferir evitar repetições durante a
+                  mesma conversa, informe por exemplo 60 minutos.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="inbound-auto-reply-template">Mensagem automática</Label>
+              <Textarea
+                id="inbound-auto-reply-template"
+                rows={6}
+                disabled={!form.inbound_auto_reply_enabled}
+                value={form.inbound_auto_reply_template}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    inbound_auto_reply_template: event.target.value,
+                  }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Variáveis disponíveis: <code>{"{salao}"}</code> e{" "}
+                <code>{"{link_agendamento}"}</code>.
+              </p>
+            </div>
+          </div>
+
           <SaveButton
             busy={busyAction === "save"}
             disabled={Boolean(busyAction)}
@@ -979,6 +1060,11 @@ export function WhatsAppSettings({ tenantId }: { tenantId?: string }) {
                   notify_professional_reschedule: form.notify_professional_reschedule,
                   reminder_enabled: form.reminder_enabled,
                   reminder_minutes_before: form.reminder_minutes_before,
+                  inbound_auto_reply_enabled: form.inbound_auto_reply_enabled,
+                  inbound_auto_reply_cooldown_minutes: form.inbound_auto_reply_cooldown_minutes,
+                  inbound_auto_reply_template: normalizeWhatsAppFormatting(
+                    form.inbound_auto_reply_template,
+                  ),
                 },
               })
             }

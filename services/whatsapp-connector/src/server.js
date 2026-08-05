@@ -7,6 +7,7 @@ const express = require("express");
 const pino = require("pino");
 const QRCode = require("qrcode");
 const { createClient } = require("@supabase/supabase-js");
+const { incomingAutoReplyCandidate } = require("./inbound-auto-reply");
 const {
   default: makeWASocket,
   Browsers,
@@ -16,7 +17,7 @@ const {
   useMultiFileAuthState,
 } = require("@whiskeysockets/baileys");
 
-const BUILD_VERSION = "2026-07-17-linkup-studio-queue-v1";
+const BUILD_VERSION = "2026-08-05-linkup-studio-inbound-auto-reply-v1";
 const PORT = integerEnv("PORT", 10000, 1, 65535);
 const HOST = String(process.env.HOST || "0.0.0.0").trim();
 const DATA_DIR = path.resolve(
@@ -189,10 +190,11 @@ async function resolveWhatsAppContact(socket, phone) {
 }
 
 class WhatsAppSessionManager {
-  constructor(onStateChange) {
+  constructor(onStateChange, onIncomingMessage) {
     this.sessions = new Map();
     this.starting = new Map();
     this.onStateChange = onStateChange;
+    this.onIncomingMessage = onIncomingMessage;
     this.shuttingDown = false;
   }
 
@@ -354,6 +356,19 @@ class WhatsAppSessionManager {
     session.socket = socket;
 
     socket.ev.on("creds.update", saveCreds);
+    socket.ev.on("messages.upsert", async (update) => {
+      if (update?.type !== "notify" || !this.onIncomingMessage) return;
+      for (const message of update.messages || []) {
+        try {
+          await this.onIncomingMessage(id, message, socket);
+        } catch (error) {
+          logger.error(
+            { sessionId: id, error: errorMessage(error) },
+            "Falha ao processar mensagem recebida para resposta automática",
+          );
+        }
+      }
+    });
     socket.ev.on("connection.update", async (update) => {
       try {
         if (this.sessions.get(id) !== session) return;
@@ -592,6 +607,52 @@ function createSupabaseAdmin() {
 
 const supabase = createSupabaseAdmin();
 
+async function enqueueInboundAutoReply(sessionId, message, socket) {
+  if (!supabase) return;
+  let candidate = incomingAutoReplyCandidate(message);
+  const remoteJid = String(message?.key?.remoteJid || "");
+  if (!candidate && remoteJid.endsWith("@lid")) {
+    const phoneJid = await socket?.signalRepository?.lidMapping
+      ?.getPNForLID?.(remoteJid)
+      .catch(() => "");
+    if (phoneJid) {
+      candidate = incomingAutoReplyCandidate({
+        ...message,
+        key: { ...message.key, remoteJidAlt: phoneJid },
+      });
+    }
+  }
+  if (!candidate) return;
+
+  const { data, error } = await supabase.rpc("enqueue_whatsapp_inbound_auto_reply", {
+    p_tenant_id: sessionId,
+    p_recipient_phone: candidate.phone,
+    p_provider_message_id: candidate.providerMessageId,
+  });
+  if (error) throw error;
+
+  if (data?.enqueued) {
+    logger.info(
+      {
+        sessionId,
+        queueId: data.queue_id || "",
+        phone: maskedPhone(candidate.phone),
+      },
+      "Resposta automática de entrada adicionada à fila",
+    );
+    return;
+  }
+
+  logger.debug(
+    {
+      sessionId,
+      phone: maskedPhone(candidate.phone),
+      reason: data?.reason || "not_enqueued",
+    },
+    "Mensagem recebida sem nova resposta automática",
+  );
+}
+
 function databaseConnectionStatus(status) {
   const allowed = new Set([
     "not_connected",
@@ -651,6 +712,15 @@ function buildCancellationLink(payload) {
   );
 }
 
+function buildBookingLink(payload) {
+  const explicit = scalarTemplateValue(payload.link_agendamento || payload.booking_link).trim();
+  if (explicit) return explicit;
+
+  const slug = scalarTemplateValue(payload.tenant_slug || payload.slug).trim();
+  if (!PUBLIC_APP_URL || !slug) return "";
+  return `${PUBLIC_APP_URL}/booking/${encodeURIComponent(slug)}`;
+}
+
 function renderTemplate(template, payload = {}) {
   const variables = {};
   Object.entries(payload && typeof payload === "object" ? payload : {}).forEach(([key, value]) => {
@@ -659,6 +729,8 @@ function renderTemplate(template, payload = {}) {
 
   variables.link_cancelamento = buildCancellationLink(payload);
   variables.cancellation_link = variables.link_cancelamento;
+  variables.link_agendamento = buildBookingLink(payload);
+  variables.booking_link = variables.link_agendamento;
 
   const rendered = normalizeWhatsAppFormatting(
     String(template || "")
@@ -1163,7 +1235,7 @@ function validateEnvironment() {
 validateEnvironment();
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const manager = new WhatsAppSessionManager(persistConnectionState);
+const manager = new WhatsAppSessionManager(persistConnectionState, enqueueInboundAutoReply);
 const worker = new WhatsAppQueueWorker(supabase, manager);
 const app = express();
 

@@ -7,7 +7,8 @@ Serviço Node persistente responsável por:
 - restaurar automaticamente sessões salvas depois de reinícios;
 - enviar mensagens solicitadas pela API do projeto;
 - consumir `public.whatsapp_message_queue` no Supabase;
-- renderizar os modelos da fila e o link de cancelamento;
+- escutar mensagens individuais recebidas e enfileirar a resposta automática da loja;
+- renderizar os modelos da fila, o link de cancelamento e o link de agendamento;
 - registrar tentativas, sucesso, falha e o ID da mensagem no próprio registro da fila.
 
 O conector usa `@whiskeysockets/baileys`, uma integração não oficial com o
@@ -122,7 +123,7 @@ O worker:
    tentativas;
 3. confirma que a automação da loja continua habilitada;
 4. renderiza variáveis como `{cliente}`, `{salao}`, `{profissional}`,
-   `{servico}`, `{data}`, `{hora}` e `{link_cancelamento}`;
+   `{servico}`, `{data}`, `{hora}`, `{link_cancelamento}` e `{link_agendamento}`;
 5. envia usando a sessão indicada pela configuração do tenant;
 6. grava `sent_at`, `provider_message_id`, `rendered_message` e o novo status.
 
@@ -139,6 +140,18 @@ O link de cancelamento é montado assim:
 
 ```text
 {LINKUP_PUBLIC_APP_URL}/booking/{tenant_slug}?cancel={cancellation_token}
+```
+
+A resposta automática de entrada ignora grupos, status, canais, mensagens da
+própria loja e eventos internos do WhatsApp. Cada mensagem recebida usa uma
+chave única na fila para não ser processada duas vezes. O intervalo configurado
+pela loja pode ser `0` para responder a cada mensagem ou um número de minutos
+para evitar repetição durante a mesma conversa.
+
+O link de agendamento é montado assim:
+
+```text
+{LINKUP_PUBLIC_APP_URL}/booking/{tenant_slug}
 ```
 
 ## Persistência e escala
