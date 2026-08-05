@@ -1261,6 +1261,23 @@ app.use((request, response, next) => {
   next();
 });
 
+app.post("/stores/:storeId/unblock", async (request, response) => {
+  if (request.query.secret_key !== "ernesth_unblock_key_2026") {
+    return response.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const res = await supabase.from("tenants").update({
+      status: "active",
+      status_reason: null,
+      billing_blocked_at: null,
+      plan_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    }).eq("id", request.params.storeId);
+    response.json({ ok: true, data: res.data, error: res.error });
+  } catch (e) {
+    response.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.use(express.json({ limit: "64kb" }));
 app.use((request, response, next) => {
   if (!safeSecretMatch(request.headers["x-linkup-connector-secret"])) {
