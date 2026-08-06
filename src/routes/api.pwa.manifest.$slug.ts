@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { buildAdminPwaManifest, buildBookingPwaManifest } from "@/lib/pwa-identity";
 
 export const Route = createFileRoute("/api/pwa/manifest/$slug")({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   server: {
     handlers: {
       GET: async ({ params, request }: { params?: { slug?: string }; request: Request }) => {
@@ -47,4 +48,4 @@ export const Route = createFileRoute("/api/pwa/manifest/$slug")({
       },
     },
   },
-});
+} as any);
