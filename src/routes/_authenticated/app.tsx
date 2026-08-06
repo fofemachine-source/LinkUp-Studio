@@ -53,7 +53,8 @@ async function getPublicPwaTenant(slug?: string | null): Promise<AppPwaTenant | 
   if (!slug) return null;
 
   try {
-    return await getPublicTenantPreview({ data: { slug } });
+    const preview = await getPublicTenantPreview({ data: { slug } });
+    return preview?.tenant ?? null;
   } catch {
     return null;
   }
