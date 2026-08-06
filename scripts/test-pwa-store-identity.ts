@@ -39,8 +39,9 @@ assert(
   pwaIdentity.includes("buildAdminPwaManifest") &&
     pwaIdentity.includes("context=admin") &&
     pwaIdentity.includes("start_url: `/app?tenant=${encodedSlug}`") &&
-    pwaIdentity.includes('scope: "/"'),
-  "Manifesto do ADM deve ser específico por loja.",
+    pwaIdentity.includes('scope: "/app"') &&
+    pwaIdentity.includes("PWA_MANIFEST_VERSION"),
+  "Manifesto do ADM deve ser específico por loja e não pode abranger o agendamento.",
 );
 
 assert(
@@ -78,7 +79,7 @@ assert(
     installRoute.includes("buildAdminPwaHeadLinks") &&
     installRoute.includes('name: "apple-mobile-web-app-title"') &&
     installRoute.includes('name: "application-name"') &&
-    installRoute.includes('/app?tenant=${encodeURIComponent(slug)}'),
+    installRoute.includes("/app?tenant=${encodeURIComponent(slug)}"),
   "iOS deve ter rota publica de instalacao do ADM com nome, icone e manifest da loja antes do app carregar.",
 );
 

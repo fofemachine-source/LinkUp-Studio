@@ -1,5 +1,6 @@
 const DEFAULT_PWA_THEME_COLOR = "#f59e0b";
 const DEFAULT_PWA_BACKGROUND_COLOR = "#ffffff";
+const PWA_MANIFEST_VERSION = "2026-08-session-isolation-v1";
 
 type BookingPwaTenant = {
   name?: string | null;
@@ -47,6 +48,10 @@ function hashForUrl(value: string | null | undefined) {
     hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
   }
   return hash.toString(36);
+}
+
+function buildManifestVersion(logoUrl: string | null | undefined) {
+  return `${PWA_MANIFEST_VERSION}-${hashForUrl(logoUrl)}`;
 }
 
 export function buildBookingPwaIconPath(
@@ -114,7 +119,7 @@ export function buildAdminPwaManifest(slug: string, tenant: BookingPwaTenant) {
     lang: "pt-BR",
     dir: "ltr",
     start_url: `/app?tenant=${encodedSlug}`,
-    scope: "/",
+    scope: "/app",
     display: "standalone",
     display_override: ["standalone", "minimal-ui", "browser"],
     background_color: DEFAULT_PWA_BACKGROUND_COLOR,
@@ -137,7 +142,7 @@ export function buildAdminPwaManifest(slug: string, tenant: BookingPwaTenant) {
 }
 
 export function buildBookingPwaHeadLinks(slug: string, logoUrl?: string | null) {
-  const version = hashForUrl(logoUrl);
+  const version = buildManifestVersion(logoUrl);
   return {
     manifestHref: `/api/pwa/manifest/${encodeURIComponent(slug)}?v=${version}`,
     faviconHref: buildBookingPwaIconPath(slug, { size: 48, version }),
@@ -150,7 +155,7 @@ export function buildBookingPwaSocialImagePath(slug: string, logoUrl?: string | 
 }
 
 export function buildAdminPwaHeadLinks(slug: string, logoUrl?: string | null) {
-  const version = hashForUrl(logoUrl);
+  const version = buildManifestVersion(logoUrl);
   const encodedSlug = encodeURIComponent(slug);
   return {
     manifestHref: `/api/pwa/manifest/${encodedSlug}?context=admin&v=${version}`,

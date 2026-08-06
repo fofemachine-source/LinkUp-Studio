@@ -12,6 +12,7 @@
     "test:access-control": "node --experimental-strip-types scripts/test-access-control.ts",
     "test:access-security": "node --experimental-strip-types scripts/test-access-security.ts",
     "test:commission-finance": "node --experimental-strip-types scripts/test-commission-finance.ts",
+    "test:pwa-session-isolation": "node --experimental-strip-types scripts/test-pwa-session-isolation.ts",
     "format": "prettier --write ."
   },
   "dependencies": {

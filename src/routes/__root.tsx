@@ -6,12 +6,14 @@ import {
   Scripts,
   Link,
   useRouter,
+  useRouterState,
 } from "@tanstack/react-router";
 import { Component, useEffect, type ErrorInfo, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "sonner";
 import { authUserQueryKey } from "@/lib/auth-cache";
+import { isBookingSurfacePath } from "@/lib/auth-surface";
 import {
   installStaleBuildRecovery,
   STALE_BUILD_RECOVERY_INLINE_SCRIPT,
@@ -102,10 +104,16 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
+  const currentPath = useRouterState({ select: (state) => state.location.pathname });
   useEffect(() => {
     installStaleBuildRecovery();
   }, []);
   useEffect(() => {
+    // Booking customers use their own HttpOnly, tenant-scoped session. Keeping
+    // the administrative Supabase listener out of this surface prevents an ADM
+    // login/logout in another tab or PWA from clearing the booking state.
+    if (isBookingSurfacePath(currentPath)) return;
+
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
         queryClient.setQueryData(authUserQueryKey, session?.user ?? null);
@@ -115,7 +123,7 @@ function RootComponent() {
       }
     });
     return () => sub.subscription.unsubscribe();
-  }, [queryClient, router]);
+  }, [currentPath, queryClient, router]);
   return (
     <QueryClientProvider client={queryClient}>
       <RootRuntimeErrorBoundary>

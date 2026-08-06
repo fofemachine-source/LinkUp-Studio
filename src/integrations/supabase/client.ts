@@ -26,6 +26,66 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
   };
 }
 
+const AUTH_TAB_ID_KEY = 'linkup-studio:auth-tab-id';
+const AUTH_STORAGE_PREFIX = 'linkup-studio-auth';
+
+function createAuthContextId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function isStandalonePwa() {
+  if (typeof window === 'undefined') return false;
+  const nav = window.navigator as Navigator & { standalone?: boolean };
+  return window.matchMedia?.('(display-mode: standalone)').matches || nav.standalone === true;
+}
+
+function bookingSlugFromPath(pathname: string) {
+  const [, slug] = pathname.match(/^\/booking\/([^/?#]+)/) ?? [];
+  return slug ? decodeURIComponent(slug) : 'booking';
+}
+
+function surfaceFromRoute(pathname: string, searchParams: URLSearchParams) {
+  if (pathname === '/auth') {
+    const redirect = searchParams.get('redirect');
+    if (redirect) {
+      try {
+        const redirectUrl = new URL(redirect, window.location.origin);
+        return surfaceFromRoute(redirectUrl.pathname, redirectUrl.searchParams);
+      } catch {
+        if (redirect.startsWith('/booking')) return `booking:${bookingSlugFromPath(redirect)}`;
+      }
+    }
+  }
+
+  if (pathname === '/booking' || pathname.startsWith('/booking/')) {
+    return `booking:${bookingSlugFromPath(pathname)}`;
+  }
+
+  const tenantSlug = searchParams.get('tenant');
+  return tenantSlug ? `admin:${tenantSlug}` : 'admin';
+}
+
+function getBrowserAuthStorage() {
+  if (typeof window === 'undefined') return undefined;
+  return isStandalonePwa() ? window.localStorage : window.sessionStorage;
+}
+
+function getBrowserAuthStorageKey() {
+  if (typeof window === 'undefined') return `${AUTH_STORAGE_PREFIX}:server`;
+
+  const surface = surfaceFromRoute(window.location.pathname, new URLSearchParams(window.location.search));
+  if (isStandalonePwa()) return `${AUTH_STORAGE_PREFIX}:${surface}`;
+
+  let tabId = window.sessionStorage.getItem(AUTH_TAB_ID_KEY);
+  if (!tabId) {
+    tabId = createAuthContextId();
+    window.sessionStorage.setItem(AUTH_TAB_ID_KEY, tabId);
+  }
+  return `${AUTH_STORAGE_PREFIX}:${surface}:tab:${tabId}`;
+}
 
 function createSupabaseClient() {
   // Use import.meta.env for client-side (Vite build-time replacement)
@@ -48,7 +108,8 @@ function createSupabaseClient() {
       fetch: createSupabaseFetch(SUPABASE_PUBLISHABLE_KEY),
     },
     auth: {
-      storage: typeof window !== 'undefined' ? localStorage : undefined,
+      storage: getBrowserAuthStorage(),
+      storageKey: getBrowserAuthStorageKey(),
       persistSession: true,
       autoRefreshToken: true,
     }
