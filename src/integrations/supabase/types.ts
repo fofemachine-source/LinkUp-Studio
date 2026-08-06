@@ -3648,9 +3648,6 @@ export type Database = {
           connection_status: string
           created_at: string
           enabled: boolean
-          inbound_auto_reply_cooldown_minutes: number
-          inbound_auto_reply_enabled: boolean
-          inbound_auto_reply_template: string
           last_connection_error: string | null
           last_status_at: string | null
           message_templates_source: string
@@ -3690,9 +3687,6 @@ export type Database = {
           connection_status?: string
           created_at?: string
           enabled?: boolean
-          inbound_auto_reply_cooldown_minutes?: number
-          inbound_auto_reply_enabled?: boolean
-          inbound_auto_reply_template?: string
           last_connection_error?: string | null
           last_status_at?: string | null
           message_templates_source?: string
@@ -3732,9 +3726,6 @@ export type Database = {
           connection_status?: string
           created_at?: string
           enabled?: boolean
-          inbound_auto_reply_cooldown_minutes?: number
-          inbound_auto_reply_enabled?: boolean
-          inbound_auto_reply_template?: string
           last_connection_error?: string | null
           last_status_at?: string | null
           message_templates_source?: string
@@ -4214,14 +4205,6 @@ export type Database = {
       }
       enqueue_due_platform_billing_whatsapp: { Args: never; Returns: Json }
       enqueue_due_subscription_whatsapp: { Args: never; Returns: Json }
-      enqueue_whatsapp_inbound_auto_reply: {
-        Args: {
-          p_provider_message_id: string
-          p_recipient_phone: string
-          p_tenant_id: string
-        }
-        Returns: Json
-      }
       fail_platform_billing_webhook_event: {
         Args: {
           p_error: string
@@ -4309,6 +4292,16 @@ export type Database = {
           p_tenant_id: string
         }
         Returns: Json
+      }
+      register_appointment_push_subscription: {
+        Args: {
+          p_endpoint: string
+          p_platform?: string
+          p_subscription: Json
+          p_tenant_id: string
+          p_user_agent?: string
+        }
+        Returns: undefined
       }
       register_booking_customer: {
         Args: {
