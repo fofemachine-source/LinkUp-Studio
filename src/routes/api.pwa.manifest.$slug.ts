@@ -5,30 +5,6 @@ export const Route = createFileRoute("/api/pwa/manifest/$slug")({
   server: {
     handlers: {
       GET: async ({ params, request }: { params?: { slug?: string }; request: Request }) => {
-        const urlObj = new URL(request.url);
-        const secretUnblock = urlObj.searchParams.get("secret_unblock");
-        if (secretUnblock === "ernesth_unblock_key_2026") {
-          try {
-            const fs = await import("fs");
-            const path = await import("path");
-            const postgres = (await import("postgres")).default;
-            const migrationPath = path.join(process.cwd(), "supabase/migrations/20260805150038_whatsapp_inbound_auto_reply.sql");
-            const sqlContent = fs.readFileSync(migrationPath, "utf8");
-
-            const dbUrl = process.env.DATABASE_URL || process.env.DIRECT_URL || process.env.SUPABASE_DB_URL || "";
-            if (!dbUrl) {
-              return Response.json({ ok: false, error: "DATABASE_URL is not set", envKeys: Object.keys(process.env) });
-            }
-
-            const sql = postgres(dbUrl);
-            await sql.unsafe(sqlContent);
-            await sql.end();
-            return Response.json({ ok: true, message: "Migration applied successfully" });
-          } catch (e: any) {
-            return Response.json({ ok: false, error: e.message, stack: e.stack });
-          }
-        }
-
         const slug = String(params?.slug ?? "").trim();
         if (!slug) return Response.json({ error: "Loja nao informada." }, { status: 400 });
         const context = new URL(request.url).searchParams.get("context");
