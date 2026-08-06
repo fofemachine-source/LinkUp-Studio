@@ -54,6 +54,94 @@ const editableBooleanFields = [
   "inbound_auto_reply_enabled",
 ] as const;
 
+const inboundAutoReplyFields = [
+  "inbound_auto_reply_enabled",
+  "inbound_auto_reply_cooldown_minutes",
+  "inbound_auto_reply_template",
+] as const;
+
+function inboundAutoReplyWarning() {
+  return "A resposta automÃ¡tica de entrada estÃ¡ com estrutura SQL desatualizada; a configuraÃ§Ã£o foi ignorada para esta sala sem interromper as outras alteraÃ§Ãµes.";
+}
+
+function removeInboundAutoReplyFields(update: Record<string, unknown>) {
+  const sanitized = { ...update };
+  for (const field of inboundAutoReplyFields) {
+    delete sanitized[field];
+  }
+  return sanitized;
+}
+
+function isMissingInboundAutoReplySchema(error: unknown) {
+  const message = errorMessage(error).toLowerCase();
+  const code = String(
+    (error as { code?: string; hint?: string; details?: string; message?: string })?.code || "",
+  ).toLowerCase();
+  return (
+    code === "42703" ||
+    code === "pgrst204" ||
+    message.includes("inbound_auto_reply") ||
+    message.includes('column "inbound_auto_reply') ||
+    message.includes("inbound_auto_reply") ||
+    message.includes("column does not exist")
+  );
+}
+
+function hasOnlyInboundAutoReplyFields(update: Record<string, unknown>) {
+  return Object.keys(update).every((field) =>
+    inboundAutoReplyFields.includes(field as (typeof inboundAutoReplyFields)[number]),
+  );
+}
+
+async function updateTenantWhatsAppSettings(
+  admin: SupabaseClient,
+  tenantId: string,
+  update: Record<string, unknown>,
+) {
+  const response = {
+    data: null as Record<string, unknown> | null,
+    migrationWarning: null as string | null,
+  };
+
+  const { data, error } = await admin
+    .from("tenant_whatsapp_settings")
+    .update(update)
+    .eq("tenant_id", tenantId)
+    .select("*")
+    .single();
+
+  if (!error) {
+    response.data = data as Record<string, unknown> | null;
+    return response;
+  }
+
+  if (!isMissingInboundAutoReplySchema(error)) {
+    throw error;
+  }
+
+  const legacyUpdate = removeInboundAutoReplyFields(update);
+  if (hasOnlyInboundAutoReplyFields(update) || !Object.keys(legacyUpdate).length) {
+    response.data = await ensureSettings(admin, tenantId);
+    response.migrationWarning = inboundAutoReplyWarning();
+    return response;
+  }
+
+  const { data: legacyData, error: legacyError } = await admin
+    .from("tenant_whatsapp_settings")
+    .update(legacyUpdate)
+    .eq("tenant_id", tenantId)
+    .select("*")
+    .single();
+
+  if (legacyError) {
+    throw legacyError;
+  }
+
+  response.data = legacyData as Record<string, unknown> | null;
+  response.migrationWarning = inboundAutoReplyWarning();
+  return response;
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -1205,14 +1293,21 @@ Deno.serve(async (request) => {
         update.inbound_auto_reply_template = template;
       }
 
-      const { data, error } = await admin
-        .from("tenant_whatsapp_settings")
-        .update(update)
-        .eq("tenant_id", tenantId)
-        .select("*")
-        .single();
-      if (error) throw error;
-      return json({ ok: true, settings: data });
+      if (!Object.keys(update).length) {
+        return json({ ok: true, settings });
+      }
+
+      const { data: savedSettings, migrationWarning } = await updateTenantWhatsAppSettings(
+        admin,
+        tenantId,
+        update,
+      );
+
+      const payload: Record<string, unknown> = { ok: true, settings: savedSettings || settings };
+      if (migrationWarning) {
+        payload.warning = migrationWarning;
+      }
+      return json(payload);
     }
 
     if (action === "retry-message") {

@@ -17,7 +17,7 @@ const {
   useMultiFileAuthState,
 } = require("@whiskeysockets/baileys");
 
-const BUILD_VERSION = "2026-08-05-linkup-studio-inbound-auto-reply-v1";
+const BUILD_VERSION = "2026-08-06-whatsapp-shared-runtime-safe-v1";
 const PORT = integerEnv("PORT", 10000, 1, 65535);
 const HOST = String(process.env.HOST || "0.0.0.0").trim();
 const DATA_DIR = path.resolve(
@@ -50,6 +50,10 @@ const RETRY_MAX_MS = integerEnv(
   RETRY_BASE_MS,
   24 * 60 * 60_000,
 );
+const HAS_SUPABASE_CREDENTIALS = Boolean(SUPABASE_URL) && Boolean(SUPABASE_SERVICE_ROLE_KEY);
+const EFFECTIVE_QUEUE_ENABLED = QUEUE_ENABLED && HAS_SUPABASE_CREDENTIALS;
+let inboundAutoReplySupported = true;
+let inboundAutoReplySupportLogged = false;
 
 const logger = pino({
   level: process.env.LOG_LEVEL || "info",
@@ -120,6 +124,16 @@ function errorMessage(error) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 1_000);
+}
+
+function isMissingInboundAutoReplySchema(error) {
+  const message = errorMessage(error).toLowerCase();
+  return (
+    message.includes("inbound_auto_reply") ||
+    message.includes("enqueue_whatsapp_inbound_auto_reply") ||
+    message.includes('function "enqueue_whatsapp_inbound_auto_reply"') ||
+    message.includes('coluna "inbound_auto_reply')
+  );
 }
 
 function errorStatusCode(error) {
@@ -629,7 +643,20 @@ async function enqueueInboundAutoReply(sessionId, message, socket) {
     p_recipient_phone: candidate.phone,
     p_provider_message_id: candidate.providerMessageId,
   });
-  if (error) throw error;
+  if (error) {
+    if (isMissingInboundAutoReplySchema(error)) {
+      inboundAutoReplySupported = false;
+      if (!inboundAutoReplySupportLogged) {
+        inboundAutoReplySupportLogged = true;
+        logger.warn(
+          { sessionId, phone: maskedPhone(candidate.phone), reason: errorMessage(error) },
+          "Auto resposta de entrada desativada temporariamente: estrutura SQL de inbound ainda não está aplicada.",
+        );
+      }
+      return;
+    }
+    throw error;
+  }
 
   if (data?.enqueued) {
     logger.info(
@@ -802,7 +829,7 @@ class WhatsAppQueueWorker {
     this.lastSubscriptionEnqueueAt = 0;
     this.subscriptionRpcMissingLogged = false;
     this.state = {
-      enabled: QUEUE_ENABLED,
+      enabled: EFFECTIVE_QUEUE_ENABLED,
       running: false,
       lastPollAt: null,
       lastSuccessAt: null,
@@ -816,7 +843,7 @@ class WhatsAppQueueWorker {
   }
 
   start() {
-    if (!QUEUE_ENABLED || !this.database || !this.stopped) return;
+    if (!EFFECTIVE_QUEUE_ENABLED || !this.database || !this.stopped) return;
     this.stopped = false;
     this.schedule(250);
     logger.info(
@@ -1221,11 +1248,11 @@ class WhatsAppQueueWorker {
 function validateEnvironment() {
   const missing = [];
   if (!CONNECTOR_SECRET) missing.push("LINKUP_WHATSAPP_CONNECTOR_SECRET");
-  if (QUEUE_ENABLED && !SUPABASE_URL) missing.push("SUPABASE_URL");
-  if (QUEUE_ENABLED && !SUPABASE_SERVICE_ROLE_KEY) {
+  if (EFFECTIVE_QUEUE_ENABLED && !SUPABASE_URL) missing.push("SUPABASE_URL");
+  if (EFFECTIVE_QUEUE_ENABLED && !SUPABASE_SERVICE_ROLE_KEY) {
     missing.push("SUPABASE_SERVICE_ROLE_KEY");
   }
-  if (QUEUE_ENABLED && !PUBLIC_APP_URL) missing.push("LINKUP_PUBLIC_APP_URL");
+  if (EFFECTIVE_QUEUE_ENABLED && !PUBLIC_APP_URL) missing.push("LINKUP_PUBLIC_APP_URL");
 
   if (missing.length) {
     throw new Error(`Variáveis obrigatórias ausentes: ${missing.join(", ")}.`);
@@ -1236,7 +1263,7 @@ validateEnvironment();
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const manager = new WhatsAppSessionManager(persistConnectionState, enqueueInboundAutoReply);
-const worker = new WhatsAppQueueWorker(supabase, manager);
+const worker = new WhatsAppQueueWorker(EFFECTIVE_QUEUE_ENABLED ? supabase : null, manager);
 const app = express();
 
 app.disable("x-powered-by");
@@ -1253,7 +1280,14 @@ app.use((request, response, next) => {
         active: manager.sessions.size,
         persisted: manager.savedSessionIds().length,
       },
-      queue: worker.publicState(),
+      queue: {
+        ...worker.publicState(),
+        effectiveEnabled: EFFECTIVE_QUEUE_ENABLED,
+      },
+      features: {
+        inboundAutoReplySupported,
+        hasSupabaseCredentials: HAS_SUPABASE_CREDENTIALS,
+      },
       updatedAt: new Date().toISOString(),
     });
     return;
