@@ -4310,6 +4310,16 @@ export type Database = {
         }
         Returns: Json
       }
+      register_appointment_push_subscription: {
+        Args: {
+          p_endpoint: string
+          p_platform?: string
+          p_subscription: Json
+          p_tenant_id: string
+          p_user_agent?: string
+        }
+        Returns: undefined
+      }
       register_booking_customer: {
         Args: {
           p_activation_code?: string

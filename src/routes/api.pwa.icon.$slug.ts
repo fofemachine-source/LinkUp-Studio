@@ -24,6 +24,7 @@ function safeLogoUrl(value: string | null | undefined) {
 }
 
 export const Route = createFileRoute("/api/pwa/icon/$slug")({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   server: {
     handlers: {
       GET: async ({ params, request }: { params?: { slug?: string }; request: Request }) => {
@@ -68,4 +69,4 @@ export const Route = createFileRoute("/api/pwa/icon/$slug")({
       },
     },
   },
-});
+} as any);
