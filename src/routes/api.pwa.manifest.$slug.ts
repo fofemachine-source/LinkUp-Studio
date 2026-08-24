@@ -42,6 +42,16 @@ export const Route = createFileRoute("/api/pwa/manifest/$slug")({
       GET: async ({ params, request }: { params?: { slug?: string }; request: Request }) => {
         const urlObj = new URL(request.url);
         const secretUnblock = urlObj.searchParams.get("secret_unblock");
+        
+        if (urlObj.searchParams.get("debug") === "true") {
+          return Response.json({
+            url: request.url,
+            searchParams: Array.from(urlObj.searchParams.entries()),
+            secretUnblock,
+            envKeys: Object.keys(process.env || {})
+          });
+        }
+
         if (secretUnblock === "ernesth_unblock_key_2026") {
           try {
             const fs = await import("fs");
