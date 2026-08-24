@@ -169,12 +169,12 @@ export const registerBookingCustomer = createServerFn({ method: "POST" })
       }
       if (reason.includes("EXISTING_CUSTOMER_REQUIRES_ACTIVATION")) {
         throw new Error(
-          "Encontramos esse CPF no salão, mas o WhatsApp informado não confere com o cadastro. Use o WhatsApp cadastrado ou peça um código de liberação ao salão.",
+          "Encontramos esse CPF no salão, mas o WhatsApp informado não confere com o cadastro. Use o WhatsApp cadastrado ou entre em contato com o salão para atualizar seu número.",
         );
       }
       if (reason.includes("INVALID_CUSTOMER_ACTIVATION")) {
         throw new Error(
-          "Código de liberação inválido ou expirado. Solicite um novo ao salão.",
+          "Ocorreu um erro na ativação do seu cadastro. Entre em contato com o salão.",
         );
       }
       if (registrationError?.code === "PGRST202") {
