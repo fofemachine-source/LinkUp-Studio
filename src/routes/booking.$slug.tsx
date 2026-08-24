@@ -2193,7 +2193,7 @@ function CustomerAccessCard({
   const description = needsPasswordSetup
     ? "Encontramos este CPF no salão, mas ainda não existe senha. Informe o WhatsApp cadastrado e escolha sua senha para liberar o agendamento."
     : registering
-      ? "Se você já é cliente ou VIP, informe o WhatsApp cadastrado e crie sua senha. O código só é necessário quando o salão fornecer."
+      ? "Se você já é cliente ou VIP, informe o WhatsApp cadastrado e crie sua senha."
       : "Use seu CPF e senha. Depois do acesso, o agendamento abre normalmente.";
   const disabledReason = (() => {
     if (valid || pending) return "";
@@ -2288,32 +2288,7 @@ function CustomerAccessCard({
             )}
           </div>
 
-          {registering && (
-            <div className="space-y-2">
-              <Label htmlFor="customer-activation-code" className="text-white/70">
-                Código de liberação <span className="text-white/35">(se necessário)</span>
-              </Label>
-              <Input
-                id="customer-activation-code"
-                autoComplete="one-time-code"
-                maxLength={32}
-                className="border-white/10 bg-neutral-900/50 uppercase text-white focus-visible:ring-primary"
-                value={activationCode}
-                onChange={(event) => onActivationCodeChange(event.target.value)}
-                placeholder="Somente se o salão pediu"
-              />
-              {needsPasswordSetup && (
-                <p className="text-[11px] leading-relaxed text-white/40">
-                  Normalmente não precisa de código. Ele só é usado se o WhatsApp informado
-                  não for o mesmo do cadastro.
-                </p>
-              )}
-              <p className={needsPasswordSetup ? "hidden" : "text-[11px] leading-relaxed text-white/40"}>
-                Para cliente já cadastrado, o WhatsApp informado deve ser o mesmo do cadastro.
-                Se não conferir, o salão pode gerar este código.
-              </p>
-            </div>
-          )}
+
 
           {registering && (
             <div className="space-y-2">
